@@ -167,9 +167,30 @@ at 32K — truncation still possible, hence detection below.
 - Known behavior: single-turn escalations produce briefs LONGER than the
   source (structure overhead); the win is on multi-turn sessions.
 
-**Next candidates:** delegated dispatch (hand the brief to `claude -p` as an
-autonomous same-machine worker); route-on-intent (study margins now being
-logged); Anthropic-endpoint tools; ambient gates via hooks.
+**Generalization arc — SHIPPED (48 tests, commit ba8ed10).** North star:
+"a killer tool for anyone able to run local models."
+- `config.py`: TOML config at `~/.kultivait/config.toml`; `detect()` is a
+  pure function (models, clis, sizes) → Config. Roles
+  (simple/reasoning/docs/architect) are the stable classification space;
+  config maps roles → backends. No config file = live auto-detect at start.
+- `kultivait init` surveys the machine and explains its decisions.
+  Detection rules: byte-size fallback for unparseable model names, 4B floor
+  for the simple tier.
+- Local-only mode is first-class: virtual frontier tiers classify but have
+  no backend → escalation-brief path fires. `fallback_reason`
+  ("no_backend" | "tools_unsupported") replaced `tool_fallback`.
+- Pretty `kultivait harvest` (--json for raw); `landing/install.sh` served
+  at kultivait.ai/install.sh (vercel rewrite); README rewritten for
+  strangers; `uv tool install` packaging verified; stranger simulation
+  (fresh HOME → init → route) passed.
+- NOTE: user's live config restored to eval-proven models
+  (llama3.1:8b / qwen3:14b / gemma4 distiller); bare `init` would pick
+  gemma4:e4b / qwen2.5:14b — config editing is the intended workflow.
+
+**Next candidates:** route-on-intent (dogfood margins are accumulating in
+the ledger — phase 3 of the arc, build on data); delegated dispatch (hand
+the brief to `claude -p` as an autonomous same-machine worker);
+Anthropic-endpoint tools; ambient gates via hooks.
 
 ---
 
