@@ -1,4 +1,18 @@
-from kultivait.backends import to_ollama_messages, from_ollama_tool_calls
+from kultivait.backends import OllamaBackend, to_ollama_messages, from_ollama_tool_calls
+
+
+def test_payload_sets_num_ctx_to_avoid_input_truncation():
+    # ollama defaults num_ctx to 2048/8192 and silently truncates longer
+    # prompts; agent clients (Pi) send envelopes well past that.
+    backend = OllamaBackend("qwen3:14b", num_ctx=32768)
+    payload = backend._payload([{"role": "user", "content": "hi"}], None, stream=False)
+    assert payload["options"]["num_ctx"] == 32768
+
+
+def test_num_ctx_defaults_to_a_generous_window():
+    backend = OllamaBackend("qwen3:14b")
+    payload = backend._payload([{"role": "user", "content": "hi"}], None, stream=False)
+    assert payload["options"]["num_ctx"] >= 32768
 
 
 def test_openai_tool_history_converts_to_ollama_format():

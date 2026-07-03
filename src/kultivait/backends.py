@@ -74,15 +74,22 @@ class OllamaBackend:
 
     supports_tools = True
 
-    def __init__(self, model: str, base_url: str = "http://localhost:11434"):
+    def __init__(
+        self, model: str, base_url: str = "http://localhost:11434", num_ctx: int = 32768
+    ):
         self.model = model
         self.base_url = base_url
+        self.num_ctx = num_ctx
 
     def _payload(self, messages: list[dict], tools: "list[dict] | None", stream: bool) -> dict:
+        # ollama defaults to a small context and silently truncates longer
+        # prompts; agent clients send envelopes well past the default, so
+        # classification would run on a prompt the model never fully sees.
         payload = {
             "model": self.model,
             "messages": to_ollama_messages(messages),
             "stream": stream,
+            "options": {"num_ctx": self.num_ctx},
         }
         if tools:
             payload["tools"] = tools

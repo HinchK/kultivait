@@ -22,6 +22,9 @@ EMBED_MODEL = "nomic-embed-text"
 # See experiments/distill_eval/. Recall beats speed at a phase gate: a dropped
 # constraint is catastrophic, a slow gate is a coffee sip.
 DISTILL_MODEL = os.environ.get("KULTIVAIT_DISTILL_MODEL", "gemma4:latest")
+# ollama truncates to a small default context; raise it so agent envelopes
+# and long transcripts aren't silently clipped. Fits a 14B model on 24GB RAM.
+NUM_CTX = int(os.environ.get("KULTIVAIT_NUM_CTX", "32768"))
 LEDGER_PATH = Path.home() / ".kultivait" / "ledger.jsonl"
 COMPOST_DIR = Path.home() / ".kultivait" / "compost"
 
@@ -56,6 +59,7 @@ def _distill_generate(prompt: str) -> str:
         "model": DISTILL_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
+        "options": {"num_ctx": NUM_CTX},
     }
     if DISTILL_MODEL.startswith("qwen3"):
         payload["think"] = False
@@ -72,8 +76,8 @@ def build_gate() -> Gate:
 
 def build_backends() -> dict:
     return {
-        "llama3.1:8b": OllamaBackend("llama3.1:8b", OLLAMA_URL),
-        "qwen3:14b": OllamaBackend("qwen3:14b", OLLAMA_URL),
+        "llama3.1:8b": OllamaBackend("llama3.1:8b", OLLAMA_URL, num_ctx=NUM_CTX),
+        "qwen3:14b": OllamaBackend("qwen3:14b", OLLAMA_URL, num_ctx=NUM_CTX),
         "claude": CLIBackend(["claude"], price_in=3.0, price_out=15.0),
         "gemini:agy": CLIBackend(["agy"], price_in=1.25, price_out=10.0),
     }
