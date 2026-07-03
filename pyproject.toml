@@ -1,0 +1,27 @@
+[project]
+name = "kultivait"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = ".: HinchK :.", email = "kasey.hinchman@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.139.0",
+    "httpx>=0.28.1",
+    "numpy>=2.5.0",
+    "uvicorn>=0.49.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+kultivait = "kultivait.cli:main"

@@ -1,0 +1,341 @@
+[
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 0.818,
+    "missing": [
+      "fakeredis-injection",
+      "version-pins"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 286,
+    "seconds": 10.6
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "dst-test-gap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 283,
+    "seconds": 6.9
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "reindex-job-home"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 232,
+    "seconds": 5.9
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 0.727,
+    "missing": [
+      "request-state-hook",
+      "version-pins",
+      "open-429-retry-after"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 415,
+    "seconds": 10.0
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 418,
+    "seconds": 9.6
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "reindex-job-home"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 324,
+    "seconds": 8.2
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 0.818,
+    "missing": [
+      "request-state-hook",
+      "version-pins"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 305,
+    "seconds": 19.5
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "dst-test-gap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 268,
+    "seconds": 13.0
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 304,
+    "seconds": 14.9
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 0.636,
+    "missing": [
+      "nginx-100rps",
+      "per-key-fairness-only",
+      "request-state-hook",
+      "version-pins"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 339,
+    "seconds": 16.6
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 375,
+    "seconds": 16.6
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "elasticsearch-rejected-ops"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 273,
+    "seconds": 14.4
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 358,
+    "seconds": 21.4
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "dst-test-gap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 224,
+    "seconds": 12.4
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 214,
+    "seconds": 11.8
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 567,
+    "seconds": 27.9
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 404,
+    "seconds": 22.4
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "elasticsearch-rejected-ops"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 232,
+    "seconds": 14.3
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 411,
+    "seconds": 33.9
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 370,
+    "seconds": 25.5
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 328,
+    "seconds": 27.2
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 532,
+    "seconds": 33.2
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 414,
+    "seconds": 21.1
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 446,
+    "seconds": 26.5
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 0.818,
+    "missing": [
+      "nginx-100rps",
+      "version-pins"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 647,
+    "seconds": 30.7
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 0.778,
+    "missing": [
+      "dst-test-gap",
+      "limbo-order-count"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 246,
+    "seconds": 11.0
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 337,
+    "seconds": 15.6
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 475,
+    "seconds": 22.2
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "secret-rotation-overlap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 412,
+    "seconds": 18.1
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "reindex-job-home"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 299,
+    "seconds": 14.8
+  }
+]

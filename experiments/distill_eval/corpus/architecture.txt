@@ -1,0 +1,33 @@
+PLANNING SESSION LOG — task: replace SQL LIKE search with a real search service
+
+Turn 1: Profiled the database. The LIKE queries in core/search.py account for 31%
+of total DB load at peak. This is the single biggest query family we have.
+Turn 2: Surveyed options: Elasticsearch, OpenSearch, Meilisearch, Typesense, pgvector.
+Turn 3: Elasticsearch evaluation — powerful but the ops burden is real: JVM tuning,
+cluster management, and we have no JVM expertise on the team.
+Turn 4: Long detour comparing managed Elastic pricing tiers. Ultimately irrelevant
+because of the decision in turn 6.
+Turn 5: Meilisearch evaluation — single binary, no JVM, typo tolerance out of the box,
+and our dataset fits comfortably in one node.
+Turn 6: DECISION: Meilisearch, not Elasticsearch. Rationale: our search is simple
+prefix/typo matching over product listings; the ops burden of a JVM cluster is not
+justified. Revisit only if we need aggregations.
+Turn 7: Sized the index: 4.2M documents today, growing about 3% monthly. Single-node
+Meilisearch handles this with headroom.
+Turn 8: CONSTRAINT from the SRE review: search latency must stay under 50ms p95,
+measured at the API layer, or the mobile team's timeout budget breaks.
+Turn 9: CONSTRAINT from legal review: no PII may enter the search index. Listings
+sometimes contain seller email and phone in free-text descriptions; these must be
+stripped at ingestion time, not at query time.
+Turn 10: Tangent into the analytics pipeline. Unrelated. Dead end.
+Turn 11: Found the existing nightly job scaffold at jobs/reindex.py — it already runs
+at 02:30 and is the natural home for the full-reindex pass.
+Turn 12: Migration approach debated: big-bang cutover vs dual-write. Big-bang rejected
+after the team recalled the tag-migration incident.
+DECISION: dual-write during migration behind feature flag search_v2; reads flip
+per-tenant so we can canary the two largest tenants last.
+Turn 13: Checked client libraries. The official Python client is fine; no wrapper needed.
+Turn 14: OPEN QUESTION: ownership after launch is unresolved — platform team or product
+team owns the Meilisearch instance, its upgrades, and its pager? Must be settled in
+the build phase kickoff.
+Turn 15: Another tangent about renaming core/search.py. Deferred indefinitely. Dead end.

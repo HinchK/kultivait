@@ -1,0 +1,33 @@
+DEBUGGING SESSION LOG — task: intermittent payment webhook signature failures
+
+Turn 1: Reproduced locally? No. Ran the webhook test suite twice — all green.
+Turn 2: Pulled production logs. Failures cluster oddly. After bucketing by hour:
+every failure occurred between 00:00 and 01:00 UTC. Outside that window, zero.
+Turn 3: Read payments/webhooks.py. The handler calls verify_signature() which
+compares a timestamp from the payload against server time with a 5-minute window.
+Turn 4: Suspected clock skew on the load balancer. Checked chrony on all nodes —
+skew under 2ms. Dead end.
+Turn 5: Suspected the payment provider. Their status page shows no incidents on
+the failure dates. Dead end.
+Turn 6: Read utils/time.py. FOUND IT: parse_provider_timestamp() builds a naive
+datetime and compares it against timezone-aware server time. Around midnight UTC
+the date component rolls differently and the comparison drifts by a full day.
+Turn 7: Tangent — spent a while reading the retry queue in jobs/retry.py. It works
+fine; it was just re-delivering the already-failing webhooks. Not a cause.
+Turn 8: Considered fixing by making everything timezone-aware. Checked the codebase:
+27 call sites construct naive datetimes. Too invasive for a hotfix.
+DECISION: store and compare epoch seconds in verify_signature instead of datetimes;
+it sidesteps the tz problem entirely and touches only two functions.
+Turn 9: CONSTRAINT discovered while scoping the fix: we cannot upgrade Django until
+Q3 because the payments vendor plugin pins the current major version, so any fix
+must work on the version we have.
+Turn 10: Noticed while reading ops runbooks: the webhook signing secret rotates
+every 90 days via an ops cron; the handler must keep accepting BOTH current and
+previous secrets during the rotation overlap or we will repeat last year's outage.
+Turn 11: Checked test coverage. There is no test covering DST transitions or the
+midnight-UTC rollover at all — that is why CI never caught this.
+Turn 12: Counted the damage: roughly 1,200 webhook events were wrongly rejected
+over the past month and their orders sit in a limbo state.
+OPEN: decide whether to backfill the ~1,200 limbo orders by replaying events, or
+reconcile them via the provider's daily settlement report. Needs a product call.
+Turn 13: Long tangent reading the invoicing module. Unrelated to the bug. Dead end.

@@ -1,0 +1,35 @@
+EXPLORATION SESSION LOG — task: add rate limiting to the public API
+
+Turn 1: Listed the repository. Found 42 files across api/, core/, jobs/, tests/.
+Turn 2: Read api/server.py. It wires FastAPI routes. Nothing about rate limiting yet.
+Turn 3: Read api/middleware.py — mostly CORS handling. Dead end for our purposes.
+Turn 4: Searched for "throttle" — no hits. Searched for "limit" — 12 hits, mostly pagination.
+Turn 5: Read core/config.py. IMPORTANT: all config is loaded from environment variables
+via the Settings class in core/config.py; adding any new setting requires updating
+the Helm chart in deploy/values.yaml or production pods will crash on startup.
+Turn 6: Read jobs/scheduler.py hoping rate limits lived there. They do not. Dead end.
+Turn 7: Explored the git history around api/server.py. Found that a previous rate-limit
+attempt (PR #211) was reverted because it stored counters in process memory and broke
+under the 6-replica production deployment. DECISION from that history: any rate limiter
+must use the shared Redis at core/cache.py, never process-local state.
+Turn 8: Read core/cache.py. It exposes get_redis() returning an async client. The Redis
+instance is shared with session storage, so key prefixes must start with "rl:" to avoid
+collisions with session keys which use "sess:".
+Turn 9: Read tests/conftest.py. Test fixtures spin up fakeredis, so the limiter must
+accept an injected client rather than calling get_redis() at import time.
+Turn 10: Wandered into api/webhooks.py for twenty minutes. Interesting but unrelated.
+Turn 11: Checked the API gateway config. CONSTRAINT: the upstream nginx already enforces
+a hard 100 req/s per IP, so the application limiter only needs per-API-key fairness,
+not IP-level protection.
+Turn 12: Read api/auth.py. API keys are resolved in the require_api_key dependency;
+the resolved key object is available as request.state.api_key — the limiter should
+hook there rather than re-parsing headers.
+Turn 13: Considered token-bucket vs sliding-window. Sliding-window-log is too memory
+heavy for Redis at our volume. DECISION: token bucket, refill rate configurable
+per key tier (free=10/min, pro=300/min).
+Turn 14: Long tangent reading jobs/emailer.py. Completely unrelated. Dead end.
+Turn 15: Confirmed python version is pinned to 3.11 in pyproject.toml; the redis-py
+version in the lockfile (5.0.1) supports async pipelines, which the bucket needs.
+
+OPEN: nobody has decided what HTTP response body the 429 should carry; product wants
+a Retry-After header at minimum. Needs a decision in the plan phase.
