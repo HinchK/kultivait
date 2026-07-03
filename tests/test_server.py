@@ -15,28 +15,35 @@ ORDER = ["llama3.1:8b", "claude"]
 
 
 class FakeBackend:
-    def __init__(self, name, local):
+    def __init__(self, name, local, tool_calls=None):
         self.name = name
         self.local = local
+        self.supports_tools = local
+        self.tool_calls = tool_calls
         self.calls = []
+        self.tools_seen = []
 
     def _completion(self):
         return Completion(
-            text=f"answered by {self.name}",
+            text="" if self.tool_calls else f"answered by {self.name}",
             tokens_in=10,
             tokens_out=5,
             cost_usd=0.0 if self.local else 0.01,
             local=self.local,
+            tool_calls=self.tool_calls,
         )
 
-    def complete(self, messages):
+    def complete(self, messages, tools=None):
         self.calls.append(messages)
+        self.tools_seen.append(tools)
         return self._completion()
 
-    def stream(self, messages):
+    def stream(self, messages, tools=None):
         self.calls.append(messages)
-        yield "answered by "
-        yield self.name
+        self.tools_seen.append(tools)
+        if not self.tool_calls:
+            yield "answered by "
+            yield self.name
         yield self._completion()
 
 
@@ -100,6 +107,105 @@ def test_openai_streaming_records_ledger_after_stream(tmp_path):
     stats = client.get("/harvest").json()
     assert stats["prompts"] == 1
     assert stats["local_prompts"] == 1
+
+
+def test_openai_content_parts_are_normalized_for_backends(tmp_path):
+    client, backends = make_client(tmp_path, embed=lambda text: np.array([0.9, 0.1]))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            # OpenAI content-parts format, as agent clients like Pi send it
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "rename this var"}]}
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    sent = backends["llama3.1:8b"].calls[0]
+    assert sent == [{"role": "user", "content": "rename this var"}]
+
+
+def test_tool_history_survives_normalization(tmp_path):
+    client, backends = make_client(tmp_path, embed=lambda text: np.array([0.9, 0.1]))
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "read", "arguments": '{"path": "a.py"}'},
+    }
+    client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [
+                {"role": "user", "content": "read a.py"},
+                {"role": "assistant", "content": None, "tool_calls": [tool_call]},
+                {"role": "tool", "tool_call_id": "call_1", "content": "print('hi')"},
+                {"role": "user", "content": "now rename the var"},
+            ],
+        },
+    )
+    sent = backends["llama3.1:8b"].calls[0]
+    assert sent[1]["tool_calls"] == [tool_call]
+    assert sent[2] == {"role": "tool", "tool_call_id": "call_1", "content": "print('hi')"}
+
+
+TOOLS = [{"type": "function", "function": {"name": "read", "parameters": {}}}]
+A_TOOL_CALL = {
+    "id": "call_9",
+    "type": "function",
+    "function": {"name": "read", "arguments": '{"path": "a.py"}'},
+}
+
+
+def test_tools_are_forwarded_and_tool_calls_returned(tmp_path):
+    client, backends = make_client(tmp_path, embed=lambda text: np.array([0.9, 0.1]))
+    backends["llama3.1:8b"].tool_calls = [A_TOOL_CALL]
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "tools": TOOLS, "messages": [{"role": "user", "content": "read a.py"}]},
+    )
+    body = resp.json()
+    assert backends["llama3.1:8b"].tools_seen == [TOOLS]
+    choice = body["choices"][0]
+    assert choice["message"]["tool_calls"] == [A_TOOL_CALL]
+    assert choice["finish_reason"] == "tool_calls"
+
+
+def test_tools_request_falls_back_from_cloud_to_local_tier(tmp_path):
+    # embed points squarely at claude (CLI backend, can't do client tool calls)
+    client, backends = make_client(tmp_path, embed=lambda text: np.array([0.1, 0.9]))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "tools": TOOLS, "messages": [{"role": "user", "content": "refactor"}]},
+    )
+    body = resp.json()
+    assert body["model"] == "llama3.1:8b"
+    assert body["kultivait"]["tool_fallback"] is True
+    assert len(backends["claude"].calls) == 0
+    assert len(backends["llama3.1:8b"].calls) == 1
+
+
+def test_streaming_emits_tool_calls_delta(tmp_path):
+    client, backends = make_client(tmp_path, embed=lambda text: np.array([0.9, 0.1]))
+    backends["llama3.1:8b"].tool_calls = [A_TOOL_CALL]
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "stream": True,
+            "tools": TOOLS,
+            "messages": [{"role": "user", "content": "read a.py"}],
+        },
+    )
+    events = [e for e in parse_sse(resp.text) if e != "[DONE]"]
+    tool_deltas = [
+        e["choices"][0]["delta"]["tool_calls"]
+        for e in events
+        if "tool_calls" in e["choices"][0]["delta"]
+    ]
+    assert tool_deltas == [[{**A_TOOL_CALL, "index": 0}]]
+    assert events[-1]["choices"][0]["finish_reason"] == "tool_calls"
 
 
 def test_anthropic_messages_routes_and_returns_anthropic_shape(tmp_path):

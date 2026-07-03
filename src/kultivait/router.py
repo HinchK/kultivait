@@ -19,7 +19,7 @@ class Router:
         capability_order: list[str],
         escalation_margin: float = 0.02,
     ):
-        self._order = capability_order
+        self.capability_order = capability_order
         self._margin = escalation_margin
         self._names = list(centroids)
         matrix = np.stack([np.asarray(centroids[n], dtype=float) for n in self._names])
@@ -35,8 +35,8 @@ class Router:
         escalated = False
         # A thin margin means the classifier isn't sure; route one tier up.
         # Over-provisioning wastes cents, under-provisioning wastes an afternoon.
-        rank = self._order.index(tier)
-        if margin < self._margin and rank < len(self._order) - 1:
-            tier = self._order[rank + 1]
+        rank = self.capability_order.index(tier)
+        if margin < self._margin and rank < len(self.capability_order) - 1:
+            tier = self.capability_order[rank + 1]
             escalated = True
         return Decision(tier=tier, margin=margin, escalated=escalated)

@@ -16,12 +16,27 @@ from kultivait.router import Decision, Router
 
 
 def _text_of(content) -> str:
-    """Message content may be a string or a list of content blocks."""
+    """Message content may be a string or a list of content blocks/parts."""
     if isinstance(content, str):
         return content
     return " ".join(
         block.get("text", "") for block in content if isinstance(block, dict)
     )
+
+
+def _normalize(messages: list[dict]) -> list[dict]:
+    """Flatten content blocks/parts to plain strings: backends (ollama, CLIs)
+    understand neither Anthropic blocks nor OpenAI content parts.
+    Tool plumbing (assistant tool_calls, tool results) is preserved."""
+    out = []
+    for m in messages:
+        norm = {"role": m.get("role", "user"), "content": _text_of(m.get("content") or "")}
+        if m.get("tool_calls"):
+            norm["tool_calls"] = m["tool_calls"]
+        if m.get("tool_call_id"):
+            norm["tool_call_id"] = m["tool_call_id"]
+        out.append(norm)
+    return out
 
 
 def create_app(
@@ -49,10 +64,34 @@ def create_app(
         )
         return router.classify(embed(user_text))
 
+    def _tool_capable_tier(tier: str) -> tuple[str, bool]:
+        """Cloud CLI backends run their own agent loops and can't return
+        client-side tool calls; tools-bearing requests fall back to the most
+        capable local tier that supports tools."""
+        if backends[tier].supports_tools:
+            return tier, False
+        for name in reversed(router.capability_order):
+            if backends[name].supports_tools:
+                return name, True
+        raise RuntimeError("no tool-capable backend configured")
+
     @app.post("/v1/chat/completions")
     def chat_completions(body: dict):
-        messages = body.get("messages", [])
+        messages = _normalize(body.get("messages", []))
+        tools = body.get("tools")
         decision = _classify(messages)
+        tier, tool_fallback = (
+            _tool_capable_tier(decision.tier) if tools else (decision.tier, False)
+        )
+
+        def kultivait_meta(local: bool) -> dict:
+            return {
+                "tier": tier,
+                "margin": decision.margin,
+                "escalated": decision.escalated,
+                "tool_fallback": tool_fallback,
+                "local": local,
+            }
 
         if body.get("stream"):
             chunk_id = f"kult-{uuid.uuid4().hex[:12]}"
@@ -63,35 +102,49 @@ def create_app(
                     "id": chunk_id,
                     "object": "chat.completion.chunk",
                     "created": created,
-                    "model": decision.tier,
+                    "model": tier,
                     "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
                 }
                 return f"data: {json.dumps(payload)}\n\n"
 
             def sse():
                 yield chunk({"role": "assistant"})
-                for item in backends[decision.tier].stream(messages):
+                for item in backends[tier].stream(messages, tools=tools):
                     if isinstance(item, Completion):
-                        _record(decision.tier, item)
-                        yield chunk({}, finish="stop")
+                        _record(tier, item)
+                        if item.tool_calls:
+                            yield chunk(
+                                {
+                                    "tool_calls": [
+                                        {**tc, "index": i}
+                                        for i, tc in enumerate(item.tool_calls)
+                                    ]
+                                }
+                            )
+                            yield chunk({}, finish="tool_calls")
+                        else:
+                            yield chunk({}, finish="stop")
                     else:
                         yield chunk({"content": item})
                 yield "data: [DONE]\n\n"
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[decision.tier].complete(messages)
-        _record(decision.tier, completion)
+        completion = backends[tier].complete(messages, tools=tools)
+        _record(tier, completion)
+        message: dict = {"role": "assistant", "content": completion.text or None}
+        if completion.tool_calls:
+            message["tool_calls"] = completion.tool_calls
         return {
             "id": f"kult-{uuid.uuid4().hex[:12]}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": decision.tier,
+            "model": tier,
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": completion.text},
-                    "finish_reason": "stop",
+                    "message": message,
+                    "finish_reason": "tool_calls" if completion.tool_calls else "stop",
                 }
             ],
             "usage": {
@@ -99,22 +152,12 @@ def create_app(
                 "completion_tokens": completion.tokens_out,
                 "total_tokens": completion.tokens_in + completion.tokens_out,
             },
-            "kultivait": {
-                "tier": decision.tier,
-                "margin": decision.margin,
-                "escalated": decision.escalated,
-                "local": completion.local,
-            },
+            "kultivait": kultivait_meta(completion.local),
         }
 
     @app.post("/v1/messages")
     def anthropic_messages(body: dict):
-        # Normalize to plain-string messages: backends (ollama, CLIs) don't
-        # understand Anthropic content blocks or the separate system param.
-        messages = [
-            {"role": m.get("role", "user"), "content": _text_of(m.get("content", ""))}
-            for m in body.get("messages", [])
-        ]
+        messages = _normalize(body.get("messages", []))
         system = body.get("system")
         if system:
             messages = [{"role": "system", "content": _text_of(system)}, *messages]

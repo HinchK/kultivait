@@ -70,6 +70,29 @@ Note: cloud tiers run through print-mode CLIs, which produce output only on
 exit — those responses stream as a single final chunk. Local tiers stream
 token-by-token.
 
+### Using with the Pi coding agent
+
+Add a provider to `~/.pi/agent/models.json`:
+
+```json
+"kultivait": {
+  "api": "openai-completions",
+  "apiKey": "kultivait",
+  "baseUrl": "http://127.0.0.1:4114/v1",
+  "models": [{ "contextWindow": 131072, "id": "auto", "input": ["text"] }]
+}
+```
+
+Then: `pi --provider kultivait --model auto`. Tool calls pass through on the
+OpenAI endpoint — Pi's full agentic loop (read/bash/edit/write) runs through
+the proxy, with every turn routed and tallied.
+
+Tool-bearing requests are always served by a local tool-capable tier, even
+when classification points at a cloud tier: cloud CLIs run their own agent
+loops and can't return client-side tool calls. The response's `kultivait`
+metadata reports `tool_fallback: true` when this happens. Anthropic-endpoint
+tool support is not yet implemented.
+
 ## Requirements
 
 - [ollama](https://ollama.com) running locally with `nomic-embed-text`,
