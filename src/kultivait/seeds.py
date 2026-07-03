@@ -1,9 +1,10 @@
-"""Default routing tiers, validated in experiments/routing_trust.py (24/24)."""
+"""Routing seed prompts per role, validated in experiments/routing_trust.py (24/24).
 
-CAPABILITY_ORDER = ["llama3.1:8b", "qwen3:14b", "gemini:agy", "claude"]
+Roles are the stable classification space; which model serves each role is
+the machine-specific config's business (see config.detect)."""
 
-TIER_SEEDS: dict[str, list[str]] = {
-    "llama3.1:8b": [
+ROLE_SEEDS: dict[str, list[str]] = {
+    "simple": [
         "Rename this variable everywhere in the file",
         "Convert this dict to a JSON string",
         "Write a one-line docstring for this function",
@@ -11,7 +12,7 @@ TIER_SEEDS: dict[str, list[str]] = {
         "Fix the indentation in this code block",
         "Add type hints to this function signature",
     ],
-    "qwen3:14b": [
+    "reasoning": [
         "Why does this async test deadlock intermittently?",
         "Explain why this loop produces off-by-one results",
         "What race condition could cause this flaky behavior?",
@@ -19,7 +20,7 @@ TIER_SEEDS: dict[str, list[str]] = {
         "Why is this regex catastrophically backtracking?",
         "Diagnose why this cache returns stale values",
     ],
-    "gemini:agy": [
+    "docs": [
         "Cross-check this config against the current Gemini docs",
         "What is the latest stable version of this API?",
         "Verify these flags against the current CLI documentation",
@@ -27,7 +28,7 @@ TIER_SEEDS: dict[str, list[str]] = {
         "Check the current rate limits documented for this endpoint",
         "What changed in the most recent release notes?",
     ],
-    "claude": [
+    "architect": [
         "Refactor the auth module across all fourteen files",
         "Design a migration plan from the monolith to services",
         "Review this payment flow for security vulnerabilities",

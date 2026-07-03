@@ -1,8 +1,14 @@
-"""kultivait CLI: serve the proxy, inspect the harvest, dry-run a route."""
+"""kultivait CLI: serve the proxy, inspect the harvest, dry-run a route.
+
+Configuration is detected live from the machine (installed ollama models,
+available CLIs) unless ~/.kultivait/config.toml exists — `kultivait init`
+writes that file so the decisions are visible and editable.
+"""
 
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -10,84 +16,147 @@ import httpx
 import numpy as np
 
 from kultivait.backends import CLIBackend, OllamaBackend
+from kultivait.config import KNOWN_CLIS, Config, detect, load_config, save_config
 from kultivait.escalations import (
     HANDOFF_PROMPT,
-    RECOMMENDED_TARGETS,
     EscalationStore,
+    recommended_target,
     render_transcript,
 )
 from kultivait.gates import Gate
 from kultivait.ledger import Ledger
 from kultivait.router import Router
-from kultivait.seeds import CAPABILITY_ORDER, TIER_SEEDS
+from kultivait.seeds import ROLE_SEEDS
 
 OLLAMA_URL = "http://localhost:11434"
-EMBED_MODEL = "nomic-embed-text"
-# gemma4 won the distillation eval: 100% planted-fact recall on all corpus
-# transcripts vs 96.3% (qwen3:14b), 92.6% (phi4:14b best), 90.2% (qwen2.5:14b).
-# See experiments/distill_eval/. Recall beats speed at a phase gate: a dropped
-# constraint is catastrophic, a slow gate is a coffee sip.
-DISTILL_MODEL = os.environ.get("KULTIVAIT_DISTILL_MODEL", "gemma4:latest")
-# ollama truncates to a small default context; raise it so agent envelopes
-# and long transcripts aren't silently clipped. Fits a 14B model on 24GB RAM.
-NUM_CTX = int(os.environ.get("KULTIVAIT_NUM_CTX", "32768"))
-LEDGER_PATH = Path.home() / ".kultivait" / "ledger.jsonl"
-COMPOST_DIR = Path.home() / ".kultivait" / "compost"
-ESCALATIONS_DIR = Path.home() / ".kultivait" / "escalations"
+KULTIVAIT_HOME = Path.home() / ".kultivait"
+CONFIG_PATH = KULTIVAIT_HOME / "config.toml"
+LEDGER_PATH = KULTIVAIT_HOME / "ledger.jsonl"
+COMPOST_DIR = KULTIVAIT_HOME / "compost"
+ESCALATIONS_DIR = KULTIVAIT_HOME / "escalations"
 
 
-def _embed_batch(texts: list[str]) -> np.ndarray:
+def _survey_ollama() -> "tuple[list[str], dict[str, int]]":
+    r = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=10)
+    r.raise_for_status()
+    models = r.json().get("models", [])
+    return [m["name"] for m in models], {m["name"]: m.get("size", 0) for m in models}
+
+
+def _available_clis() -> "list[str]":
+    return [cli for cli in KNOWN_CLIS if shutil.which(cli)]
+
+
+def get_config() -> Config:
+    if CONFIG_PATH.exists():
+        config = load_config(CONFIG_PATH)
+    else:
+        models, sizes = _survey_ollama()
+        config = detect(models, _available_clis(), sizes=sizes)
+    # env overrides win, always
+    distill = os.environ.get("KULTIVAIT_DISTILL_MODEL")
+    num_ctx = os.environ.get("KULTIVAIT_NUM_CTX")
+    if distill or num_ctx:
+        from dataclasses import replace
+
+        config = replace(
+            config,
+            distill_model=distill or config.distill_model,
+            num_ctx=int(num_ctx) if num_ctx else config.num_ctx,
+        )
+    return config
+
+
+def _require_embed_model(config: Config) -> str:
+    if not config.embed_model:
+        sys.exit(
+            "kultivait needs a local embedding model to weigh prompts.\n"
+            "Pull one (274 MB), then retry:\n\n    ollama pull nomic-embed-text\n"
+        )
+    return config.embed_model
+
+
+def _embed_batch(model: str, texts: "list[str]") -> np.ndarray:
     r = httpx.post(
         f"{OLLAMA_URL}/api/embed",
-        json={"model": EMBED_MODEL, "input": texts},
+        json={"model": model, "input": texts},
         timeout=120,
     )
     r.raise_for_status()
     return np.array(r.json()["embeddings"])
 
 
-def embed_one(text: str) -> np.ndarray:
-    return _embed_batch([text])[0]
-
-
-def build_router() -> Router:
+def build_router(config: Config) -> Router:
+    model = _require_embed_model(config)
     centroids = {}
-    for tier, prompts in TIER_SEEDS.items():
-        vecs = _embed_batch(prompts)
+    for tier in config.tiers:
+        vecs = _embed_batch(model, ROLE_SEEDS[tier.role])
         vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
-        centroids[tier] = vecs.mean(axis=0)
-    return Router(centroids=centroids, capability_order=CAPABILITY_ORDER)
+        centroids[tier.name] = vecs.mean(axis=0)
+    return Router(centroids=centroids, capability_order=config.capability_order())
 
 
-def _distill_generate(prompt: str) -> str:
+def build_backends(config: Config) -> dict:
+    backends = {}
+    for tier in config.tiers:
+        if tier.kind == "ollama":
+            backends[tier.name] = OllamaBackend(tier.model, OLLAMA_URL, num_ctx=config.num_ctx)
+        elif tier.kind == "cli":
+            backends[tier.name] = CLIBackend(
+                tier.command, price_in=tier.price_in, price_out=tier.price_out
+            )
+        # "virtual" tiers get no backend: classified, never served — the
+        # escalation path fires instead.
+    return backends
+
+
+def _distill_generate_for(config: Config):
     import re
 
-    payload = {
-        "model": DISTILL_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"num_ctx": NUM_CTX},
-    }
-    if DISTILL_MODEL.startswith("qwen3"):
-        payload["think"] = False
-    r = httpx.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=600)
-    r.raise_for_status()
-    text = r.json()["message"]["content"]
-    # qwen3 may emit reasoning tags even with think disabled on older ollama
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    def generate(prompt: str) -> str:
+        payload = {
+            "model": config.distill_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {"num_ctx": config.num_ctx},
+        }
+        if (config.distill_model or "").startswith("qwen3"):
+            payload["think"] = False
+        r = httpx.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=600)
+        r.raise_for_status()
+        text = r.json()["message"]["content"]
+        return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    return generate
 
 
-def build_gate() -> Gate:
-    return Gate(generate=_distill_generate, compost_dir=COMPOST_DIR)
+def build_gate(config: Config, template: "str | None" = None) -> Gate:
+    kwargs = {"template": template} if template else {}
+    return Gate(generate=_distill_generate_for(config), compost_dir=COMPOST_DIR, **kwargs)
 
 
-def build_backends() -> dict:
-    return {
-        "llama3.1:8b": OllamaBackend("llama3.1:8b", OLLAMA_URL, num_ctx=NUM_CTX),
-        "qwen3:14b": OllamaBackend("qwen3:14b", OLLAMA_URL, num_ctx=NUM_CTX),
-        "claude": CLIBackend(["claude"], price_in=3.0, price_out=15.0),
-        "gemini:agy": CLIBackend(["agy"], price_in=1.25, price_out=10.0),
-    }
+def cmd_init(args: argparse.Namespace) -> None:
+    models, sizes = _survey_ollama()
+    clis = _available_clis()
+    config = detect(models, clis, sizes=sizes)
+
+    print("kultivait surveyed your garden:\n")
+    print(f"  ollama models: {len(models)} found")
+    print(f"  cloud CLIs:    {', '.join(clis) if clis else 'none — local-only mode'}\n")
+    for tier in config.tiers:
+        if tier.kind == "virtual":
+            served = "no backend — escalation briefs instead"
+        elif tier.kind == "cli":
+            served = f"{' '.join(tier.command)} (cloud, billed)"
+        else:
+            served = f"{tier.model} (local, free)"
+        print(f"  {tier.role:<10} -> {served}")
+    print(f"\n  embedding: {config.embed_model or 'MISSING — run: ollama pull nomic-embed-text'}")
+    print(f"  distiller: {config.distill_model or 'MISSING — pull any 8B+ model'}")
+
+    save_config(config, CONFIG_PATH)
+    print(f"\nwrote {CONFIG_PATH}")
+    print("edit it anytime; start the proxy with: kultivait serve")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -95,28 +164,31 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
     from kultivait.server import create_app
 
+    config = get_config()
     print("cultivating centroids from seed prompts...", file=sys.stderr)
     app = create_app(
-        router=build_router(),
-        embed=embed_one,
-        backends=build_backends(),
+        router=build_router(config),
+        embed=lambda text: _embed_batch(config.embed_model, [text])[0],
+        backends=build_backends(config),
         ledger=Ledger(LEDGER_PATH),
-        gate=build_gate(),
+        gate=build_gate(config),
         escalations=EscalationStore(ESCALATIONS_DIR),
     )
-    print(f"kultivait listening on http://localhost:{args.port}", file=sys.stderr)
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    port = args.port or config.port
+    print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 def cmd_route(args: argparse.Namespace) -> None:
-    router = build_router()
-    decision = router.classify(embed_one(args.prompt))
+    config = get_config()
+    router = build_router(config)
+    decision = router.classify(_embed_batch(config.embed_model, [args.prompt])[0])
     print(json.dumps(decision.__dict__, indent=2))
 
 
 def cmd_prune(args: argparse.Namespace) -> None:
     transcript = Path(args.file).read_text() if args.file else sys.stdin.read()
-    result = build_gate().distill(
+    result = build_gate(get_config()).distill(
         transcript, from_phase=args.from_phase, to_phase=args.to_phase
     )
     print(result.brief)
@@ -144,14 +216,14 @@ def cmd_escalations(args: argparse.Namespace) -> None:
         print(f"\n{len(listed)} escalation(s). Distill one: kultivait escalations --brief [ID]")
         return
 
+    config = get_config()
     target = args.id or listed[-1].id
     record = next(e for e in listed if e.id == target)
     transcript = render_transcript(store.load_messages(target))
-    print(f"distilling {target} with {DISTILL_MODEL}...", file=sys.stderr)
-    gate = Gate(generate=_distill_generate, compost_dir=COMPOST_DIR, template=HANDOFF_PROMPT)
+    print(f"distilling {target} with {config.distill_model}...", file=sys.stderr)
+    gate = build_gate(config, template=HANDOFF_PROMPT)
     result = gate.distill(transcript, from_phase="local", to_phase="cloud")
-    recommended = RECOMMENDED_TARGETS.get(record.requested_tier, record.requested_tier)
-    print(f"# Escalation brief — take this to {recommended}\n")
+    print(f"# Escalation brief — take this to {recommended_target(record.requested_tier)}\n")
     print(result.brief)
     print(
         f"\n--- {result.tokens_before} -> {result.tokens_after} tokens · "
@@ -160,17 +232,50 @@ def cmd_escalations(args: argparse.Namespace) -> None:
     )
 
 
+def format_harvest(stats: dict) -> str:
+    if stats["prompts"] == 0:
+        return (
+            "the harvest — nothing planted yet\n"
+            "  start the proxy (kultivait serve) and route some work through it."
+        )
+    local_pct = round(100 * stats["local_prompts"] / stats["prompts"])
+    lines = [
+        "the harvest — season to date",
+        "",
+        f"  prompts routed     {stats['prompts']}  ({local_pct}% local)",
+        f"  local tokens       {stats['tokens_local']:,}",
+        f"  spent              ${stats['spent_usd']:.2f}",
+        f"  frontier baseline  ${stats['baseline_usd']:.2f}",
+        f"  kept in pocket     ${stats['saved_usd']:.2f}",
+    ]
+    esc = stats.get("escalations", {"count": 0, "recent": []})
+    if esc["count"]:
+        lines += ["", f"  {esc['count']} cloud-worthy prompt(s) served locally:"]
+        for e in esc["recent"]:
+            lines.append(f"    wanted {e['requested']}, served {e['served']}: {e['snippet']}")
+        lines.append("    distill a handoff: kultivait escalations --brief")
+    if stats.get("truncated_inputs"):
+        lines += ["", f"  ⚠ {stats['truncated_inputs']} input(s) hit the context ceiling (raise num_ctx?)"]
+    return "\n".join(lines)
+
+
 def cmd_harvest(args: argparse.Namespace) -> None:
     stats = Ledger(LEDGER_PATH).harvest()
-    print(json.dumps(stats, indent=2))
+    if args.json:
+        print(json.dumps(stats, indent=2))
+    else:
+        print(format_harvest(stats))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="kultivait")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    init = sub.add_parser("init", help="survey this machine and write config")
+    init.set_defaults(func=cmd_init)
+
     serve = sub.add_parser("serve", help="run the routing proxy")
-    serve.add_argument("--port", type=int, default=4114)
+    serve.add_argument("--port", type=int, default=None)
     serve.set_defaults(func=cmd_serve)
 
     route = sub.add_parser("route", help="classify a prompt without executing it")
@@ -191,6 +296,7 @@ def main() -> None:
     esc.set_defaults(func=cmd_escalations)
 
     harvest = sub.add_parser("harvest", help="show cumulative savings")
+    harvest.add_argument("--json", action="store_true", help="machine-readable output")
     harvest.set_defaults(func=cmd_harvest)
 
     args = parser.parse_args()

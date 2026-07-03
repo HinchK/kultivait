@@ -61,7 +61,9 @@ def create_app(
             **decision_meta,
         )
 
-    def _decision_meta(decision: Decision, tool_fallback: bool, messages: list[dict]) -> dict:
+    def _decision_meta(
+        decision: Decision, fallback_reason: "str | None", messages: list[dict]
+    ) -> dict:
         user_text = next(
             (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
         )
@@ -69,7 +71,7 @@ def create_app(
             "requested_tier": decision.tier,
             "margin": round(decision.margin, 4),
             "escalated": decision.escalated,
-            "tool_fallback": tool_fallback,
+            "fallback_reason": fallback_reason,
             "snippet": user_text[:80],
         }
 
@@ -80,33 +82,37 @@ def create_app(
         )
         return router.classify(embed(user_text))
 
-    def _tool_capable_tier(tier: str) -> tuple[str, bool]:
-        """Cloud CLI backends run their own agent loops and can't return
-        client-side tool calls; tools-bearing requests fall back to the most
-        capable local tier that supports tools."""
-        if backends[tier].supports_tools:
-            return tier, False
+    def _resolve_tier(tier: str, tools: "list | None") -> "tuple[str, str | None]":
+        """Returns (served_tier, fallback_reason). Falls back when the
+        classified tier has no backend (virtual frontier tiers in local-only
+        setups) or can't do client-side tool calls (cloud CLIs run their own
+        agent loops). Fallback picks the most capable serving-capable tier."""
+        def serves(name: str) -> bool:
+            backend = backends.get(name)
+            return backend is not None and (not tools or backend.supports_tools)
+
+        if serves(tier):
+            return tier, None
+        reason = "no_backend" if tier not in backends else "tools_unsupported"
         for name in reversed(router.capability_order):
-            if backends[name].supports_tools:
-                return name, True
-        raise RuntimeError("no tool-capable backend configured")
+            if serves(name):
+                return name, reason
+        raise RuntimeError("no serving-capable backend configured")
 
     @app.post("/v1/chat/completions")
     def chat_completions(body: dict):
         messages = _normalize(body.get("messages", []))
         tools = body.get("tools")
         decision = _classify(messages)
-        tier, tool_fallback = (
-            _tool_capable_tier(decision.tier) if tools else (decision.tier, False)
-        )
+        tier, fallback_reason = _resolve_tier(decision.tier, tools)
         # A silent downgrade must leave a recoverable trail: archive the full
         # conversation so a paste-ready brief can be distilled on demand.
         escalation_id = (
             escalations.save(messages, requested_tier=decision.tier)
-            if tool_fallback
+            if fallback_reason
             else None
         )
-        meta = _decision_meta(decision, tool_fallback, messages)
+        meta = _decision_meta(decision, fallback_reason, messages)
         meta["escalation_id"] = escalation_id
 
         def kultivait_meta(local: bool) -> dict:
@@ -114,7 +120,7 @@ def create_app(
                 "tier": tier,
                 "margin": decision.margin,
                 "escalated": decision.escalated,
-                "tool_fallback": tool_fallback,
+                "fallback_reason": fallback_reason,
                 "escalation_id": escalation_id,
                 "local": local,
             }
@@ -188,7 +194,7 @@ def create_app(
         if system:
             messages = [{"role": "system", "content": _text_of(system)}, *messages]
         decision = _classify(messages)
-        meta = _decision_meta(decision, False, messages)
+        meta = _decision_meta(decision, None, messages)
         msg_id = f"kult-{uuid.uuid4().hex[:12]}"
 
         if body.get("stream"):

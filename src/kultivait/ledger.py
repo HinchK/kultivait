@@ -39,7 +39,8 @@ class Ledger:
         tokens_out = sum(e["tokens_out"] for e in entries)
         spent = sum(e["cost_usd"] for e in entries)
         baseline = (tokens_in * self._baseline_in + tokens_out * self._baseline_out) / 1e6
-        escalations = [e for e in entries if e.get("tool_fallback")]
+        # fallback_reason is current; tool_fallback is the pre-config legacy field
+        escalations = [e for e in entries if e.get("fallback_reason") or e.get("tool_fallback")]
         return {
             "prompts": len(entries),
             "local_prompts": sum(1 for e in entries if e["local"]),

@@ -183,9 +183,33 @@ def test_tools_request_falls_back_from_cloud_to_local_tier(tmp_path):
     )
     body = resp.json()
     assert body["model"] == "llama3.1:8b"
-    assert body["kultivait"]["tool_fallback"] is True
+    assert body["kultivait"]["fallback_reason"] == "tools_unsupported"
     assert len(backends["claude"].calls) == 0
     assert len(backends["llama3.1:8b"].calls) == 1
+
+
+def test_virtual_tier_without_backend_falls_back_and_escalates(tmp_path):
+    # Local-only setups keep a virtual frontier tier: classified, never served.
+    backends = {"llama3.1:8b": FakeBackend("llama3.1:8b", local=True)}
+    app = create_app(
+        router=Router(centroids=CENTROIDS, capability_order=ORDER),
+        embed=lambda text: np.array([0.1, 0.9]),  # classifies to "claude"
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "brief", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+    )
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "design a migration"}]},
+    )
+    body = resp.json()
+    assert body["model"] == "llama3.1:8b"
+    assert body["kultivait"]["fallback_reason"] == "no_backend"
+    listed = EscalationStore(tmp_path / "escalations").list()
+    assert len(listed) == 1
+    assert listed[0].requested_tier == "claude"
 
 
 def test_tool_fallback_archives_escalation_with_conversation(tmp_path):
@@ -359,7 +383,7 @@ def test_ledger_entry_carries_full_decision_metadata(tmp_path):
     entry = json.loads((tmp_path / "ledger.jsonl").read_text())
     assert entry["tier"] == "llama3.1:8b"          # served (tool fallback)
     assert entry["requested_tier"] == "claude"     # what the router wanted
-    assert entry["tool_fallback"] is True
+    assert entry["fallback_reason"] == "tools_unsupported"
     assert "margin" in entry
     assert entry["snippet"].startswith("draft a technical spec")
     assert entry["truncated"] is False

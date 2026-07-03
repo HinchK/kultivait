@@ -23,13 +23,13 @@ def test_record_stores_extra_decision_fields(tmp_path):
     ledger = Ledger(tmp_path / "ledger.jsonl")
     ledger.record(
         tier="qwen3:14b", local=True, tokens_in=100, tokens_out=10, cost_usd=0.0,
-        requested_tier="claude", margin=0.045, tool_fallback=True,
+        requested_tier="claude", margin=0.045, fallback_reason="tools_unsupported",
         truncated=False, snippet="draft a technical spec",
     )
     import json
     entry = json.loads((tmp_path / "ledger.jsonl").read_text())
     assert entry["requested_tier"] == "claude"
-    assert entry["tool_fallback"] is True
+    assert entry["fallback_reason"] == "tools_unsupported"
     assert entry["snippet"] == "draft a technical spec"
 
 
@@ -38,7 +38,7 @@ def test_harvest_reports_escalations_and_truncations(tmp_path):
     ledger.record(tier="llama3.1:8b", local=True, tokens_in=10, tokens_out=5, cost_usd=0.0)
     ledger.record(
         tier="qwen3:14b", local=True, tokens_in=8191, tokens_out=10, cost_usd=0.0,
-        requested_tier="claude", tool_fallback=True, truncated=True,
+        requested_tier="claude", fallback_reason="no_backend", truncated=True,
         snippet="draft a technical spec",
     )
     stats = ledger.harvest()

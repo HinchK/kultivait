@@ -18,7 +18,18 @@ from pathlib import Path
 RECOMMENDED_TARGETS = {
     "claude": "Claude (Claude Code or claude.ai)",
     "gemini:agy": "Gemini (agy or gemini.google.com)",
+    "docs:agy": "Gemini (agy or gemini.google.com)",
+    "docs:gemini": "Gemini (gemini CLI or gemini.google.com)",
 }
+
+
+def recommended_target(tier_name: str) -> str:
+    """Human-facing destination for an escalation; generic for virtual tiers."""
+    if tier_name in RECOMMENDED_TARGETS:
+        return RECOMMENDED_TARGETS[tier_name]
+    if tier_name.startswith("frontier:"):
+        return "a frontier model (Claude, Gemini, or ChatGPT)"
+    return tier_name
 
 HANDOFF_PROMPT = """\
 You are preparing a handoff brief for a more capable AI model. The

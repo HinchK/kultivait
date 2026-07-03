@@ -23,13 +23,37 @@ The routing approach was validated first: `experiments/routing_trust.py`
 classified 24/24 held-out prompts correctly with zero dangerous misroutes
 (cloud-worthy work sent to a weaker model).
 
-## Usage
+## Quickstart
 
 ```bash
-uv run kultivait serve --port 4114   # start the proxy
-uv run kultivait route "why does this test deadlock?"   # dry-run a classification
-uv run kultivait prune --from explore --to plan transcript.txt   # phase-gate handoff brief
-uv run kultivait harvest             # cumulative savings
+curl -fsSL https://kultivait.ai/install.sh | sh
+```
+
+or, by hand: `uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait`
+
+```bash
+kultivait init      # surveys YOUR machine: models, CLIs, sizes — writes config
+kultivait serve     # proxy on http://localhost:4114
+kultivait harvest   # watch the savings grow
+```
+
+`init` detects whatever you have: your smallest capable model becomes the
+simple tier, your largest becomes the reasoning tier, `claude`/`agy`/`gemini`
+CLIs become cloud tiers if present. **No cloud CLIs? Local-only mode is a
+first-class citizen**: cloud-worthy prompts are still recognized, served by
+your best local model, and archived — `kultivait escalations --brief` hands
+you a distilled, paste-ready brief to take to any frontier model yourself.
+Decisions live in `~/.kultivait/config.toml`; edit freely, re-run `init`
+anytime.
+
+## Commands
+
+```bash
+kultivait serve                    # run the routing proxy
+kultivait route "why does this test deadlock?"    # dry-run a classification
+kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
+kultivait escalations [--brief]    # cloud-worthy prompts served locally
+kultivait harvest [--json]         # cumulative savings
 ```
 
 `prune` distills a transcript into a FINDINGS / DECISIONS / CONSTRAINTS /
@@ -111,9 +135,11 @@ Routing knows its limits; hygiene makes the handoff cheap.
 
 ## Requirements
 
-- [ollama](https://ollama.com) running locally with `nomic-embed-text`,
-  `llama3.1:8b`, and `qwen3:14b` pulled
-- `claude` and `agy` CLIs on PATH for the cloud tiers
+- [ollama](https://ollama.com) with at least one general model pulled —
+  `kultivait init` adapts to whatever you have
+- an embedding model (`ollama pull nomic-embed-text`, 274 MB — the installer
+  handles this)
+- optional: `claude` / `agy` / `gemini` CLIs on PATH for cloud tiers
 
 ## Development
 
