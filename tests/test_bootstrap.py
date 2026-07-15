@@ -1,6 +1,7 @@
 """bootstrap: every side effect is injected — no subprocess, network, sudo,
 or real home dir anywhere in these tests."""
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -453,3 +454,59 @@ def test_run_skip_install_never_consults_which(tmp_path):
     kw = _run_kwargs(tmp_path, which=which)
     kw["skip_install"] = True
     assert bootstrap.run(plan, **kw) == "ok"
+
+
+def test_download_verifies_pinned_checksum_before_rename(tmp_path):
+    body = b"0123456789"
+    good = hashlib.sha256(body).hexdigest()
+    client = FakeClient(body)
+    ok = bootstrap._download(
+        client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), sha256=good, log=_quiet
+    )
+    assert ok is True
+    assert (tmp_path / "tiny.gguf").read_bytes() == body
+
+
+def test_download_checksum_mismatch_discards_part_and_fails(tmp_path):
+    body = b"0123456789"
+    wrong = hashlib.sha256(b"different").hexdigest()
+    client = FakeClient(body)
+    lines = []
+
+    def log(*args, **kwargs):
+        lines.append(" ".join(str(a) for a in args))
+
+    ok = bootstrap._download(
+        client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), sha256=wrong, log=log
+    )
+    assert ok is False
+    assert not (tmp_path / "tiny.gguf").exists()
+    # corrupt bytes must not be kept for a Range resume that can never succeed
+    assert not (tmp_path / "tiny.gguf.part").exists()
+    assert any("checksum" in line for line in lines)
+
+
+def test_exact_size_part_with_wrong_checksum_is_redownloaded(tmp_path):
+    body = b"0123456789"
+    good = hashlib.sha256(body).hexdigest()
+    (tmp_path / "tiny.gguf.part").write_bytes(b"XXXXXXXXXX")  # right size, wrong bytes
+    client = FakeClient(body)
+    ok = bootstrap._download(
+        client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), sha256=good, log=_quiet
+    )
+    assert ok is True
+    assert (tmp_path / "tiny.gguf").read_bytes() == body
+    assert len(client.requests) == 1  # stale .part discarded, one clean re-fetch
+    assert "Range" not in client.requests[0][1]
+
+
+def test_download_models_passes_pick_checksums(tmp_path):
+    body = b"0123456789"
+    good = hashlib.sha256(body).hexdigest()
+    p = ModelPick("reasoning", "x/y", "tiny.gguf", len(body), 0, sha256=good)
+    client = FakeClient(body)
+    ok = bootstrap.download_models(
+        make_plan(p), tmp_path, confirm=lambda pr: True, client=client, log=_quiet
+    )
+    assert ok is True
+    assert (tmp_path / "tiny.gguf").read_bytes() == body

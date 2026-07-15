@@ -6,6 +6,7 @@ Every step is idempotent (already-satisfied work is skipped, so re-running
 and filesystem access is injected so tests never touch the real system.
 """
 
+import hashlib
 import os
 import shutil
 import stat
@@ -57,14 +58,39 @@ def ensure_llamacpp(confirm=ask, run_cmd=subprocess.run, which=shutil.which) -> 
 CHUNK = 1 << 20
 
 
-def _download(client, url: str, dest: Path, expected_bytes: int, log=print) -> bool:
-    """Stream to <dest>.part, resume via Range, rename when complete.
+def _sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-    Returns False (leaving the .part in place) instead of raising when the
-    result doesn't check out — a mismatched size is a failed download, not a
-    partial success to silently promote to `dest`. Callers (download_models)
-    treat any exception during the transfer itself as the same kind of
-    recoverable failure.
+
+def _promote(part: Path, dest: Path, sha256: str, log=print) -> bool:
+    """Rename .part -> final only when the bytes match the pinned hash.
+
+    resolve/main URLs are mutable refs — size alone can't rule out upstream
+    substitution or corruption, so content is verified before it's trusted.
+    A mismatched .part is deleted: a Range resume can never repair wrong
+    bytes of the right length."""
+    if sha256 and _sha256_of(part) != sha256:
+        part.unlink()
+        log(f"  {dest.name}: checksum mismatch — discarded corrupt download")
+        return False
+    part.rename(dest)
+    return True
+
+
+def _download(
+    client, url: str, dest: Path, expected_bytes: int, sha256: str = "", log=print
+) -> bool:
+    """Stream to <dest>.part, resume via Range, verify, rename when complete.
+
+    Returns False instead of raising when the result doesn't check out — a
+    mismatched size (resumable .part kept) or checksum (.part discarded) is
+    a failed download, not a partial success to silently promote to `dest`.
+    Callers (download_models) treat any exception during the transfer itself
+    as the same kind of recoverable failure.
     """
     if dest.exists() and dest.stat().st_size == expected_bytes:
         log(f"  {dest.name}: already present")
@@ -74,10 +100,12 @@ def _download(client, url: str, dest: Path, expected_bytes: int, log=print) -> b
         part_size = part.stat().st_size
         if part_size == expected_bytes:
             # already fully fetched (e.g. a prior run died after the write
-            # but before the rename) — promote it and skip the request
-            part.rename(dest)
-            return True
-        if part_size > expected_bytes:
+            # but before the rename) — verify and promote without a request;
+            # on a failed check the .part is gone, so fall through to a
+            # clean re-download below
+            if _promote(part, dest, sha256, log=log):
+                return True
+        elif part_size > expected_bytes:
             # can't Range-resume past the expected size; something's wrong
             # with this .part (stale/corrupt) — drop it and start clean
             part.unlink()
@@ -106,8 +134,7 @@ def _download(client, url: str, dest: Path, expected_bytes: int, log=print) -> b
             f"expected {expected_bytes / 2**20:.0f} MB) — leaving .part to resume next run"
         )
         return False
-    part.rename(dest)
-    return True
+    return _promote(part, dest, sha256, log=log)
 
 
 def download_models(
@@ -136,7 +163,9 @@ def download_models(
     client = client or httpx.Client(timeout=60)
     for m in todo:
         try:
-            if not _download(client, m.url(), dest / m.filename, m.approx_bytes, log=log):
+            if not _download(
+                client, m.url(), dest / m.filename, m.approx_bytes, sha256=m.sha256, log=log
+            ):
                 return False
         except (httpx.HTTPError, OSError) as exc:
             # a multi-GB fetch over a real network drops sometimes; that's

@@ -126,3 +126,13 @@ def test_ctx_steps_down_and_wired_limit_offered_when_tight(monkeypatch):
     assert p.eligible
     assert p.ctx == 16384
     assert p.wired_limit_mb == 39936
+
+
+def test_all_pinned_models_carry_sha256():
+    picks = (
+        hw.EMBED_PICK, hw.QWEN3_4B, hw.QWEN3_8B,
+        hw.QWEN3_14B, hw.QWEN3_32B_Q4, hw.QWEN3_32B_Q5,
+    )
+    for pick in picks:
+        assert len(pick.sha256) == 64
+        assert set(pick.sha256) <= set("0123456789abcdef")

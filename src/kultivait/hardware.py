@@ -70,6 +70,9 @@ class ModelPick:
     filename: str
     approx_bytes: int  # exact size on HF; also the "already downloaded" check
     kv_bytes_per_token: int  # q8_0 K+V per token; 0 for embedding models
+    # upstream SHA256 (the HF LFS oid): resolve/main URLs are mutable refs,
+    # so content is verified before a download is trusted. "" skips the check.
+    sha256: str = ""
 
     def url(self) -> str:
         return f"{HF_BASE}/{self.hf_repo}/resolve/main/{self.filename}"
@@ -81,15 +84,31 @@ EMBED_PICK = ModelPick(
     filename="nomic-embed-text-v1.5.Q8_0.gguf",
     approx_bytes=146_146_432,
     kv_bytes_per_token=0,
+    sha256="3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7",
 )
 
 # kv_bytes_per_token = 2 (K+V) x 8 kv-heads x 128 head-dim x n_layers x
 # 1.0625 (q8_0 bytes/elem): Qwen3 4B/8B have 36 layers, 14B has 40, 32B has 64.
-QWEN3_4B = ModelPick("simple", "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 2_497_280_256, 78_336)
-QWEN3_8B = ModelPick("simple", "Qwen/Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf", 5_027_783_488, 78_336)
-QWEN3_14B = ModelPick("reasoning", "Qwen/Qwen3-14B-GGUF", "Qwen3-14B-Q4_K_M.gguf", 9_001_752_960, 87_040)
-QWEN3_32B_Q4 = ModelPick("reasoning", "Qwen/Qwen3-32B-GGUF", "Qwen3-32B-Q4_K_M.gguf", 19_762_149_024, 139_264)
-QWEN3_32B_Q5 = ModelPick("reasoning", "Qwen/Qwen3-32B-GGUF", "Qwen3-32B-Q5_K_M.gguf", 23_214_831_232, 139_264)
+QWEN3_4B = ModelPick(
+    "simple", "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 2_497_280_256, 78_336,
+    sha256="7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+)
+QWEN3_8B = ModelPick(
+    "simple", "Qwen/Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf", 5_027_783_488, 78_336,
+    sha256="d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+)
+QWEN3_14B = ModelPick(
+    "reasoning", "Qwen/Qwen3-14B-GGUF", "Qwen3-14B-Q4_K_M.gguf", 9_001_752_960, 87_040,
+    sha256="500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+)
+QWEN3_32B_Q4 = ModelPick(
+    "reasoning", "Qwen/Qwen3-32B-GGUF", "Qwen3-32B-Q4_K_M.gguf", 19_762_149_024, 139_264,
+    sha256="efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+)
+QWEN3_32B_Q5 = ModelPick(
+    "reasoning", "Qwen/Qwen3-32B-GGUF", "Qwen3-32B-Q5_K_M.gguf", 23_214_831_232, 139_264,
+    sha256="82ec20068a0cc9388ffc93eb968015b0941931d0ff65a216baba5b4824d2a966",
+)
 
 # (min_ram_gb, simple pick, reasoning pick, ctx) — first row whose floor the
 # machine clears wins, so keep this sorted largest-first.

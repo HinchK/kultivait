@@ -169,7 +169,10 @@ steps are skipped, so re-running `kultivait init` converges.
    `KULTIVAIT_LLAMACPP_MODELS_DIR`/`LLAMA_CACHE` overrides respected).
    Progress shown per file; interrupted downloads leave a `.part` file and
    resume via HTTP `Range` on re-run. Files already present (matching size)
-   are skipped.
+   are skipped. Each pinned file carries its upstream SHA256 (the HF LFS
+   oid) — `resolve/main` URLs are mutable refs, so the hash is verified
+   before a `.part` is promoted to its final name; a mismatch discards the
+   corrupt bytes rather than resuming them.
 3. **Write artifacts** (always regenerated from the current plan, like
    `config.toml`):
    - `~/.kultivait/llamacpp-presets.ini` — per-model preset entries;
