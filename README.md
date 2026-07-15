@@ -145,6 +145,18 @@ Routing knows its limits; hygiene makes the handoff cheap.
   handles this; for llama.cpp, a nomic-embed GGUF)
 - optional: `claude` / `agy` / `gemini` CLIs on PATH for cloud tiers
 
+### Zero to local: `kultivait init` on a Mac
+
+On an Apple Silicon Mac with at least 24GB of unified memory and no local
+runtime installed, `kultivait init` offers to do the whole setup itself:
+install llama.cpp via Homebrew, download models sized to your RAM (plus the
+nomic-embed GGUF), write a tuned launch script
+(`~/.kultivait/start-llamacpp.sh`), and start the server — asking before
+every step that touches your machine. Re-running `init` is safe: finished
+steps are skipped and interrupted downloads resume. Opt out with
+`kultivait init --no-setup` (offers are also skipped when stdin is not a
+TTY).
+
 ### Using with llama.cpp instead of ollama
 
 Run `llama-server` in **router mode** — launched without `-m`, it lists your
