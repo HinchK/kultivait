@@ -52,3 +52,62 @@ def ensure_llamacpp(confirm=ask, run_cmd=subprocess.run, which=shutil.which) -> 
         return "declined"
     result = run_cmd(["brew", "install", "llama.cpp"])
     return "installed" if result.returncode == 0 else "failed"
+
+
+CHUNK = 1 << 20
+
+
+def _download(client, url: str, dest: Path, expected_bytes: int, log=print) -> None:
+    """Stream to <dest>.part, resume via Range, rename when complete."""
+    if dest.exists() and dest.stat().st_size == expected_bytes:
+        log(f"  {dest.name}: already present")
+        return
+    part = dest.with_name(dest.name + ".part")
+    headers, mode = {}, "wb"
+    if part.exists():
+        headers["Range"] = f"bytes={part.stat().st_size}-"
+        mode = "ab"
+    with client.stream("GET", url, headers=headers, follow_redirects=True) as r:
+        if r.status_code == 200 and mode == "ab":
+            mode = "wb"  # server ignored Range: start over rather than duplicate
+        r.raise_for_status()
+        done = part.stat().st_size if mode == "ab" else 0
+        with open(part, mode) as f:
+            for chunk in r.iter_bytes(CHUNK):
+                f.write(chunk)
+                done += len(chunk)
+                log(
+                    f"\r  {dest.name}: {done / 2**20:.0f}/{expected_bytes / 2**20:.0f} MB",
+                    end="",
+                )
+        log("")
+    part.rename(dest)
+
+
+def download_models(
+    plan: SetupPlan,
+    dest: Path,
+    confirm=ask,
+    client: "httpx.Client | None" = None,
+    log=print,
+) -> bool:
+    """Confirm once (sizes shown), then fetch whatever isn't already on disk."""
+    todo = [
+        m
+        for m in plan.models
+        if not (dest / m.filename).exists()
+        or (dest / m.filename).stat().st_size != m.approx_bytes
+    ]
+    if not todo:
+        return True
+    log("models to download:")
+    for m in todo:
+        log(f"  {m.filename}  ({m.approx_bytes / 2**30:.1f} GB)")
+    total_gb = sum(m.approx_bytes for m in todo) / 2**30
+    if not confirm(f"Download {total_gb:.1f} GB into {dest}?"):
+        return False
+    dest.mkdir(parents=True, exist_ok=True)
+    client = client or httpx.Client(timeout=60)
+    for m in todo:
+        _download(client, m.url(), dest / m.filename, m.approx_bytes, log=log)
+    return True

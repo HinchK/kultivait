@@ -70,3 +70,119 @@ def test_models_dir_default_is_llamacpp_cache(monkeypatch):
     monkeypatch.delenv("KULTIVAIT_LLAMACPP_MODELS_DIR", raising=False)
     monkeypatch.delenv("LLAMA_CACHE", raising=False)
     assert bootstrap.models_dir() == Path.home() / "Library" / "Caches" / "llama.cpp"
+
+
+from kultivait.hardware import ModelPick, SetupPlan
+
+
+class FakeStream:
+    def __init__(self, status_code, body: bytes):
+        self.status_code = status_code
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        assert self.status_code in (200, 206)
+
+    def iter_bytes(self, chunk_size):
+        for i in range(0, len(self._body), 3):  # tiny chunks to exercise the loop
+            yield self._body[i : i + 3]
+
+
+class FakeClient:
+    """Serves `body`; honors Range unless ignore_range is set."""
+
+    def __init__(self, body: bytes, ignore_range: bool = False):
+        self.body = body
+        self.ignore_range = ignore_range
+        self.requests = []
+
+    def stream(self, method, url, headers=None, follow_redirects=False):
+        headers = dict(headers or {})
+        self.requests.append((url, headers))
+        if "Range" in headers and not self.ignore_range:
+            offset = int(headers["Range"].removeprefix("bytes=").removesuffix("-"))
+            return FakeStream(206, self.body[offset:])
+        return FakeStream(200, self.body)
+
+
+def _quiet(*args, **kwargs):
+    pass
+
+
+def pick(name="tiny.gguf", body=b"0123456789"):
+    return ModelPick("reasoning", "x/y", name, len(body), 0)
+
+
+def make_plan(*picks):
+    return SetupPlan(eligible=True, reason="test", models=tuple(picks))
+
+
+def test_download_writes_file_and_clears_part(tmp_path):
+    body = b"0123456789"
+    client = FakeClient(body)
+    bootstrap._download(client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), log=_quiet)
+    assert (tmp_path / "tiny.gguf").read_bytes() == body
+    assert not (tmp_path / "tiny.gguf.part").exists()
+
+
+def test_download_resumes_from_part_with_range_header(tmp_path):
+    body = b"0123456789"
+    (tmp_path / "tiny.gguf.part").write_bytes(body[:4])
+    client = FakeClient(body)
+    bootstrap._download(client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), log=_quiet)
+    assert client.requests[0][1]["Range"] == "bytes=4-"
+    assert (tmp_path / "tiny.gguf").read_bytes() == body
+
+
+def test_download_restarts_when_server_ignores_range(tmp_path):
+    body = b"0123456789"
+    (tmp_path / "tiny.gguf.part").write_bytes(body[:4])
+    client = FakeClient(body, ignore_range=True)
+    bootstrap._download(client, "http://x/tiny.gguf", tmp_path / "tiny.gguf", len(body), log=_quiet)
+    # a 200 despite our Range header means "here's the whole file": no dupes
+    assert (tmp_path / "tiny.gguf").read_bytes() == body
+
+
+def test_download_models_skips_complete_files(tmp_path):
+    body = b"0123456789"
+    (tmp_path / "tiny.gguf").write_bytes(body)
+    client = FakeClient(body)
+    ok = bootstrap.download_models(
+        make_plan(pick()), tmp_path, confirm=_fail_confirm, client=client, log=_quiet
+    )
+    assert ok is True
+    assert client.requests == []
+
+
+def test_download_models_declined_downloads_nothing(tmp_path):
+    client = FakeClient(b"0123456789")
+    ok = bootstrap.download_models(
+        make_plan(pick()), tmp_path, confirm=lambda p: False, client=client, log=_quiet
+    )
+    assert ok is False
+    assert client.requests == []
+
+
+def test_download_models_lists_sizes_before_confirming(tmp_path):
+    lines = []
+
+    def log(*args, **kwargs):
+        lines.append(" ".join(str(a) for a in args))
+
+    prompts = []
+
+    def confirm(prompt):
+        prompts.append(prompt)
+        return True
+
+    client = FakeClient(b"0123456789")
+    bootstrap.download_models(make_plan(pick()), tmp_path, confirm=confirm, client=client, log=log)
+    assert any("tiny.gguf" in line for line in lines)
+    assert len(prompts) == 1 and "GB" in prompts[0]
+    assert (tmp_path / "tiny.gguf").exists()
