@@ -300,6 +300,7 @@ def run(
     client=None,
     log=tui.log,
     skip_install: bool = False,
+    on_progress=None,
 ) -> str:
     """Orchestrate the bootstrap: "ok" (server healthy), "aborted" (user
     declined or advisory — continue init as if nothing happened), or
@@ -313,7 +314,9 @@ def run(
             return "aborted"
         if state in ("declined", "failed"):
             return "aborted"
-    if not download_models(plan, gguf_dir, confirm=confirm, client=client, log=log):
+    if not download_models(
+        plan, gguf_dir, confirm=confirm, client=client, on_progress=on_progress, log=log
+    ):
         return "aborted"
     preset, script = write_artifacts(plan, home, gguf_dir)
     log(f"wrote {preset}")

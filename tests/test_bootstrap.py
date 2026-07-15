@@ -442,6 +442,27 @@ def test_run_happy_path_creates_everything(tmp_path):
     assert (tmp_path / "home" / "llamacpp-presets.ini").exists()
 
 
+def test_run_forwards_on_progress_to_download(tmp_path):
+    seen = {}
+
+    def fake_download(plan, dest, **kwargs):
+        seen["on_progress"] = kwargs.get("on_progress")
+        return True
+
+    import kultivait.bootstrap as bs
+    orig = bs.download_models
+    bs.download_models = fake_download
+    try:
+        marker = lambda d, t: None
+        plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+        kw = _run_kwargs(tmp_path)
+        kw["on_progress"] = marker
+        bs.run(plan, **kw)
+    finally:
+        bs.download_models = orig
+    assert seen["on_progress"] is marker
+
+
 def test_run_aborts_when_install_declined(tmp_path):
     plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
     kw = _run_kwargs(tmp_path, which=lambda c: "/x/brew" if c == "brew" else None,

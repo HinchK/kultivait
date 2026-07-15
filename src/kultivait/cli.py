@@ -38,6 +38,7 @@ from kultivait.seeds import ROLE_SEEDS
 
 import kultivait.bootstrap as bootstrap
 import kultivait.hardware as hardware
+from kultivait import tui
 
 OLLAMA_URL = RUNTIME_URLS["ollama"]
 LLAMACPP_URL = os.environ.get("KULTIVAIT_LLAMACPP_URL", RUNTIME_URLS["llamacpp"])
@@ -301,7 +302,22 @@ def _offer_setup() -> "str | None":
     print(f"\nthis machine can grow a local garden: {setup_plan.reason}")
     if not bootstrap.ask("Set up llama.cpp with tuned defaults now?"):
         return None
-    outcome = bootstrap.run(setup_plan, skip_install=have_llamacpp)
+    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn
+
+    with Progress(
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        console=tui.console,
+    ) as progress:
+        bar = progress.add_task("downloading models", total=None)
+
+        def on_progress(done: int, total: int) -> None:
+            progress.update(bar, completed=done, total=total)
+
+        outcome = bootstrap.run(
+            setup_plan, skip_install=have_llamacpp, on_progress=on_progress
+        )
     if outcome == "server_failed":
         sys.exit(1)
     return "llamacpp" if outcome == "ok" else None
@@ -319,29 +335,13 @@ def cmd_init(args: argparse.Namespace) -> None:
     clis = _available_clis()
     config = detect(models, clis, sizes=sizes, runtime=runtime)
 
-    print("kultivait surveyed your garden:\n")
-    print(f"  local runtime: {runtime} ({config.chat_base_url})")
-    print(f"  local models:  {len(models)} found")
-    print(f"  cloud CLIs:    {', '.join(clis) if clis else 'none — local-only mode'}\n")
-    for tier in config.tiers:
-        if tier.kind == "virtual":
-            served = "no backend — escalation briefs instead"
-        elif tier.kind == "cli":
-            served = f"{' '.join(tier.command)} (cloud, billed)"
-        else:
-            served = f"{tier.model} (local, free)"
-        print(f"  {tier.role:<10} -> {served}")
-    embed_missing = (
-        "MISSING — download a nomic-embed GGUF"
-        if runtime == "llamacpp"
-        else "MISSING — run: ollama pull nomic-embed-text"
+    tui.console.print(
+        tui.render_survey(runtime, config.chat_base_url, models, clis, config)
     )
-    print(f"\n  embedding: {config.embed_model or embed_missing}")
-    print(f"  distiller: {config.distill_model or 'MISSING — pull any 8B+ model'}")
 
     save_config(config, CONFIG_PATH)
-    print(f"\nwrote {CONFIG_PATH}")
-    print("edit it anytime; start the proxy with: kultivait serve")
+    tui.console.print(f"\n[green]✓[/green] wrote {CONFIG_PATH}")
+    tui.console.print("edit it anytime; start the proxy with: [bold]kultivait serve[/bold]")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
