@@ -186,3 +186,59 @@ def test_download_models_lists_sizes_before_confirming(tmp_path):
     assert any("tiny.gguf" in line for line in lines)
     assert len(prompts) == 1 and "GB" in prompts[0]
     assert (tmp_path / "tiny.gguf").exists()
+
+
+def full_plan(wired=None):
+    return SetupPlan(
+        eligible=True,
+        reason="test",
+        models=(
+            ModelPick("simple", "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 10, 78_336),
+            ModelPick(
+                "embed",
+                "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                "nomic-embed-text-v1.5.Q8_0.gguf",
+                10,
+                0,
+            ),
+        ),
+        ctx=16384,
+        server_flags=("--jinja", "-fa", "on", "-c", "16384", "--port", "8080"),
+        default_gpu_cap_mb=16384,
+        wired_limit_mb=wired,
+    )
+
+
+def test_write_artifacts_ini_marks_embedding_model(tmp_path):
+    preset, _ = bootstrap.write_artifacts(full_plan(), tmp_path / "home", tmp_path / "ggufs")
+    text = preset.read_text()
+    assert "[nomic-embed-text-v1.5.Q8_0]" in text
+    assert "embedding = 1" in text
+    assert str(tmp_path / "ggufs" / "nomic-embed-text-v1.5.Q8_0.gguf") in text
+
+
+def test_write_artifacts_script_is_executable_with_flags_and_log(tmp_path):
+    _, script = bootstrap.write_artifacts(full_plan(), tmp_path / "home", tmp_path / "ggufs")
+    text = script.read_text()
+    assert text.startswith("#!/bin/sh\n")
+    assert "--models-dir" in text and "--models-preset" in text
+    assert "-c 16384" in text
+    assert "llamacpp.log" in text
+    assert script.stat().st_mode & 0o111  # executable
+
+
+def test_write_artifacts_sysctl_only_as_comment_and_only_when_suggested(tmp_path):
+    _, without = bootstrap.write_artifacts(full_plan(), tmp_path / "h1", tmp_path / "g")
+    assert "iogpu.wired_limit_mb" not in without.read_text()
+    _, with_bump = bootstrap.write_artifacts(full_plan(wired=39936), tmp_path / "h2", tmp_path / "g")
+    lines = [l for l in with_bump.read_text().splitlines() if "iogpu.wired_limit_mb" in l]
+    assert lines and all(l.startswith("#") for l in lines)
+    assert "iogpu.wired_limit_mb=39936" in lines[0].replace(" ", "")
+
+
+def test_write_artifacts_regenerates_on_rerun(tmp_path):
+    home = tmp_path / "home"
+    bootstrap.write_artifacts(full_plan(), home, tmp_path / "g")
+    plan2 = full_plan(wired=39936)
+    _, script = bootstrap.write_artifacts(plan2, home, tmp_path / "g")
+    assert "iogpu.wired_limit_mb" in script.read_text()
