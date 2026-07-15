@@ -52,7 +52,19 @@ def test_ask_default_yes_contract_matches_bootstrap():
     assert tui.ask("go?", input_fn=lambda _: "N") is False
 
 
-def test_ask_passes_prompt_to_input_fn():
+def test_ask_paints_prompt_to_console_not_input_fn():
+    """The styled prompt is displayed via the console; input_fn reads silently
+    (empty prompt) so a real terminal doesn't echo the text twice."""
     seen = []
-    tui.ask("proceed?", input_fn=lambda p: seen.append(p) or "y")
-    assert seen and "proceed?" in seen[0]
+    with tui.console.capture() as cap:
+        tui.ask("proceed?", input_fn=lambda p: seen.append(p) or "y")
+    assert "proceed?" in cap.get()   # painted by the console
+    assert seen == [""]              # input_fn read with no prompt of its own
+
+
+def test_log_absorbs_flush_kwarg():
+    """bootstrap's download progress line calls log(msg, end="", flush=True);
+    Console.print has no flush param, so log must swallow it without raising."""
+    with tui.console.capture() as cap:
+        tui.log("downloading", end="", flush=True)
+    assert "downloading" in cap.get()

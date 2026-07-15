@@ -14,18 +14,20 @@ console = Console()
 
 
 def log(*args, **kwargs) -> None:
-    """Drop-in default for bootstrap's `log=print` seams."""
+    """Drop-in default for bootstrap's `log=print` seams. rich.Console.print
+    has no `flush` kwarg (it auto-flushes), so absorb it — bootstrap's
+    progress line passes flush=True."""
+    kwargs.pop("flush", None)
     console.print(*args, **kwargs)
 
 
 def ask(prompt: str, input_fn=input) -> bool:
     """[Y/n] confirm, default yes — same contract as bootstrap.ask, styled.
 
-    The question is painted via the console; the actual read still goes
-    through input_fn so tests inject answers exactly as they do for
-    bootstrap.ask."""
+    The styled question is painted via the console; input_fn then reads with
+    an empty prompt so the text isn't echoed twice in a real terminal."""
     console.print(f"[bold]{prompt}[/bold] [dim][Y/n][/dim] ", end="")
-    return input_fn(prompt).strip().lower() in ("", "y", "yes")
+    return input_fn("").strip().lower() in ("", "y", "yes")
 
 
 _KIND_STYLE = {
