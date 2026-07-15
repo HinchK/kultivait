@@ -463,6 +463,30 @@ def test_run_drives_download_progress_bar(tmp_path):
     assert callable(seen["on_progress"])
 
 
+def test_run_confirm_fires_before_progress_bar_starts(tmp_path, monkeypatch):
+    """The download size-confirm must run before the live progress region
+    starts, so the [Y/n] prompt is never animated over by the bar."""
+    events = []
+
+    def confirm(prompt):
+        events.append("confirm")
+        return True
+
+    import kultivait.bootstrap as bs
+    real_start = bs.Progress.start
+
+    def spy_start(self, *a, **k):
+        events.append("bar_start")
+        return real_start(self, *a, **k)
+
+    monkeypatch.setattr(bs.Progress, "start", spy_start)
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    kw = _run_kwargs(tmp_path, confirm=confirm)
+    bs.run(plan, **kw)
+    assert "confirm" in events and "bar_start" in events
+    assert events.index("confirm") < events.index("bar_start")
+
+
 def test_run_aborts_when_install_declined(tmp_path):
     plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
     kw = _run_kwargs(tmp_path, which=lambda c: "/x/brew" if c == "brew" else None,

@@ -95,6 +95,9 @@ def _download(
     a failed download, not a partial success to silently promote to `dest`.
     Callers (download_models) treat any exception during the transfer itself
     as the same kind of recoverable failure.
+
+    When `on_progress` is given, it is called `(bytes_done, expected_bytes)`
+    per chunk instead of writing the text progress line through `log`.
     """
     if dest.exists() and dest.stat().st_size == expected_bytes:
         log(f"  {dest.name}: already present")
