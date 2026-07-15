@@ -242,3 +242,146 @@ def test_write_artifacts_regenerates_on_rerun(tmp_path):
     plan2 = full_plan(wired=39936)
     _, script = bootstrap.write_artifacts(plan2, home, tmp_path / "g")
     assert "iogpu.wired_limit_mb" in script.read_text()
+
+
+import httpx
+
+
+def test_offer_wired_limit_noop_when_plan_fits():
+    assert bootstrap.offer_wired_limit(full_plan(), confirm=_fail_confirm, run_cmd=_fail_cmd) is False
+
+
+def test_offer_wired_limit_declined_runs_nothing():
+    ok = bootstrap.offer_wired_limit(
+        full_plan(wired=39936), confirm=lambda p: False, run_cmd=_fail_cmd, log=_quiet
+    )
+    assert ok is False
+
+
+def test_offer_wired_limit_runs_sysctl_when_accepted():
+    calls = []
+
+    def run_cmd(cmd, **kw):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0)
+
+    ok = bootstrap.offer_wired_limit(
+        full_plan(wired=39936), confirm=lambda p: True, run_cmd=run_cmd, log=_quiet
+    )
+    assert ok is True
+    assert calls == [["sudo", "sysctl", "iogpu.wired_limit_mb=39936"]]
+
+
+def _script(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    script = home / "start-llamacpp.sh"
+    script.write_text("#!/bin/sh\n")
+    return script
+
+
+def test_start_server_polls_until_healthy(tmp_path):
+    script = _script(tmp_path)
+    popped, attempts = [], iter([httpx.ConnectError("boom"), httpx.ConnectError("boom"), None])
+
+    def http_get(url, timeout=None):
+        nxt = next(attempts)
+        if nxt:
+            raise nxt
+        return SimpleNamespace(status_code=200)
+
+    ok = bootstrap.start_server(
+        script,
+        popen=lambda cmd, **kw: popped.append(cmd),
+        http_get=http_get,
+        sleep=lambda s: None,
+        log=_quiet,
+    )
+    assert ok is True
+    assert popped == [["/bin/sh", str(script)]]
+
+
+def test_start_server_timeout_tails_log(tmp_path):
+    script = _script(tmp_path)
+    (script.parent / "llamacpp.log").write_text("line1\nfatal: metal init failed\n")
+    lines = []
+
+    def log(*args, **kwargs):
+        lines.append(" ".join(str(a) for a in args))
+
+    def http_get(url, timeout=None):
+        raise httpx.ConnectError("still down")
+
+    ok = bootstrap.start_server(
+        script, popen=lambda cmd, **kw: None, http_get=http_get, sleep=lambda s: None,
+        deadline_s=6, log=log,
+    )
+    assert ok is False
+    assert any("metal init failed" in line for line in lines)
+    assert any(str(script) in line for line in lines)
+
+
+def _run_kwargs(tmp_path, **over):
+    """run() with everything faked and every step accepted."""
+    body = b"0123456789"
+    kw = dict(
+        home=tmp_path / "home",
+        gguf_dir=tmp_path / "ggufs",
+        confirm=lambda p: True,
+        run_cmd=lambda cmd, **k: SimpleNamespace(returncode=0),
+        which=lambda c: f"/opt/homebrew/bin/{c}",
+        popen=lambda cmd, **k: None,
+        http_get=lambda url, timeout=None: SimpleNamespace(status_code=200),
+        sleep=lambda s: None,
+        client=FakeClient(body),
+        log=_quiet,
+    )
+    kw.update(over)
+    return kw
+
+
+def test_run_happy_path_creates_everything(tmp_path):
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    assert bootstrap.run(plan, **_run_kwargs(tmp_path)) == "ok"
+    assert (tmp_path / "ggufs" / "tiny.gguf").exists()
+    assert (tmp_path / "home" / "start-llamacpp.sh").exists()
+    assert (tmp_path / "home" / "llamacpp-presets.ini").exists()
+
+
+def test_run_aborts_when_install_declined(tmp_path):
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    kw = _run_kwargs(tmp_path, which=lambda c: "/x/brew" if c == "brew" else None,
+                     confirm=lambda p: False)
+    assert bootstrap.run(plan, **kw) == "aborted"
+    assert not (tmp_path / "ggufs").exists()
+
+
+def test_run_advisory_prints_manual_steps(tmp_path):
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    lines = []
+
+    def log(*args, **kwargs):
+        lines.append(" ".join(str(a) for a in args))
+
+    kw = _run_kwargs(tmp_path, which=lambda c: None, log=log)
+    assert bootstrap.run(plan, **kw) == "aborted"
+    assert any("brew install llama.cpp" in line for line in lines)
+    assert any("curl" in line and "tiny.gguf" in line for line in lines)
+
+
+def test_run_reports_server_failure(tmp_path):
+    def http_get(url, timeout=None):
+        raise httpx.ConnectError("down")
+
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    assert bootstrap.run(plan, **_run_kwargs(tmp_path, http_get=http_get)) == "server_failed"
+
+
+def test_run_skip_install_never_consults_which(tmp_path):
+    def which(c):
+        raise AssertionError("which must not be called with skip_install")
+
+    plan = make_plan(pick(), ModelPick("embed", "n/e", "embed.gguf", 10, 0))
+    kw = _run_kwargs(tmp_path, which=which)
+    kw["skip_install"] = True
+    assert bootstrap.run(plan, **kw) == "ok"

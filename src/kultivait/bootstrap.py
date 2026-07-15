@@ -146,3 +146,100 @@ def write_artifacts(
     )
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return preset, script
+
+
+HEALTH_URL = "http://localhost:8080/v1/models"
+
+
+def offer_wired_limit(plan: SetupPlan, confirm=ask, run_cmd=subprocess.run, log=print) -> bool:
+    """Only offered when plan() flagged the default GPU cap as too tight;
+    consent is explicit twice — our confirm, then sudo's password prompt."""
+    if not plan.wired_limit_mb:
+        return False
+    cmd = ["sudo", "sysctl", f"iogpu.wired_limit_mb={plan.wired_limit_mb}"]
+    log(
+        f"\nYour models want ~{plan.wired_limit_mb} MB of GPU memory but macOS caps it"
+        f" at ~{plan.default_gpu_cap_mb} MB by default.\n"
+        f"This raises the cap until reboot:  {' '.join(cmd)}"
+    )
+    if not confirm("Run it now (sudo will ask for your password)?"):
+        return False
+    return run_cmd(cmd).returncode == 0
+
+
+def _tail(path: Path, lines: int = 20) -> str:
+    if not path.exists():
+        return ""
+    return "\n".join(path.read_text().splitlines()[-lines:])
+
+
+def start_server(
+    script: Path,
+    popen=subprocess.Popen,
+    http_get=httpx.get,
+    sleep=time.sleep,
+    deadline_s: int = 60,
+    log=print,
+) -> bool:
+    """Launch detached, then poll /v1/models — first model load can be slow."""
+    log(f"starting llama-server ({script})...")
+    popen(["/bin/sh", str(script)], start_new_session=True)
+    waited = 0
+    while waited < deadline_s:
+        try:
+            if http_get(HEALTH_URL, timeout=2).status_code == 200:
+                log("llama-server is up")
+                return True
+        except httpx.HTTPError:
+            pass
+        sleep(2)
+        waited += 2
+    log(f"llama-server did not answer within {deadline_s}s; last log lines:")
+    log(_tail(script.parent / "llamacpp.log"))
+    log(f"start it manually and re-run init:  sh {script}")
+    return False
+
+
+def _print_manual_steps(plan: SetupPlan, gguf_dir: Path, log=print) -> None:
+    log("manual setup steps:")
+    log("  1. install llama.cpp:  brew install llama.cpp")
+    log(f"  2. download models into {gguf_dir}:")
+    for m in plan.models:
+        log(f"       curl -L -o '{gguf_dir / m.filename}' '{m.url()}'")
+    log("  3. re-run `kultivait init` — it picks up wherever you left off")
+
+
+def run(
+    plan: SetupPlan,
+    *,
+    home: "Path | None" = None,
+    gguf_dir: "Path | None" = None,
+    confirm=ask,
+    run_cmd=subprocess.run,
+    which=shutil.which,
+    popen=subprocess.Popen,
+    http_get=httpx.get,
+    sleep=time.sleep,
+    client=None,
+    log=print,
+    skip_install: bool = False,
+) -> str:
+    """Orchestrate the bootstrap: "ok" (server healthy), "aborted" (user
+    declined or advisory — continue init as if nothing happened), or
+    "server_failed" (don't survey; nothing is listening)."""
+    home = home or Path.home() / ".kultivait"
+    gguf_dir = gguf_dir or models_dir()
+    if not skip_install:
+        state = ensure_llamacpp(confirm=confirm, run_cmd=run_cmd, which=which)
+        if state == "advisory":
+            _print_manual_steps(plan, gguf_dir, log=log)
+            return "aborted"
+        if state in ("declined", "failed"):
+            return "aborted"
+    if not download_models(plan, gguf_dir, confirm=confirm, client=client, log=log):
+        return "aborted"
+    preset, script = write_artifacts(plan, home, gguf_dir)
+    log(f"wrote {preset}")
+    log(f"wrote {script}")
+    offer_wired_limit(plan, confirm=confirm, run_cmd=run_cmd, log=log)
+    return "ok" if start_server(script, popen=popen, http_get=http_get, sleep=sleep, log=log) else "server_failed"
