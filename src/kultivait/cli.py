@@ -36,6 +36,10 @@ from kultivait.ledger import Ledger
 from kultivait.router import Router
 from kultivait.seeds import ROLE_SEEDS
 
+import kultivait.bootstrap as bootstrap
+import kultivait.hardware as hardware
+from kultivait import tui
+
 OLLAMA_URL = RUNTIME_URLS["ollama"]
 LLAMACPP_URL = os.environ.get("KULTIVAIT_LLAMACPP_URL", RUNTIME_URLS["llamacpp"])
 KULTIVAIT_HOME = Path.home() / ".kultivait"
@@ -133,17 +137,19 @@ def _reachable(url: str) -> bool:
         return False
 
 
-def _detect_runtime() -> str:
-    """Prefer whichever local server is actually running; if both, ollama
-    (the eval-proven setup). KULTIVAIT_RUNTIME overrides."""
-    env = os.environ.get("KULTIVAIT_RUNTIME")
-    if env:
-        return env
+def _running_runtime() -> "str | None":
+    """Which local server actually answers right now, if any."""
     if _reachable(f"{OLLAMA_URL}/api/tags"):
         return "ollama"
     if _reachable(f"{LLAMACPP_URL}/v1/models"):
         return "llamacpp"
-    return "ollama"
+    return None
+
+
+def _detect_runtime() -> str:
+    """Prefer whichever local server is actually running; if both, ollama
+    (the eval-proven setup). KULTIVAIT_RUNTIME overrides."""
+    return os.environ.get("KULTIVAIT_RUNTIME") or _running_runtime() or "ollama"
 
 
 def _survey_local(runtime: str) -> "tuple[list[str], dict[str, int]]":
@@ -270,35 +276,57 @@ def build_gate(config: Config, template: "str | None" = None) -> Gate:
     return Gate(generate=_distill_generate_for(config), compost_dir=COMPOST_DIR, **kwargs)
 
 
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
+
+
+def _offer_setup() -> "str | None":
+    """Zero-to-local: nothing is running, so scan the hardware and offer to
+    bootstrap llama.cpp. Returns "llamacpp" once a healthy server is up."""
+    if os.environ.get("KULTIVAIT_RUNTIME"):
+        return None  # a forced runtime means the user already has a setup in mind
+    if not _stdin_is_tty():
+        return None
+    if shutil.which("ollama"):
+        print("ollama is installed but not running — start it (ollama serve), then re-run `kultivait init`.")
+        return None
+    setup_plan = hardware.plan(hardware.scan())
+    have_llamacpp = bool(shutil.which("llama-server"))
+    if not setup_plan.eligible:
+        print(f"local-model setup not offered: {setup_plan.reason}")
+        if have_llamacpp:
+            print("llama-server is installed — start it and re-run `kultivait init`.")
+        else:
+            print("cloud CLIs (claude/agy/gemini) still route; local tiers stay virtual.")
+        return None
+    print(f"\nthis machine can grow a local garden: {setup_plan.reason}")
+    if not bootstrap.ask("Set up llama.cpp with tuned defaults now?"):
+        return None
+    outcome = bootstrap.run(setup_plan, skip_install=have_llamacpp)
+    if outcome == "server_failed":
+        sys.exit(1)
+    return "llamacpp" if outcome == "ok" else None
+
+
 def cmd_init(args: argparse.Namespace) -> None:
-    runtime = _detect_runtime()
-    models, sizes = _survey_local(runtime)
+    running = _running_runtime()
+    if running is None and not args.no_setup:
+        running = _offer_setup()
+    runtime = os.environ.get("KULTIVAIT_RUNTIME") or running or "ollama"
+    try:
+        models, sizes = _survey_local(runtime)
+    except httpx.HTTPError:
+        models, sizes = [], {}  # bare machine: virtual-tier config, not a traceback
     clis = _available_clis()
     config = detect(models, clis, sizes=sizes, runtime=runtime)
 
-    print("kultivait surveyed your garden:\n")
-    print(f"  local runtime: {runtime} ({config.chat_base_url})")
-    print(f"  local models:  {len(models)} found")
-    print(f"  cloud CLIs:    {', '.join(clis) if clis else 'none — local-only mode'}\n")
-    for tier in config.tiers:
-        if tier.kind == "virtual":
-            served = "no backend — escalation briefs instead"
-        elif tier.kind == "cli":
-            served = f"{' '.join(tier.command)} (cloud, billed)"
-        else:
-            served = f"{tier.model} (local, free)"
-        print(f"  {tier.role:<10} -> {served}")
-    embed_missing = (
-        "MISSING — download a nomic-embed GGUF"
-        if runtime == "llamacpp"
-        else "MISSING — run: ollama pull nomic-embed-text"
+    tui.console.print(
+        tui.render_survey(runtime, config.chat_base_url, models, clis, config)
     )
-    print(f"\n  embedding: {config.embed_model or embed_missing}")
-    print(f"  distiller: {config.distill_model or 'MISSING — pull any 8B+ model'}")
 
     save_config(config, CONFIG_PATH)
-    print(f"\nwrote {CONFIG_PATH}")
-    print("edit it anytime; start the proxy with: kultivait serve")
+    tui.console.print(f"\n[green]✓[/green] wrote {CONFIG_PATH}")
+    tui.console.print("edit it anytime; start the proxy with: [bold]kultivait serve[/bold]")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -414,6 +442,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="survey this machine and write config")
+    init.add_argument(
+        "--no-setup", action="store_true", help="never offer to install or download anything"
+    )
     init.set_defaults(func=cmd_init)
 
     serve = sub.add_parser("serve", help="run the routing proxy")
