@@ -19,6 +19,7 @@ import httpx
 
 from kultivait.hardware import SetupPlan
 from kultivait import tui
+from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn
 
 BREW_INSTALL_HINT = (
     "Homebrew is required to install llama.cpp automatically.\n"
@@ -300,7 +301,6 @@ def run(
     client=None,
     log=tui.log,
     skip_install: bool = False,
-    on_progress=None,
 ) -> str:
     """Orchestrate the bootstrap: "ok" (server healthy), "aborted" (user
     declined or advisory — continue init as if nothing happened), or
@@ -314,9 +314,33 @@ def run(
             return "aborted"
         if state in ("declined", "failed"):
             return "aborted"
-    if not download_models(
-        plan, gguf_dir, confirm=confirm, client=client, on_progress=on_progress, log=log
-    ):
+    progress = Progress(
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        console=tui.console,
+    )
+    bar = progress.add_task("downloading models", total=None)
+    started = False
+
+    def on_progress(done: int, total: int) -> None:
+        # start the live region only once real bytes arrive — after
+        # download_models' size confirmation, so no input() prompt is ever
+        # animated over. Stopped in the finally before any later prompt.
+        nonlocal started
+        if not started:
+            progress.start()
+            started = True
+        progress.update(bar, completed=done, total=total)
+
+    try:
+        downloaded = download_models(
+            plan, gguf_dir, confirm=confirm, client=client, on_progress=on_progress, log=log
+        )
+    finally:
+        if started:
+            progress.stop()
+    if not downloaded:
         return "aborted"
     preset, script = write_artifacts(plan, home, gguf_dir)
     log(f"wrote {preset}")

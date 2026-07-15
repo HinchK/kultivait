@@ -302,22 +302,7 @@ def _offer_setup() -> "str | None":
     print(f"\nthis machine can grow a local garden: {setup_plan.reason}")
     if not bootstrap.ask("Set up llama.cpp with tuned defaults now?"):
         return None
-    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn
-
-    with Progress(
-        TextColumn("[bold]{task.description}"),
-        BarColumn(),
-        DownloadColumn(),
-        console=tui.console,
-    ) as progress:
-        bar = progress.add_task("downloading models", total=None)
-
-        def on_progress(done: int, total: int) -> None:
-            progress.update(bar, completed=done, total=total)
-
-        outcome = bootstrap.run(
-            setup_plan, skip_install=have_llamacpp, on_progress=on_progress
-        )
+    outcome = bootstrap.run(setup_plan, skip_install=have_llamacpp)
     if outcome == "server_failed":
         sys.exit(1)
     return "llamacpp" if outcome == "ok" else None
