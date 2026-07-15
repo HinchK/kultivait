@@ -282,6 +282,8 @@ def _stdin_is_tty() -> bool:
 def _offer_setup() -> "str | None":
     """Zero-to-local: nothing is running, so scan the hardware and offer to
     bootstrap llama.cpp. Returns "llamacpp" once a healthy server is up."""
+    if os.environ.get("KULTIVAIT_RUNTIME"):
+        return None  # a forced runtime means the user already has a setup in mind
     if not _stdin_is_tty():
         return None
     if shutil.which("ollama"):

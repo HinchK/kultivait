@@ -134,7 +134,10 @@ for the largest model at target ctx + 2GB margin. If budget >
 (ram_gb - 8) * 1024)`; otherwise `None`. The plan must always fit
 `(ram_gb - 8) * 1024` — if it doesn't, drop ctx one notch (32768 → 16384 →
 8192) until it fits; the table above already fits, this rule guards future
-edits.
+edits. Note the budget is a sizing heuristic, not a hard bound: it counts KV
+only for the largest model, but router-mode llama-server can hold multiple
+models resident with live KV caches, so peak memory can exceed the budget
+when both chat models are hot.
 
 **Server flags** (router mode, one server for chat + embedding):
 
@@ -213,7 +216,7 @@ explicitly offered.
 | No Homebrew | Advisory mode: print manual commands, continue to survey |
 | `brew install` fails | Show brew's output, abort bootstrap, continue to survey |
 | Download interrupted | `.part` file kept; resume on next `init` via Range request |
-| sudo declined / sysctl fails | Continue without bump (plan fits default cap by construction) |
+| sudo declined / sysctl fails | Continue without bump (the server may under-allocate GPU memory; the ctx step-down already bounded the plan to RAM − 8GB) |
 | Server health check times out | Tail the log, print manual-start hint, exit non-zero |
 | Non-TTY / `--no-setup` | No offers; today's behavior exactly |
 

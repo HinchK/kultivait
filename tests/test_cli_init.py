@@ -17,6 +17,7 @@ PROFILE = HardwareProfile("darwin", "Apple M3", True, 24.0)
 @pytest.fixture
 def offer_env(monkeypatch):
     """Baseline: interactive TTY, bare machine, eligible hardware."""
+    monkeypatch.delenv("KULTIVAIT_RUNTIME", raising=False)
     monkeypatch.setattr(cli, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(cli.shutil, "which", lambda c: None)
     monkeypatch.setattr(cli.hardware, "scan", lambda: PROFILE)
@@ -27,6 +28,12 @@ def offer_env(monkeypatch):
 
 def test_offer_setup_skipped_without_tty(offer_env):
     offer_env.setattr(cli, "_stdin_is_tty", lambda: False)
+    offer_env.setattr(cli.hardware, "scan", lambda: 1 / 0)  # must not be reached
+    assert cli._offer_setup() is None
+
+
+def test_offer_setup_skipped_when_runtime_forced(offer_env):
+    offer_env.setenv("KULTIVAIT_RUNTIME", "llamacpp")
     offer_env.setattr(cli.hardware, "scan", lambda: 1 / 0)  # must not be reached
     assert cli._offer_setup() is None
 

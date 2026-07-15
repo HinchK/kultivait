@@ -183,6 +183,10 @@ def write_artifacts(
     return preset, script
 
 
+# The bootstrap always targets llama-server's default port: it exists for
+# machines with no local setup, so KULTIVAIT_LLAMACPP_URL (an existing-setup
+# override honored by cli.py) is deliberately ignored here — a running custom
+# server would have been detected before the offer was ever made.
 HEALTH_URL = "http://localhost:8080/v1/models"
 
 
