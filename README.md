@@ -152,10 +152,14 @@ runtime installed, `kultivait init` offers to do the whole setup itself:
 install llama.cpp via Homebrew, download models sized to your RAM (plus the
 nomic-embed GGUF), write a tuned launch script
 (`~/.kultivait/start-llamacpp.sh`), and start the server — asking before
-every step that touches your machine. Re-running `init` is safe: finished
-steps are skipped and interrupted downloads resume. Opt out with
-`kultivait init --no-setup` (offers are also skipped when stdin is not a
-TTY).
+every step that touches your machine. Each GGUF is verified against a
+pinned upstream SHA256 (Hugging Face's LFS oid) before it's promoted from
+its `.part` file, so mutable `resolve/main` refs can't slip corrupt or
+swapped bytes past you — a mismatch is discarded rather than Range-resumed.
+Re-running `init` is safe: finished steps are skipped and size-checked
+downloads resume. Opt out with `kultivait init --no-setup`; the offer is
+also skipped when stdin is not a TTY or when `KULTIVAIT_RUNTIME` is set
+(a forced runtime means you already have a setup in mind).
 
 ### Using with llama.cpp instead of ollama
 

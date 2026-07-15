@@ -41,6 +41,12 @@ re-run anytime.
 No cloud CLIs? That is fine — local-only mode is a first-class citizen (see
 below).
 
+No local runtime at all? On an Apple Silicon Mac with ≥24GB of unified
+memory, `init` offers to bootstrap one for them: install llama.cpp via
+Homebrew, download RAM-sized models (SHA256-verified), write a tuned launch
+script, and start the server — asking before every step. Decline with
+`kultivait init --no-setup`.
+
 ## Step 3 — Serve
 
 ```bash
