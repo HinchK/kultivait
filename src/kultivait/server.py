@@ -1,13 +1,20 @@
 """OpenAI-compatible proxy: weigh locally, route deliberately, tally everything."""
 
+import atexit
 import json
+import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Callable
 
 import numpy as np
-from fastapi import FastAPI
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
+from posthog import Posthog
+
+load_dotenv()
 
 from kultivait.backends import Backend, Completion
 from kultivait.escalations import EscalationStore
@@ -48,7 +55,34 @@ def create_app(
     gate: Gate,
     escalations: EscalationStore,
 ) -> FastAPI:
-    app = FastAPI(title="kultivait")
+    project_token = os.getenv("POSTHOG_PROJECT_TOKEN")
+    posthog_client = (
+        Posthog(
+            project_token,
+            host=os.getenv("POSTHOG_HOST"),
+            enable_exception_autocapture=True,
+        )
+        if project_token
+        else None
+    )
+    if posthog_client:
+        atexit.register(posthog_client.shutdown)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        yield
+        if posthog_client:
+            posthog_client.shutdown()
+
+    app = FastAPI(title="kultivait", lifespan=lifespan)
+
+    def _capture(event: str, request: Request, properties: dict) -> None:
+        if posthog_client:
+            posthog_client.capture(
+                event,
+                distinct_id="kultivait-proxy",
+                properties={"$process_person_profile": False, **properties},
+            )
 
     def _record(tier: str, completion: Completion, **decision_meta) -> None:
         ledger.record(
@@ -100,7 +134,7 @@ def create_app(
         raise RuntimeError("no serving-capable backend configured")
 
     @app.post("/v1/chat/completions")
-    def chat_completions(body: dict):
+    def chat_completions(body: dict, request: Request):
         messages = _normalize(body.get("messages", []))
         tools = body.get("tools")
         decision = _classify(messages)
@@ -144,6 +178,17 @@ def create_app(
                 for item in backends[tier].stream(messages, tools=tools):
                     if isinstance(item, Completion):
                         _record(tier, item, **meta)
+                        _capture(
+                            "chat_completion_completed",
+                            request,
+                            {
+                                "tier": tier,
+                                "local": item.local,
+                                "streaming": True,
+                                "fallback_reason": fallback_reason,
+                                "has_tool_calls": bool(item.tool_calls),
+                            },
+                        )
                         if item.tool_calls:
                             yield chunk(
                                 {
@@ -164,6 +209,17 @@ def create_app(
 
         completion = backends[tier].complete(messages, tools=tools)
         _record(tier, completion, **meta)
+        _capture(
+            "chat_completion_completed",
+            request,
+            {
+                "tier": tier,
+                "local": completion.local,
+                "streaming": False,
+                "fallback_reason": fallback_reason,
+                "has_tool_calls": bool(completion.tool_calls),
+            },
+        )
         message: dict = {"role": "assistant", "content": completion.text or None}
         if completion.tool_calls:
             message["tool_calls"] = completion.tool_calls
@@ -188,7 +244,7 @@ def create_app(
         }
 
     @app.post("/v1/messages")
-    def anthropic_messages(body: dict):
+    def anthropic_messages(body: dict, request: Request):
         messages = _normalize(body.get("messages", []))
         system = body.get("system")
         if system:
@@ -225,6 +281,15 @@ def create_app(
                 for item in backends[decision.tier].stream(messages):
                     if isinstance(item, Completion):
                         _record(decision.tier, item, **meta)
+                        _capture(
+                            "message_completion_completed",
+                            request,
+                            {
+                                "tier": decision.tier,
+                                "local": item.local,
+                                "streaming": True,
+                            },
+                        )
                         yield event("content_block_stop", {"index": 0})
                         yield event(
                             "message_delta",
@@ -247,6 +312,15 @@ def create_app(
 
         completion = backends[decision.tier].complete(messages)
         _record(decision.tier, completion, **meta)
+        _capture(
+            "message_completion_completed",
+            request,
+            {
+                "tier": decision.tier,
+                "local": completion.local,
+                "streaming": False,
+            },
+        )
         return {
             "id": msg_id,
             "type": "message",
@@ -262,11 +336,21 @@ def create_app(
         }
 
     @app.post("/gate")
-    def gate_handoff(body: dict):
+    def gate_handoff(body: dict, request: Request):
         result = gate.distill(
             body["transcript"],
             from_phase=body.get("from_phase", "previous"),
             to_phase=body.get("to_phase", "next"),
+        )
+        _capture(
+            "handoff_brief_created",
+            request,
+            {
+                "from_phase": body.get("from_phase", "previous"),
+                "to_phase": body.get("to_phase", "next"),
+                "tokens_before": result.tokens_before,
+                "tokens_after": result.tokens_after,
+            },
         )
         return {
             "brief": result.brief,

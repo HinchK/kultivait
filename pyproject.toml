@@ -11,6 +11,8 @@ dependencies = [
     "fastapi>=0.139.0",
     "httpx>=0.28.1",
     "numpy>=2.5.0",
+    "posthog>=7.26.0",
+    "python-dotenv>=1.2.2",
     "rich>=13.0.0",
     "uvicorn>=0.49.0",
 ]
