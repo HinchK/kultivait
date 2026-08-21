@@ -13,3 +13,7 @@ wheels/
 # Locally-installed third-party skills (not project content)
 .agents/skills/using-superpowers/
 .claude/skills/using-superpowers
+.claude/skills/*
+.idea/*
+.vscode/*
+.env

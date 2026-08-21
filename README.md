@@ -32,19 +32,23 @@ curl -fsSL https://kultivait.ai/install.sh | sh
 or, by hand: `uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait`
 
 ```bash
-kultivait init      # surveys YOUR machine: models, CLIs, sizes — writes config
+kultivait init      # setup screen: survey, choose a garden, download, serve
 kultivait serve     # proxy on http://localhost:4114
 kultivait harvest   # watch the savings grow
 ```
 
-`init` detects whatever you have: your smallest capable model becomes the
-simple tier, your largest becomes the reasoning tier, `claude`/`agy`/`gemini`
-CLIs become cloud tiers if present. **No cloud CLIs? Local-only mode is a
+`init` opens an interactive setup screen on first run: a preparation
+checklist, then a chooser of gardens this machine can grow. It detects
+whatever you have — your smallest capable model becomes the simple tier,
+your largest becomes the reasoning tier, `claude`/`agy`/`gemini` CLIs
+become cloud tiers if present. **No cloud CLIs? Local-only mode is a
 first-class citizen**: cloud-worthy prompts are still recognized, served by
 your best local model, and archived — `kultivait escalations --brief` hands
 you a distilled, paste-ready brief to take to any frontier model yourself.
-Decisions live in `~/.kultivait/config.toml`; edit freely, re-run `init`
-anytime.
+Skipping the screen (Esc) writes the same virtual-tier config; re-run
+`kultivait init` anytime, or `kultivait init --setup` to reopen the screen
+on a completed setup. Decisions live in `~/.kultivait/config.toml`; edit
+freely, re-run `init` anytime.
 
 ## Commands
 
@@ -148,18 +152,39 @@ Routing knows its limits; hygiene makes the handoff cheap.
 ### Zero to local: `kultivait init` on a Mac
 
 On an Apple Silicon Mac with at least 24GB of unified memory and no local
-runtime installed, `kultivait init` offers to do the whole setup itself:
-install llama.cpp via Homebrew, download models sized to your RAM (plus the
-nomic-embed GGUF), write a tuned launch script
-(`~/.kultivait/start-llamacpp.sh`), and start the server — asking before
-every step that touches your machine. Each GGUF is verified against a
-pinned upstream SHA256 (Hugging Face's LFS oid) before it's promoted from
-its `.part` file, so mutable `resolve/main` refs can't slip corrupt or
-swapped bytes past you — a mismatch is discarded rather than Range-resumed.
-Re-running `init` is safe: finished steps are skipped and size-checked
-downloads resume. Opt out with `kultivait init --no-setup`; the offer is
-also skipped when stdin is not a TTY or when `KULTIVAIT_RUNTIME` is set
-(a forced runtime means you already have a setup in mind).
+runtime installed, the setup screen offers the whole bootstrap itself (the
+zero-to-local path is llama.cpp): a preparation checklist (hardware →
+runtime → survey → recommendations), then a garden chooser — the tuned
+bundle for your RAM, a reasoning-only variant, or models already on this
+machine. **Selecting a garden is the consent**: the detail panel shows
+exactly what will download (contents, sizes, RAM fit, why this garden)
+before Enter commits. The download carries rate/ETA and
+Esc-cancel-with-confirm (.part files stay resumable); a failed server
+start offers `r Retry` / `c Choose another`. The one extra confirm is
+sudo: raising the GPU memory cap asks again, in-screen, before sudo ever
+prompts for a password.
+
+**Ollama and llama.cpp take turns — never both up.** If ollama is
+installed but not serving, preparation starts it for you (`brew services
+start ollama`) and lists its models as offerings, each with a parameter
+analysis. Picking a llama.cpp garden stops ollama (and verifies the port
+went quiet) *before* llama-server launches; a "Switch to ollama" row does
+the reverse — llama-server stops first, ollama starts, and the chooser
+re-surveys in place. A runtime that refuses to stop aborts the pivot
+rather than risk both serving at once.
+
+Skipping (Esc) is a first-class outcome — it still writes a virtual-tier
+config plus an onboarding marker (`~/.kultivait/onboarding.json`), and
+`kultivait init` re-runs safely: finished steps are skipped and
+size-checked downloads resume. Opt out with `kultivait init --no-setup`;
+the screen is also skipped when stdin is not a TTY or when
+`KULTIVAIT_RUNTIME` is set (a forced runtime means you already have a
+setup in mind).
+
+Each GGUF is verified against a pinned upstream SHA256 (Hugging Face's
+LFS oid) before it's promoted from its `.part` file, so mutable
+`resolve/main` refs can't slip corrupt or swapped bytes past you — a
+mismatch is discarded rather than Range-resumed.
 
 ### Using with llama.cpp instead of ollama
 
