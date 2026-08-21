@@ -70,6 +70,13 @@ def _fake_screen(monkeypatch, exit, runtime=None, seen=None):
     monkeypatch.setattr(cli, "_run_setup_screen", fake)
 
 
+import re
+
+def strip_ansi(text: str) -> str:
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+
 def test_first_run_routes_to_screen_and_skip_writes_marker(monkeypatch, tmp_path, capsys):
     _routing_env(monkeypatch, tmp_path)
     _fake_screen(monkeypatch, "skipped")
@@ -78,7 +85,8 @@ def test_first_run_routes_to_screen_and_skip_writes_marker(monkeypatch, tmp_path
     assert '"completed": true' in marker
     assert '"skipped": true' in marker
     assert (tmp_path / "config.toml").exists()  # skip still writes a virtual-tier config
-    assert "re-run kultivait init anytime" in capsys.readouterr().out
+    out = strip_ansi(capsys.readouterr().out)
+    assert "re-run kultivait init anytime" in out
 
 
 def test_completed_outcome_writes_unskipped_marker(monkeypatch, tmp_path):

@@ -30,13 +30,21 @@ import kultivait.bootstrap as bootstrap
 from kultivait import runtimes, setup_state
 from kultivait.setup_state import DONE, FAILED, PENDING, RUNNING, SetupOutcome  # noqa: F401 (re-export: the façade the CLI talks to)
 
-WIDE = 105  # at this width the chooser puts the detail panel beside the list
+CARD_MAX = 110  # magnitude's card ceiling — comfortable, never wall-to-wall
+CARD_MIN = 50
+WIDE_CARD = 100  # at this card width the chooser puts detail beside the list
 STEP_GLYPH = {PENDING: "○", RUNNING: "⠋", DONE: "✓", FAILED: "!"}
 STEP_STYLE = {PENDING: "dim", RUNNING: "bold green", DONE: "green", FAILED: "bold red"}
-BAR_WIDTH = 30
 
 
-def _bar(done: int, total: int, width: int = BAR_WIDTH) -> str:
+def _card_width(width: int) -> int:
+    """Fixed card width: fills narrow terminals, caps at CARD_MAX on wide
+    ones. expand=False panels hugged their content and rendered comically
+    small on big terminals — the #1 complaint about the first cut."""
+    return max(CARD_MIN, min(width - 2, CARD_MAX))
+
+
+def _bar(done: int, total: int, width: int = 30) -> str:
     if not total:
         return "░" * width
     filled = min(width, round(width * done / total))
@@ -73,7 +81,7 @@ def visible_window(selected: int, n: int, max_rows: int = 4) -> "tuple[int, int]
     return (start, start + max_rows)
 
 
-def render_preparation(state) -> Panel:
+def render_preparation(state, width: int = 80) -> Panel:
     items = []
     for s in state.steps:
         line = f"{STEP_GLYPH[s.status]} {s.label}" + (f" · {s.detail}" if s.detail else "")
@@ -85,38 +93,49 @@ def render_preparation(state) -> Panel:
         Group(*items, Text(), hint),
         title="Preparing your garden",
         border_style="green",
-        expand=False,
+        width=_card_width(width),
+        padding=(0, 2),
     )
 
 
-def _row_line(i: int, row, selected: int) -> Text:
-    on = i == selected
-    parts = [("› " if on else "  ", "bold green" if on else "dim")]
-    parts.append((row.label, "bold" if on else ""))
-    if row.sub:
-        parts.append((f"  {row.sub}", "dim"))
-    return Text.assemble(*parts)
+def _rows_grid(lines) -> "Table":
+    """Marker+label left, meta right — aligned columns read like a list;
+    free-form Text lines drifted into a ragged blob."""
+    grid = Table.grid(expand=True)
+    grid.add_column(ratio=2)
+    grid.add_column(ratio=1, justify="right")
+    for label, sub in lines:
+        grid.add_row(label, sub)
+    return grid
 
 
-def _list_block(state) -> list:
-    lines = []
+def _list_block(state, card_w: int) -> list:
+    blocks = []
     win_start, win_stop = visible_window(state.selected, len(state.rows))
     sections = (
         (("bundle", "single"), "AVAILABLE TO DOWNLOAD"),
-        (("installed", "start"), "ON THIS COMPUTER"),
+        (("installed", "start", "switch"), "ON THIS COMPUTER"),
     )
     for kinds, header in sections:
         idx = [i for i, r in enumerate(state.rows) if r.kind in kinds]
         if not idx:
             continue
-        lines.append(Text(header, style="bold dim"))
+        lines = []
         for i in idx:
-            if win_start <= i < win_stop:
-                lines.append(_row_line(i, state.rows[i], state.selected))
-    return lines
+            if not win_start <= i < win_stop:
+                continue
+            on = i == state.selected
+            marker = "› " if on else "  "
+            label = Text.assemble(
+                (marker, "bold green" if on else "dim"),
+                (state.rows[i].label, "bold" if on else ""),
+            )
+            lines.append((label, Text(state.rows[i].sub, style="dim")))
+        blocks += [Text(header, style="bold dim"), _rows_grid(lines), Text()]
+    return blocks
 
 
-def _operation_block(state, samples) -> list:
+def _operation_block(state, samples, card_w: int) -> list:
     op = state.operation
     if op is None:
         if state.notice is not None:
@@ -124,9 +143,10 @@ def _operation_block(state, samples) -> list:
         return []
     if op.tag == "download":
         pct = 100 * op.done // op.total if op.total else 0
+        bar_w = max(30, card_w - 40)
         lines = [
             Text("Downloading"),
-            Text.assemble((_bar(op.done, op.total), "green"), (f"  {pct}%", "bold")),
+            Text.assemble((_bar(op.done, op.total, bar_w), "green"), (f"  {pct}%", "bold")),
         ]
         transfer = format_transfer(samples, op.total)
         if transfer:
@@ -144,6 +164,8 @@ def _operation_block(state, samples) -> list:
                 style="yellow",
             )
         ]
+    if op.tag == "switch":
+        return [Text("⠋ stopping llama-server · starting ollama…", style="bold green")]
     return [Text("⠋ Starting llama-server...", style="bold green")]
 
 
@@ -169,6 +191,8 @@ def _hint(state) -> Text:
         return Text("←/→ choose · Enter confirms", style="dim")
     if op.tag == "confirm_wired":
         return Text("y raise the cap · n skip it", style="dim")
+    if op.tag == "switch":
+        return Text("Switching runtimes…", style="dim")
     return Text("Loading model weights...", style="dim")
 
 
@@ -180,16 +204,17 @@ def _subtitle(state) -> str:
 
 
 def render_chooser(state, samples=(), width: int = 80) -> Panel:
-    left = _list_block(state)
+    card_w = _card_width(width)
+    left = _list_block(state, card_w)
     if not left:
         left = [Text("(nothing to set up on this machine)", style="dim")]
-    left += _operation_block(state, samples)
+    left += _operation_block(state, samples, card_w)
     detail = _detail_block(state)
 
-    if width >= WIDE and detail:
-        grid = Table.grid(padding=(0, 3))
-        grid.add_column()
-        grid.add_column()
+    if card_w >= WIDE_CARD and detail:
+        grid = Table.grid(expand=True, padding=(0, 3))
+        grid.add_column(ratio=3)
+        grid.add_column(ratio=2)
         grid.add_row(Group(*left), Group(*detail))
         body = grid
     else:
@@ -201,24 +226,26 @@ def render_chooser(state, samples=(), width: int = 80) -> Panel:
         Group(*parts, body, Text(), _hint(state)),
         title="Choose your garden",
         border_style="green",
-        expand=False,
+        width=card_w,
+        padding=(0, 2),
     )
 
 
-def render_closing() -> Panel:
+def render_closing(width: int = 80) -> Panel:
     return Panel(
         Text("⠋ writing config · surveying tiers"),
         title="Finishing onboarding",
         border_style="green",
-        expand=False,
+        width=_card_width(width),
+        padding=(0, 2),
     )
 
 
 def render(state, samples=(), width: int = 80):
     if state.phase == "preparation":
-        return render_preparation(state)
+        return render_preparation(state, width=width)
     if state.phase == "closing":
-        return render_closing()
+        return render_closing(width=width)
     return render_chooser(state, samples=samples, width=width)
 
 
@@ -477,6 +504,9 @@ def _sync(state, driver, spawn, post, stop: threading.Event, spawned: dict) -> N
     elif tag == "start" and spawned["tag"] != "start":
         spawn(lambda: driver.start_server(wired=state.wired_answer, post=post))
         spawned["tag"] = "start"
+    elif tag == "switch" and spawned["tag"] != "switch":
+        spawn(lambda: driver.switch_to_ollama(post=post))
+        spawned["tag"] = "switch"
     if op is None and spawned["tag"] is not None:
         if state.stop_download:
             stop.set()

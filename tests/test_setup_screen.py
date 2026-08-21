@@ -525,3 +525,76 @@ def test_real_driver_switch_refuses_when_llama_wont_stop(monkeypatch):
     assert "start_ollama" not in order  # never both up: ollama never launched
     assert posts == [("op_done", "switch", False,
                       "could not stop llama-server — refusing to start ollama alongside it")]
+
+
+# --- card sizing + the pivot, end to end --------------------------------------
+
+
+def test_cards_fill_the_terminal_up_to_110():
+    """The first cut hugged its content and rendered tiny on wide terminals;
+    cards now take a fixed comfortable width (magnitude caps at 110 too)."""
+    wide = _plain(render(_chooser(), width=120))
+    assert len(wide.splitlines()[0]) == 110  # capped, not wall-to-wall
+    mid = _plain(render(_chooser(), width=90))
+    assert len(mid.splitlines()[0]) == 88    # fills an ordinary terminal
+    prep = _plain(render(begin(first_run=True), width=120))
+    assert len(prep.splitlines()[0]) == 110
+
+
+def test_chooser_row_and_its_size_share_a_line():
+    out = _plain(render(_chooser(), width=120))
+    for line in out.splitlines():
+        if "› Tuned garden" in line:
+            assert "GB" in line  # the size meta rides the same row, not wrapped under
+            break
+    else:
+        raise AssertionError("selected row not found in render")
+
+
+def test_render_switch_operation():
+    from kultivait.setup_state import ChooserRow
+
+    prep = Preparation(
+        runtime="llamacpp", models=("qwen3-14b",), sizes={}, plan=PLAN, have_ollama=True
+    )
+    state = prep_done(
+        begin(first_run=True), prep, (ChooserRow("switch", "Switch to ollama"),)
+    )
+    state = handle_key(state, "enter")
+    out = _plain(render(state, width=120))
+    assert "stopping llama-server" in out
+
+
+class PivotDriver(FakeDriver):
+    """llama-server is serving; ollama is installed. The switch row pivots:
+    llama stops, ollama starts and is re-surveyed, then the user picks an
+    ollama model — never both runtimes up at once."""
+
+    def prepare(self, emit):
+        emit("hardware", "done", "Apple M3 · 48 GB")
+        emit("runtime", "done", "llamacpp")
+        return Preparation(
+            runtime="llamacpp", models=("qwen3-14b",), sizes={}, plan=PLAN,
+            have_llamacpp=True, have_brew=True, have_ollama=True, profile=PROFILE,
+        )
+
+    def switch_to_ollama(self, post):
+        self.calls.append(("switch",))
+        post(
+            (
+                "switch_done",
+                Preparation(
+                    runtime="ollama", models=("m1", "m2"), sizes={}, plan=PLAN,
+                    profile=PROFILE,
+                ),
+            )
+        )
+
+
+def test_run_setup_pivot_llama_to_ollama_end_to_end():
+    driver = PivotDriver()
+    # down x3 -> switch row; enter -> pivot; down x2 -> first ollama model; enter
+    outcome = _run(driver, ["down", "down", "down", "enter", "down", "down", "enter"])
+    assert outcome.exit == "completed"
+    assert outcome.runtime == "ollama"
+    assert driver.calls == [("switch",)]

@@ -150,13 +150,12 @@ def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
     rows = []
     plan = prep.plan
     if allow_downloads and plan is not None and getattr(plan, "eligible", False):
-        roles = " + ".join(sorted({m.role for m in plan.models if m.role != "embed"}))
         total_gb = sum(m.approx_bytes for m in plan.models) / 2**30
         rows.append(
             ChooserRow(
                 kind="bundle",
                 label="Tuned garden for this Mac",
-                sub=f"llama.cpp · {roles} + embed · {total_gb:.1f} GB",
+                sub=f"{total_gb:.1f} GB · {len(plan.models)} models",
                 detail=tuple(
                     f"{m.filename} ({m.role}, {m.approx_bytes / 2**30:.1f} GB)"
                     for m in plan.models
@@ -172,7 +171,7 @@ def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
                 ChooserRow(
                     kind="single",
                     label=f"{reasoning.filename} only",
-                    sub=f"llama.cpp · reasoning + embed · {gb:.1f} GB",
+                    sub=f"{gb:.1f} GB · {len(single)} models",
                     detail=tuple(
                         f"{m.filename} ({m.role}, {m.approx_bytes / 2**30:.1f} GB)"
                         for m in single
