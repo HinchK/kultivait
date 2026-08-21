@@ -28,7 +28,7 @@ from rich.text import Text
 
 import kultivait.bootstrap as bootstrap
 from kultivait import setup_state
-from kultivait.setup_state import DONE, FAILED, PENDING, RUNNING
+from kultivait.setup_state import DONE, FAILED, PENDING, RUNNING, SetupOutcome  # noqa: F401 (re-export: the façade the CLI talks to)
 
 WIDE = 105  # at this width the chooser puts the detail panel beside the list
 STEP_GLYPH = {PENDING: "○", RUNNING: "⠋", DONE: "✓", FAILED: "!"}

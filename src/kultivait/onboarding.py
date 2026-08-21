@@ -10,15 +10,21 @@ from pathlib import Path
 ONBOARDING_PATH = Path.home() / ".kultivait" / "onboarding.json"
 
 
-def is_complete(path: Path = ONBOARDING_PATH) -> bool:
+def _resolve(path: "Path | None") -> Path:
+    # resolved at call time (not as a def-time default) so tests can point
+    # the whole module at a tmp dir by patching ONBOARDING_PATH
+    return Path(path) if path is not None else ONBOARDING_PATH
+
+
+def is_complete(path: "Path | None" = None) -> bool:
     try:
-        return bool(json.loads(Path(path).read_text()).get("completed"))
+        return bool(json.loads(_resolve(path).read_text()).get("completed"))
     except (OSError, ValueError):
         return False
 
 
-def complete(skipped: bool = False, path: Path = ONBOARDING_PATH) -> None:
-    path = Path(path)
+def complete(skipped: bool = False, path: "Path | None" = None) -> None:
+    path = _resolve(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(

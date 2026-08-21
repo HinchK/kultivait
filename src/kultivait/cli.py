@@ -38,7 +38,7 @@ from kultivait.seeds import ROLE_SEEDS
 
 import kultivait.bootstrap as bootstrap
 import kultivait.hardware as hardware
-from kultivait import tui
+from kultivait import keys, onboarding, setup_screen, tui
 
 OLLAMA_URL = RUNTIME_URLS["ollama"]
 LLAMACPP_URL = os.environ.get("KULTIVAIT_LLAMACPP_URL", RUNTIME_URLS["llamacpp"])
@@ -280,53 +280,51 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-def _offer_setup() -> "str | None":
-    """Zero-to-local: nothing is running, so scan the hardware and offer to
-    bootstrap llama.cpp. Returns "llamacpp" once a healthy server is up."""
-    if os.environ.get("KULTIVAIT_RUNTIME"):
-        return None  # a forced runtime means the user already has a setup in mind
-    if not _stdin_is_tty():
-        return None
-    if shutil.which("ollama"):
-        print("ollama is installed but not running — start it (ollama serve), then re-run `kultivait init`.")
-        return None
-    setup_plan = hardware.plan(hardware.scan())
-    have_llamacpp = bool(shutil.which("llama-server"))
-    if not setup_plan.eligible:
-        print(f"local-model setup not offered: {setup_plan.reason}")
-        if have_llamacpp:
-            print("llama-server is installed — start it and re-run `kultivait init`.")
-        else:
-            print("cloud CLIs (claude/agy/gemini) still route; local tiers stay virtual.")
-        return None
-    print(f"\nthis machine can grow a local garden: {setup_plan.reason}")
-    if not bootstrap.ask("Set up llama.cpp with tuned defaults now?"):
-        return None
-    outcome = bootstrap.run(setup_plan, skip_install=have_llamacpp)
-    if outcome == "server_failed":
-        sys.exit(1)
-    return "llamacpp" if outcome == "ok" else None
+def _run_setup_screen(first_run: bool) -> "setup_screen.setup_state.SetupOutcome":
+    """The magnitude-parity setup screen: preparation checklist -> garden
+    chooser -> download -> serve. RealDriver is wired with this module's
+    probes; the screen owns every consent (Enter, Esc, the sudo card)."""
+    driver = setup_screen.RealDriver(
+        scan=hardware.scan,
+        plan=hardware.plan,
+        probe=_running_runtime,
+        survey=_survey_local,
+        clis=_available_clis,
+    )
+    with keys.KeyReader() as reader:
+        return setup_screen.run_setup(driver=driver, keys=reader, first_run=first_run)
 
 
-def cmd_init(args: argparse.Namespace) -> None:
-    running = _running_runtime()
-    if running is None and not args.no_setup:
-        running = _offer_setup()
-    runtime = os.environ.get("KULTIVAIT_RUNTIME") or running or "ollama"
+def _survey_and_save(runtime: str) -> None:
     try:
         models, sizes = _survey_local(runtime)
     except httpx.HTTPError:
         models, sizes = [], {}  # bare machine: virtual-tier config, not a traceback
     clis = _available_clis()
     config = detect(models, clis, sizes=sizes, runtime=runtime)
-
     tui.console.print(
         tui.render_survey(runtime, config.chat_base_url, models, clis, config)
     )
-
     save_config(config, CONFIG_PATH)
     tui.console.print(f"\n[green]✓[/green] wrote {CONFIG_PATH}")
     tui.console.print("edit it anytime; start the proxy with: [bold]kultivait serve[/bold]")
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    forced = os.environ.get("KULTIVAIT_RUNTIME")
+    first_run = not onboarding.is_complete()
+    if not args.no_setup and _stdin_is_tty() and (args.setup or first_run):
+        outcome = _run_setup_screen(first_run=first_run)
+        if outcome.exit != "closed":
+            _survey_and_save(outcome.runtime or forced or _detect_runtime())
+            if first_run:
+                onboarding.complete(skipped=outcome.exit == "skipped")
+                if outcome.exit == "skipped":
+                    tui.console.print(
+                        "re-run [bold]kultivait init[/bold] anytime to grow a local garden"
+                    )
+        return
+    _survey_and_save(forced or _detect_runtime())
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -444,6 +442,11 @@ def main() -> None:
     init = sub.add_parser("init", help="survey this machine and write config")
     init.add_argument(
         "--no-setup", action="store_true", help="never offer to install or download anything"
+    )
+    init.add_argument(
+        "--setup",
+        action="store_true",
+        help="reopen the setup screen even if onboarding is complete",
     )
     init.set_defaults(func=cmd_init)
 
