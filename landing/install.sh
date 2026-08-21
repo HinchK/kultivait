@@ -12,27 +12,15 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# 2. ollama (the local garden itself — we don't install it for you)
-if ! command -v ollama >/dev/null 2>&1; then
-  say ""
-  say "⚠ ollama not found. kultivait routes to local models via ollama."
-  say "  install it from https://ollama.com then re-run this script."
-  exit 1
-fi
-
-# 3. kultivait
+# 2. kultivait
 say "installing kultivait..."
 uv tool install --force --from git+https://github.com/Standard-Pentest/kultivaite kultivait
 
-# 4. an embedding model, if the garden lacks one (274 MB)
-if ! ollama list 2>/dev/null | grep -q "nomic-embed-text"; then
-  say "pulling nomic-embed-text (274 MB) — the local scale that weighs every prompt..."
-  ollama pull nomic-embed-text
-fi
-
-# 5. survey the machine and write config
+# 3. in-app setup: runtime choice, models, server, config — all from here.
+#    </dev/tty because `curl | sh` leaves stdin as the pipe; the setup
+#    screen needs the real terminal.
 say ""
-kultivait init
+kultivait init </dev/tty
 
 say ""
 say "planted. next:"
