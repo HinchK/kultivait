@@ -164,6 +164,15 @@ start offers `r Retry` / `c Choose another`. The one extra confirm is
 sudo: raising the GPU memory cap asks again, in-screen, before sudo ever
 prompts for a password.
 
+**Ollama and llama.cpp take turns — never both up.** If ollama is
+installed but not serving, preparation starts it for you (`brew services
+start ollama`) and lists its models as offerings, each with a parameter
+analysis. Picking a llama.cpp garden stops ollama (and verifies the port
+went quiet) *before* llama-server launches; a "Switch to ollama" row does
+the reverse — llama-server stops first, ollama starts, and the chooser
+re-surveys in place. A runtime that refuses to stop aborts the pivot
+rather than risk both serving at once.
+
 Skipping (Esc) is a first-class outcome — it still writes a virtual-tier
 config plus an onboarding marker (`~/.kultivait/onboarding.json`), and
 `kultivait init` re-runs safely: finished steps are skipped and
