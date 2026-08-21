@@ -1,0 +1,35 @@
+{
+  "case": "04-docs-lookup",
+  "prompt": "What values does the --effort flag accept in claude CLI 2.1.238?",
+  "latency_s": 3.69,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "docs_lookup",
+      "complexity": 2,
+      "signals": [
+        "specific software version (claude CLI 2.1.238)",
+        "specific flag (--effort)",
+        "request for accepted values"
+      ]
+    },
+    "rewrite": "What are the valid values for the --effort flag in the Claude Desktop application version 2.1.238?",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 1.0,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.0,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

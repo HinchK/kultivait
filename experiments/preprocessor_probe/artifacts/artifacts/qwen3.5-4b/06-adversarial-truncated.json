@@ -1,0 +1,51 @@
+{
+  "case": "06-adversarial-truncated",
+  "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+  "latency_s": 6.48,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 6,
+      "signals": [
+        "Find the bug",
+        "returns None sometimes",
+        "truncated code",
+        "incomplete list comprehension"
+      ]
+    },
+    "rewrite": "The provided function `resolve_tier` is incomplete and truncated. Specifically, the list comprehension `[t for t in tiers if t.kind == 'l'` appears to be cut off mid-condition (likely missing a closing quote or comparison operator) and references a variable `tiers` that may not match the input argument `tier`. Additionally, the logic for handling cases where `tools` is falsy or when `tier.kind` is not 'cli' is missing. Please provide the full source code of the function to identify the exact cause of the `None` return value.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.2,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.6,
+          "effort": "high"
+        },
+        {
+          "target": "codex",
+          "fit": 0.5,
+          "effort": "high"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.4,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

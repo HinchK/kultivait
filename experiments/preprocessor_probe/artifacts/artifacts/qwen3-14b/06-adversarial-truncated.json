@@ -1,0 +1,50 @@
+{
+  "case": "06-adversarial-truncated",
+  "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+  "latency_s": 12.6,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 5,
+      "signals": [
+        "function returns None sometimes",
+        "incomplete code snippet",
+        "conditional logic involving tier.kind and tools"
+      ]
+    },
+    "rewrite": "Identify the bug in the function `resolve_tier(tier, tools)` that causes it to return `None` in some cases. The function is partially provided, with the following code: `def resolve_tier(tier, tools): if tier.kind == 'cli' and tools: local = [t for t in tiers if t.kind == 'l` (truncated). Provide a complete analysis of the issue and how to fix it.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.6,
+      "targets": [
+        {
+          "target": "codex",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "claude",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.5,
+          "effort": "medium"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.4,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

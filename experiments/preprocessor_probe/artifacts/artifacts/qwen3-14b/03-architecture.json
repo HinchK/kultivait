@@ -1,0 +1,40 @@
+{
+  "case": "03-architecture",
+  "prompt": "Should the pending-tolls queue live inside the FastAPI server process or a separate worker? Compare against how escalations are archived today.",
+  "latency_s": 7.86,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 5,
+      "signals": [
+        "comparison of system components",
+        "architectural decision inquiry",
+        "current process reference"
+      ]
+    },
+    "rewrite": "Should the pending-tolls queue be hosted within the FastAPI server process or in a separate worker? Compare this to the current method used for archiving escalations.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.75,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.7,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}
