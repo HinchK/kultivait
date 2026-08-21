@@ -398,3 +398,130 @@ def test_run_setup_forced_runtime_hides_downloads(monkeypatch):
     outcome = _run(driver, ["esc"])
     assert outcome.exit == "skipped"
     assert driver.calls == []  # no download rows were offered to select
+
+
+# --- runtime pivots: exclusivity in the driver --------------------------------
+
+
+def _exclusive_env(monkeypatch, order, *, ollama_up=False, llama_up=False,
+                   stop_ollama="down", stop_llama="down", start_ollama="up"):
+    r = setup_screen.runtimes
+    monkeypatch.setattr(r, "ollama_up", lambda **k: ollama_up)
+    monkeypatch.setattr(r, "llama_up", lambda **k: llama_up)
+    monkeypatch.setattr(r, "stop_ollama", lambda **k: order.append("stop_ollama") or stop_ollama)
+    monkeypatch.setattr(r, "stop_llama", lambda **k: order.append("stop_llama") or stop_llama)
+    monkeypatch.setattr(r, "start_ollama", lambda **k: order.append("start_ollama") or start_ollama)
+
+
+def test_real_driver_prepare_starts_idle_ollama(monkeypatch):
+    state = {"up": False}
+    monkeypatch.setattr(
+        setup_screen.runtimes, "start_ollama",
+        lambda **k: state.__setitem__("up", True) or "up",
+    )
+
+    def probe():
+        return "ollama" if state["up"] else None
+
+    driver = _driver(
+        monkeypatch,
+        probe=probe,
+        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+        survey=(["llama3.1:8b"], {"llama3.1:8b": 4_900_000_000}),
+    )
+    events = []
+    prep = driver.prepare(lambda *ev: events.append(ev))
+    assert prep.runtime == "ollama"
+    assert ("runtime", "done", "ollama (started)") in events
+    assert prep.models == ("llama3.1:8b",)
+
+
+def test_real_driver_prepare_reports_ollama_that_wont_start(monkeypatch):
+    monkeypatch.setattr(setup_screen.runtimes, "start_ollama", lambda **k: "failed")
+    driver = _driver(
+        monkeypatch, probe=lambda: None,
+        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+    )
+    events = []
+    prep = driver.prepare(lambda *ev: events.append(ev))
+    assert ("runtime", "failed", "ollama installed but would not start") in events
+    assert prep.runtime is None
+
+
+def test_real_driver_start_stops_ollama_before_llama_starts(monkeypatch):
+    order = []
+    _exclusive_env(monkeypatch, order, ollama_up=True)
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "write_artifacts",
+        lambda plan, home, gguf: (home / "p", home / "s.sh"),
+    )
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "offer_wired_limit", lambda plan, confirm=None, **k: True
+    )
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "start_server",
+        lambda script, **k: order.append("start") or True,
+    )
+    driver = _driver(
+        monkeypatch,
+        which=lambda c: "/bin/llama-server" if c == "llama-server" else None,
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.start_server(wired=False, post=posts.append)
+    assert order == ["stop_ollama", "start"]  # verified down BEFORE llama starts
+    assert posts == [("op_done", "start", True, "")]
+
+
+def test_real_driver_start_refuses_when_ollama_wont_stop(monkeypatch):
+    order = []
+    _exclusive_env(monkeypatch, order, ollama_up=True, stop_ollama="failed")
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "start_server",
+        lambda script, **k: order.append("start") or True,
+    )
+    driver = _driver(
+        monkeypatch,
+        which=lambda c: "/bin/llama-server" if c == "llama-server" else None,
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.start_server(wired=False, post=posts.append)
+    assert "start" not in order  # llama never launched alongside ollama
+    assert posts[0][:3] == ("op_done", "start", False)
+    assert "ollama" in posts[0][3]
+
+
+def test_real_driver_switch_stops_llama_then_surveys_ollama(monkeypatch):
+    order = []
+    _exclusive_env(monkeypatch, order, llama_up=True)
+    driver = _driver(
+        monkeypatch,
+        runtime="llamacpp",  # llama is serving — prepare must not auto-start ollama
+        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+        survey=(["llama3.1:8b"], {"llama3.1:8b": 4_900_000_000}),
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.switch_to_ollama(post=posts.append)
+    assert order == ["stop_llama", "start_ollama"]  # llama verified down first
+    assert posts[0][0] == "switch_done"
+    prep = posts[0][1]
+    assert prep.runtime == "ollama"
+    assert prep.models == ("llama3.1:8b",)
+
+
+def test_real_driver_switch_refuses_when_llama_wont_stop(monkeypatch):
+    order = []
+    _exclusive_env(monkeypatch, order, llama_up=True, stop_llama="failed")
+    driver = _driver(
+        monkeypatch,
+        runtime="llamacpp",  # llama is serving — prepare must not auto-start ollama
+        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.switch_to_ollama(post=posts.append)
+    assert "start_ollama" not in order  # never both up: ollama never launched
+    assert posts == [("op_done", "switch", False,
+                      "could not stop llama-server — refusing to start ollama alongside it")]

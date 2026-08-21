@@ -27,7 +27,7 @@ from rich.table import Table
 from rich.text import Text
 
 import kultivait.bootstrap as bootstrap
-from kultivait import setup_state
+from kultivait import runtimes, setup_state
 from kultivait.setup_state import DONE, FAILED, PENDING, RUNNING, SetupOutcome  # noqa: F401 (re-export: the façade the CLI talks to)
 
 WIDE = 105  # at this width the chooser puts the detail panel beside the list
@@ -263,7 +263,23 @@ class RealDriver:
         emit("hardware", DONE, detail)
         emit("runtime", RUNNING)
         runtime = self._probe()
-        emit("runtime", DONE, runtime or "none running")
+        if runtime is None and self._which("ollama"):
+            # nothing is serving and ollama is installed: start it (brew
+            # services) so its models can be offered alongside the gardens
+            emit("runtime", RUNNING, "starting ollama…")
+            if (
+                runtimes.start_ollama(
+                    run_cmd=self._run_cmd, popen=self._popen,
+                    http_get=self._http_get, which=self._which,
+                )
+                == "up"
+            ):
+                runtime = "ollama"
+                emit("runtime", DONE, "ollama (started)")
+            else:
+                emit("runtime", FAILED, "ollama installed but would not start")
+        else:
+            emit("runtime", DONE, runtime or "none running")
         models, sizes = [], {}
         if runtime:
             emit("survey", RUNNING)
@@ -338,6 +354,32 @@ class RealDriver:
         )
 
     def start_server(self, wired: bool, post) -> None:
+        # exclusivity: ollama and llama.cpp are never up at the same time —
+        # the other runtime is verified DOWN before llama-server launches
+        if runtimes.ollama_up(http_get=self._http_get):
+            if (
+                runtimes.stop_ollama(
+                    run_cmd=self._run_cmd, http_get=self._http_get, which=self._which
+                )
+                != "down"
+            ):
+                post(
+                    (
+                        "op_done",
+                        "start",
+                        False,
+                        "could not stop ollama — both cannot run at once; "
+                        "try `brew services stop ollama` and retry",
+                    )
+                )
+                return
+        if runtimes.llama_up(http_get=self._http_get):
+            if (
+                runtimes.stop_llama(run_cmd=self._run_cmd, http_get=self._http_get)
+                != "down"
+            ):
+                post(("op_done", "start", False, "could not stop the running llama-server"))
+                return
         plan = self._prep.plan
         preset, script = bootstrap.write_artifacts(plan, self._home, bootstrap.models_dir())
         self._log(f"wrote {preset}")
@@ -352,6 +394,46 @@ class RealDriver:
         )
         reason = "" if ok else bootstrap._tail(self._home / "llamacpp.log")
         post(("op_done", "start", ok, reason))
+
+    def switch_to_ollama(self, post) -> None:
+        """The reverse pivot: llama-server is serving, the user chose ollama.
+        llama is verified down BEFORE ollama starts — never both up."""
+        if runtimes.llama_up(http_get=self._http_get):
+            if (
+                runtimes.stop_llama(run_cmd=self._run_cmd, http_get=self._http_get)
+                != "down"
+            ):
+                post(
+                    (
+                        "op_done",
+                        "switch",
+                        False,
+                        "could not stop llama-server — refusing to start ollama alongside it",
+                    )
+                )
+                return
+        if (
+            runtimes.start_ollama(
+                run_cmd=self._run_cmd, popen=self._popen,
+                http_get=self._http_get, which=self._which,
+            )
+            != "up"
+        ):
+            post(("op_done", "switch", False, "ollama would not start"))
+            return
+        models, sizes = [], {}
+        try:
+            models, sizes = self._survey("ollama")
+        except Exception:
+            pass  # the server answered /api/tags moments ago; an empty list still pivots
+        post(
+            (
+                "switch_done",
+                dataclasses.replace(
+                    self._prep, runtime="ollama", models=tuple(models), sizes=sizes
+                ),
+            )
+        )
 
 
 def _spawn_thread(fn) -> None:
