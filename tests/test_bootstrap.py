@@ -580,3 +580,25 @@ def test_download_models_passes_pick_checksums(tmp_path):
     )
     assert ok is True
     assert (tmp_path / "tiny.gguf").read_bytes() == body
+
+
+def test_download_models_stop_event_cancels_between_files(tmp_path):
+    """Esc-cancel from the setup screen stops between files, keeps .part
+    resume behavior, and never touches the network once stop is set."""
+    import threading
+
+    from kultivait.hardware import QWEN3_14B, QWEN3_4B, SetupPlan
+
+    plan = SetupPlan(eligible=True, reason="r", models=(QWEN3_4B, QWEN3_14B))
+    stop = threading.Event()
+    stop.set()
+
+    class Client:
+        def stream(self, *a, **k):
+            raise AssertionError("network must not be touched")
+
+    ok = bootstrap.download_models(
+        plan, tmp_path / "ggufs", confirm=lambda m: True, client=Client(),
+        on_progress=None, log=lambda *a, **k: None, stop=stop,
+    )
+    assert ok is False

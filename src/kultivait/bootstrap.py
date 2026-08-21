@@ -11,6 +11,7 @@ import os
 import shutil
 import stat
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -155,8 +156,11 @@ def download_models(
     client: "httpx.Client | None" = None,
     on_progress: "Optional[Callable[[int, int], None]]" = None,
     log=tui.log,
+    stop: "Optional[threading.Event]" = None,
 ) -> bool:
-    """Confirm once (sizes shown), then fetch whatever isn't already on disk."""
+    """Confirm once (sizes shown), then fetch whatever isn't already on disk.
+    `stop` (the setup screen's Esc-cancel) is honored between files: the
+    current .part stays resumable and no further fetch starts."""
     todo = [
         m
         for m in plan.models
@@ -174,6 +178,9 @@ def download_models(
     dest.mkdir(parents=True, exist_ok=True)
     client = client or httpx.Client(timeout=60)
     for m in todo:
+        if stop is not None and stop.is_set():
+            log("download cancelled — .part files kept for resume")
+            return False
         try:
             if not _download(
                 client, m.url(), dest / m.filename, m.approx_bytes,
