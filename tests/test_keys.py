@@ -65,3 +65,11 @@ def test_scripted_keys_yields_then_none():
     assert sk.poll(0) == "down"
     assert sk.poll(0) == "enter"
     assert sk.poll(0) is None
+
+
+def test_scripted_keys_wait_yields_one_none():
+    """The "wait" pseudo-key stands in for human reaction time: one empty
+    poll so pending async events can land before the next real key."""
+    sk = ScriptedKeys(["wait", "r"])
+    assert sk.poll(0) is None
+    assert sk.poll(0) == "r"

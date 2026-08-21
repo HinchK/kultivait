@@ -55,7 +55,9 @@ class KeyReader:
 
 
 class ScriptedKeys:
-    """Same shape as KeyReader; poll pops the next scripted key."""
+    """Same shape as KeyReader; poll pops the next scripted key. The
+    reserved pseudo-key "wait" yields one None poll — use it before a key
+    whose effect depends on an async operation's result event landing."""
 
     def __init__(self, events):
         self._events = deque(events)
@@ -67,4 +69,7 @@ class ScriptedKeys:
         return False
 
     def poll(self, timeout: float) -> "str | None":
+        if self._events and self._events[0] == "wait":
+            self._events.popleft()
+            return None
         return self._events.popleft() if self._events else None

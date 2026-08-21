@@ -170,3 +170,231 @@ def test_render_dispatches_on_phase():
     closing = handle_key(_chooser(), "esc")  # Esc out of the chooser -> closing
     assert closing.phase == "closing"
     assert "Finishing onboarding" in _plain(render(closing))
+
+
+# --- RealDriver over the hardware/bootstrap seams -----------------------------
+
+import threading
+from io import StringIO
+
+from rich.console import Console
+
+import kultivait.setup_screen as setup_screen
+from kultivait.hardware import HardwareProfile
+from kultivait.setup_state import Preparation
+
+
+PROFILE = HardwareProfile("darwin", "Apple M3", True, 48.0)
+
+
+def _driver(monkeypatch, which=None, **kw):
+    d = setup_screen.RealDriver(
+        scan=lambda: PROFILE,
+        plan=lambda p: kw.get("plan", PLAN),
+        probe=lambda: kw.get("runtime"),
+        survey=lambda r: kw.get("survey", ([], {})),
+        clis=lambda: kw.get("clis", []),
+        which=which or (lambda c: None),
+    )
+    return d
+
+
+def test_real_driver_prepare_emits_steps_and_survey(monkeypatch):
+    driver = _driver(
+        monkeypatch,
+        which=lambda c: "/bin/llama-server" if c == "llama-server" else "/bin/brew",
+        survey=(["qwen3:14b"], {"qwen3:14b": 9_000_000_000}),
+        runtime="ollama",
+        clis=["claude"],
+    )
+    events = []
+    prep = driver.prepare(lambda *ev: events.append(ev))
+    assert ("hardware", "done", "Apple M3 · 48 GB") in events
+    assert ("runtime", "done", "ollama") in events
+    assert ("survey", "done", "1 found") in events
+    assert prep.runtime == "ollama"
+    assert prep.models == ("qwen3:14b",)
+    assert prep.clis == ("claude",)
+    assert prep.have_llamacpp is True and prep.have_brew is True
+
+
+def test_real_driver_download_forwards_stop_and_throttles_progress(monkeypatch):
+    seen = {}
+
+    def fake_download_models(plan, dest, confirm=None, on_progress=None, log=None,
+                             stop=None, **k):
+        seen["plan"], seen["stop"], seen["confirm"] = plan, stop, confirm("x")
+        seen["on_progress"] = on_progress
+        on_progress(5, 10)
+        return False  # "interrupted" -> op_done False
+
+    monkeypatch.setattr(setup_screen.bootstrap, "download_models", fake_download_models)
+    driver = _driver(
+        monkeypatch,
+        which=lambda c: "/bin/llama-server" if c == "llama-server" else None,
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    stop = threading.Event()
+    driver.download(single=True, post=posts.append, stop=stop)
+    assert seen["stop"] is stop
+    assert seen["confirm"] is True  # screen is the consent layer: auto-yes
+    assert [m.role for m in seen["plan"].models] == ["reasoning", "embed"]  # single
+    assert posts == [
+        ("progress", 5, 10),
+        ("op_done", "download", False,
+         "download stopped — .part files kept; Enter retries with resume"),
+    ]
+    seen["on_progress"](5, 10)  # within the throttle window: swallowed
+    seen["on_progress"](6, 10)  # still within: swallowed
+    assert len(posts) == 2
+    seen["on_progress"](10, 10)  # completion always posts immediately
+    assert posts[-1] == ("progress", 10, 10)
+
+
+def test_real_driver_download_advisory_when_no_brew(monkeypatch):
+    called = []
+
+    def must_not_download(*a, **k):
+        called.append("download")
+        raise AssertionError("no install path, no download")
+
+    monkeypatch.setattr(setup_screen.bootstrap, "download_models", must_not_download)
+    driver = _driver(monkeypatch, which=lambda c: None)
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.download(single=False, post=posts.append, stop=threading.Event())
+    assert posts == [("op_done", "download", False,
+                      "llama.cpp install advisory — see manual steps above")]
+
+
+def test_real_driver_start_server_resolves_wired_answer(monkeypatch):
+    seen = {}
+
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "write_artifacts",
+        lambda plan, home, gguf: (home / "preset", home / "start.sh"),
+    )
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "offer_wired_limit",
+        lambda plan, confirm=None, **k: seen.setdefault("wired", confirm("raise?")),
+    )
+    monkeypatch.setattr(
+        setup_screen.bootstrap, "start_server",
+        lambda script, **k: seen.setdefault("started", str(script)) or True,
+    )
+    driver = _driver(monkeypatch, which=lambda c: "/bin/llama-server" if c == "llama-server" else None)
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.start_server(wired=False, post=posts.append)
+    assert seen["wired"] is False
+    assert seen["started"].endswith("start.sh")
+    assert posts == [("op_done", "start", True, "")]
+
+
+# --- run_setup: the loop, end-to-end with a fake driver and scripted keys -----
+
+
+class FakeDriver:
+    def __init__(self, plan=PLAN, runtime=None, fail_start=0):
+        self.plan, self.runtime, self.fail_start = plan, runtime, fail_start
+        self.calls = []
+        self.stop = None
+
+    def prepare(self, emit):
+        emit("hardware", "done", "Apple M3 · 48 GB")
+        emit("runtime", "done", self.runtime or "none running")
+        return Preparation(
+            runtime=self.runtime, plan=self.plan, have_llamacpp=True, have_brew=True,
+            profile=PROFILE,
+        )
+
+    def download(self, single, post, stop):
+        self.calls.append(("download", single))
+        self.stop = stop
+        post(("progress", 5, 10))
+        post(("op_done", "download", True, ""))
+
+    def start_server(self, wired, post):
+        self.calls.append(("start", wired))
+        if self.fail_start:
+            self.fail_start -= 1
+            post(("op_done", "start", False, "boom"))
+            return
+        post(("op_done", "start", True, ""))
+
+
+def _run(driver, keys, first_run=True):
+    console = Console(width=120, file=StringIO(), force_terminal=False)
+    from kultivait.keys import ScriptedKeys
+
+    return setup_screen.run_setup(
+        driver=driver, keys=ScriptedKeys(keys), first_run=first_run,
+        console=console, spawn=lambda fn: fn(), poll_s=0,
+    )
+
+
+def _run_threaded(driver, keys, first_run=True):
+    """Real threads + a blocking driver: for flows that only make sense
+    while an operation is genuinely in flight (Esc-cancel mid-download)."""
+    from kultivait.keys import ScriptedKeys
+
+    console = Console(width=120, file=StringIO(), force_terminal=False)
+    return setup_screen.run_setup(
+        driver=driver, keys=ScriptedKeys(keys), first_run=first_run,
+        console=console, poll_s=0.01,
+    )
+
+
+class CancelableDriver(FakeDriver):
+    def download(self, single, post, stop):
+        self.calls.append(("download", single))
+        self.stop = stop
+        post(("progress", 3, 10))
+        stop.wait(timeout=5)  # a real multi-GB fetch doesn't finish instantly
+        post(("op_done", "download", False, "cancelled"))
+
+
+def test_run_setup_happy_path_completes():
+    driver = FakeDriver()
+    outcome = _run(driver, ["enter"])
+    assert outcome.exit == "completed"
+    assert outcome.runtime == "llamacpp"
+    assert driver.calls == [("download", False), ("start", False)]
+
+
+def test_run_setup_skip_writes_nothing_but_reports_runtime():
+    driver = FakeDriver(runtime="ollama")
+    outcome = _run(driver, ["esc"])
+    assert outcome.exit == "skipped"
+    assert outcome.runtime == "ollama"
+    assert driver.calls == []
+
+
+def test_run_setup_re_run_esc_closes():
+    outcome = _run(FakeDriver(), ["esc"], first_run=False)
+    assert outcome.exit == "closed"
+
+
+def test_run_setup_cancel_confirmed_stops_the_download():
+    driver = CancelableDriver()
+    outcome = _run_threaded(driver, ["enter", "esc", "right", "enter", "esc"])
+    assert outcome.exit == "skipped"
+    assert driver.stop is not None and driver.stop.is_set()
+    assert driver.calls == [("download", False)]  # never started the server
+
+
+def test_run_setup_start_failure_then_retry_completes():
+    driver = FakeDriver(fail_start=1)
+    # "wait" lets the start-failure event land before "r" is polled
+    outcome = _run(driver, ["enter", "wait", "r"])
+    assert outcome.exit == "completed"
+    assert driver.calls == [("download", False), ("start", False), ("start", False)]
+
+
+def test_run_setup_forced_runtime_hides_downloads(monkeypatch):
+    monkeypatch.setenv("KULTIVAIT_RUNTIME", "ollama")
+    driver = FakeDriver()
+    outcome = _run(driver, ["esc"])
+    assert outcome.exit == "skipped"
+    assert driver.calls == []  # no download rows were offered to select
