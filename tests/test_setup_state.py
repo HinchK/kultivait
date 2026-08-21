@@ -275,3 +275,68 @@ def test_prep_done_event_builds_rows_itself():
     state = handle_event(state, ("prep_done", prep, False))
     assert state.phase == "chooser"
     assert [r.kind for r in state.rows] == ["installed"]
+
+
+# --- runtime pivots: ollama <-> llama.cpp, never both up ----------------------
+
+
+def test_analyze_model_labels_param_class():
+    from kultivait.setup_state import analyze_model
+
+    assert "≈8.0B" in analyze_model("llama3.1:8b")
+    assert "reasoning" in analyze_model("qwen3:14b")  # 14B is reasoning class
+    assert "below" in analyze_model("llama3.2:1b")    # under the 4B simple floor
+
+
+def test_build_rows_offers_downloads_even_with_ollama_serving():
+    """The pivot path: ollama is up with models, but the llama.cpp gardens
+    are still offered — picking one must stop ollama first."""
+    prep = Preparation(
+        runtime="ollama", models=("llama3.1:8b",),
+        sizes={"llama3.1:8b": 4_900_000_000}, plan=PLAN,
+    )
+    rows = build_rows(prep, allow_downloads=True)
+    kinds = [r.kind for r in rows]
+    assert kinds[:2] == ["bundle", "single"]
+    assert "installed" in kinds
+    assert len(rows) >= 3  # at least three offerings, analyzed
+    installed = rows[2]
+    assert "ollama" in installed.sub
+    assert "≈8.0B" in installed.detail[0]
+
+
+def test_build_rows_switch_row_when_llama_serves_and_ollama_installed():
+    prep = Preparation(
+        runtime="llamacpp", models=("qwen3-14b",), sizes={},
+        plan=PLAN, have_ollama=True,
+    )
+    rows = build_rows(prep, allow_downloads=True)
+    assert rows[-1].kind == "switch"
+    assert "ollama" in rows[-1].label.lower()
+    # a forced runtime means the user already chose — no pivot offered
+    assert build_rows(prep, allow_downloads=False)[-1].kind != "switch"
+
+
+def test_enter_switch_row_locks_into_switch():
+    state = handle_key(_chooser(rows=(ChooserRow("switch", "Switch to ollama"),)), "enter")
+    assert state.operation == Operation("switch")
+
+
+def test_switch_done_resurveys_in_place():
+    state = handle_key(_chooser(rows=(ChooserRow("switch", "Switch to ollama"),)), "enter")
+    fresh = Preparation(runtime="ollama", models=("m1", "m2"), sizes={}, plan=PLAN)
+    state = handle_event(state, ("switch_done", fresh))
+    assert state.phase == "chooser"
+    assert state.operation is None
+    assert state.prep is fresh
+    assert len(state.rows) >= 3  # gardens + both ollama models
+    assert state.selected == 0
+    assert state.started_llamacpp is False
+
+
+def test_switch_failure_notifies_and_retries():
+    state = handle_key(_chooser(rows=(ChooserRow("switch", "Switch to ollama"),)), "enter")
+    state = handle_event(state, ("op_done", "switch", False, "ollama would not start"))
+    assert state.retryable == "switch"
+    assert "ollama would not start" in state.notice.message
+    assert handle_key(state, "r").operation == Operation("switch")

@@ -90,11 +90,12 @@ class SetupState:
     selected: int = 0
     operation: "Operation | None" = None
     notice: "Notice | None" = None
-    retryable: "str | None" = None  # "start" after a failed server start
+    retryable: "str | None" = None  # "start" | "switch" after a failed op
     wired_answer: bool = False
     started_llamacpp: bool = False
     stop_download: bool = False  # screen sets the driver's Event when True
     outcome: "str | None" = None  # "completed" | "skipped" | "closed"
+    allow_downloads: bool = True  # remembered so switch_done can rebuild rows
 
 
 @dataclass(frozen=True)
@@ -122,27 +123,40 @@ def prep_done(state: SetupState, prep: Preparation, rows: tuple) -> SetupState:
     return replace(state, phase="chooser", prep=prep, rows=rows)
 
 
+def analyze_model(name: str, size_bytes: int = 0) -> str:
+    """One-line sizing note for a surveyed model, so every offering carries
+    its own analysis (name-based param estimate, disk size as the fallback)."""
+    from kultivait.config import _param_billions
+
+    b = _param_billions(name, size_bytes)
+    if b >= 13:
+        tier = "reasoning-tier class"
+    elif b >= 4:
+        tier = "simple + reasoning-capable"
+    elif b > 0:
+        tier = "light — below the 4B simple floor"
+    else:
+        return "param count unknown from name/size"
+    return f"≈{b:.1f}B params · {tier}"
+
+
 def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
-    """Chooser contents from a survey. Download rows only when nothing is
-    serving and the plan is eligible; a start row only when llama-server is
-    installed, idle, and downloads weren't offered (downloading implies
-    starting anyway)."""
+    """Chooser contents from a survey. Downloads are offered even when a
+    runtime is already serving — that's the pivot path (selecting a garden
+    stops the other runtime first; they are never both up). A switch row
+    appears only when llama-server is serving, ollama is installed, and no
+    runtime was forced."""
 
     rows = []
     plan = prep.plan
-    if (
-        allow_downloads
-        and plan is not None
-        and getattr(plan, "eligible", False)
-        and prep.runtime is None
-    ):
+    if allow_downloads and plan is not None and getattr(plan, "eligible", False):
         roles = " + ".join(sorted({m.role for m in plan.models if m.role != "embed"}))
         total_gb = sum(m.approx_bytes for m in plan.models) / 2**30
         rows.append(
             ChooserRow(
                 kind="bundle",
                 label="Tuned garden for this Mac",
-                sub=f"{roles} + embed · {total_gb:.1f} GB",
+                sub=f"llama.cpp · {roles} + embed · {total_gb:.1f} GB",
                 detail=tuple(
                     f"{m.filename} ({m.role}, {m.approx_bytes / 2**30:.1f} GB)"
                     for m in plan.models
@@ -158,7 +172,7 @@ def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
                 ChooserRow(
                     kind="single",
                     label=f"{reasoning.filename} only",
-                    sub=f"reasoning + embed · {gb:.1f} GB",
+                    sub=f"llama.cpp · reasoning + embed · {gb:.1f} GB",
                     detail=tuple(
                         f"{m.filename} ({m.role}, {m.approx_bytes / 2**30:.1f} GB)"
                         for m in single
@@ -172,12 +186,25 @@ def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
                 ChooserRow(
                     kind="installed",
                     label=m,
-                    sub=f"{prep.sizes.get(m, 0) / 2**30:.1f} GB",
-                    detail=(f"served by {prep.runtime}",),
+                    sub=f"{prep.runtime} · {prep.sizes.get(m, 0) / 2**30:.1f} GB",
+                    detail=(analyze_model(m, prep.sizes.get(m, 0)), f"served by {prep.runtime}"),
                 )
             )
     elif prep.have_llamacpp and not prep.have_ollama and not rows:
         rows.append(ChooserRow(kind="start", label="Start llama-server", sub="already installed"))
+    if (
+        prep.runtime == "llamacpp"
+        and prep.have_ollama
+        and allow_downloads
+    ):
+        rows.append(
+            ChooserRow(
+                kind="switch",
+                label="Switch to ollama",
+                sub="stops llama-server · lists its models",
+                why="ollama and llama.cpp take turns on this machine — never both up",
+            )
+        )
     return tuple(rows)
 
 
@@ -226,11 +253,11 @@ def handle_key(state: SetupState, key: str) -> SetupState:
                 )
             if row.kind == "installed":
                 return _close(state, "completed")
-            if row.kind == "start":
-                return replace(state, operation=Operation("start"), notice=None, retryable=None)
-        if key == "r" and state.retryable == "start":
-            return replace(state, operation=Operation("start"), notice=None, retryable=None)
-        if key == "c" and state.retryable == "start":
+            if row.kind in ("start", "switch"):
+                return replace(state, operation=Operation(row.kind), notice=None, retryable=None)
+        if key == "r" and state.retryable in ("start", "switch"):
+            return replace(state, operation=Operation(state.retryable), notice=None, retryable=None)
+        if key == "c" and state.retryable in ("start", "switch"):
             return replace(state, retryable=None, notice=None)
         return state
 
@@ -274,7 +301,24 @@ def handle_event(state: SetupState, event: tuple) -> SetupState:
         return prep_event(state, *event[1:])
     if tag == "prep_done":
         prep, allow_downloads = event[1], event[2]
-        return prep_done(state, prep, build_rows(prep, allow_downloads))
+        return replace(
+            state, phase="chooser", prep=prep, rows=build_rows(prep, allow_downloads),
+            allow_downloads=allow_downloads,
+        )
+    if tag == "switch_done":
+        # the pivot completed: fresh survey, chooser rebuilt in place
+        prep = event[1]
+        return replace(
+            state,
+            phase="chooser",
+            prep=prep,
+            rows=build_rows(prep, state.allow_downloads),
+            selected=0,
+            operation=None,
+            notice=None,
+            retryable=None,
+            started_llamacpp=False,
+        )
     if tag == "prep_failed":
         reason = event[1]
         state = prep_event(state, "recommendations", FAILED, reason)
@@ -303,6 +347,13 @@ def handle_event(state: SetupState, event: tuple) -> SetupState:
                 state,
                 operation=None,
                 retryable="start",
+                notice=Notice(f"{reason}\nr Retry · c Choose another"),
+            )
+        if which == "switch" and not ok:
+            return replace(
+                state,
+                operation=None,
+                retryable="switch",
                 notice=Notice(f"{reason}\nr Retry · c Choose another"),
             )
     return state
