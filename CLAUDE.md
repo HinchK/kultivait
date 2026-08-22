@@ -39,3 +39,17 @@ Request flow through `src/kultivait/`, in call order:
 - Runtime auto-detection prefers ollama over llama.cpp when both are reachable (`cli.py:_detect_runtime`) — force llama.cpp with `KULTIVAIT_RUNTIME=llamacpp`.
 - Model *tiers* are named by role capability, not hardcoded to specific model names — `capability_order()` is derived from whatever `detect()` found on the current machine, so don't assume `llama3.1:8b`/`qwen3:14b` are literal constants anywhere outside tests/docs.
 - Ethos ordering when making product/behavior tradeoffs, per README/HANDOFF: **reduce → right-size → localize** — prefer not sending a prompt at all, then the cheapest tier that can carry it, then local over cloud.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live on GitHub Issues at Standard-Pentest/kultivait, driven by the `gh` CLI from inside the clone (this clone's `origin` is a fork with issues disabled). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage labels are kept as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root, created lazily by `/domain-modeling`. See `docs/agents/domain.md`.
