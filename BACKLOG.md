@@ -89,8 +89,16 @@ live `ollama` / `llama-server`: `serve`, `route`, `init` (real download),
 ## 2. Findings (root causes, not symptoms)
 
 ### F1 — The suite is ungated; it has been red since Aug 21
-There is **no `.github/workflows/` and no `.pre-commit-config.yaml`.** Nothing
-runs `pytest` on commit or push. The single failing test
+> **Rev. 2 correction:** this finding was **wrong about the gate**.
+> `.github/workflows/ci.yml` *does* exist (committed `91d4b85`) and runs
+> `uv sync` + `pytest` on push/PR to `main`. The real defect was a
+> **non-hermetic test** that is red only on a machine with a live ollama and
+> green on a clean CI runner — so the gate ran green while the dev's machine
+> showed red. Fixed in B1. There is still **no `.pre-commit-config.yaml`**
+> (optional). The paragraph below is preserved for the record but superseded.
+
+~~There is **no `.github/workflows/` and no `.pre-commit-config.yaml`.** Nothing
+runs `pytest` on commit or push.~~ The single failing test
 (`test_cli_init.py::test_first_run_routes_to_screen_and_skip_writes_marker`)
 went red at commit `d8db653` (init routed through the setup screen) and no gate
 caught it. "One broken test" is really "**the suite is ungated**."
@@ -130,20 +138,26 @@ Documented and intentional, but a real ceiling for Anthropic-SDK clients.
 
 ## 3. Backlog (prioritized)
 
-### P0 — Stop the bleeding (small, high-leverage)
-- [ ] **B1. Fix the red test.** Update
-  `test_real_driver_start_server_resolves_wired_answer` to the new state-machine
-  shape (wired confirm is now a `confirm_wired` operation, no longer inside
-  `start_server`). Keep the ANSI-strip helper idea from Rev. 1 as the general
-  hardening for rich-rendered assertions. → suite green.
-- [ ] **B1.5. Gate telemetry in tests (NEW, F5).** Make the PostHog client a
-  no-op under pytest (env check / conftest autouse fixture), so unit runs make
-  zero outbound calls. **Blocks B2** — otherwise CI is slow, flaky, and
-  telemetry-emitting on every PR.
-- [ ] **B2. Gate the suite.** Add a minimal `.github/workflows/ci.yml` running
-  `uv sync` + `uv run pytest` on push/PR. Optionally a pre-commit hook. This is
-  what prevents F1 from recurring. *(reduce: cheap, permanent — but only after
-  B1.5.)*
+### P0 — Stop the bleeding — DONE (rev. 2)
+- [x] **B1. Fix the red test. ✅** Root cause was sharper than "stale test":
+  `test_real_driver_start_server_resolves_wired_answer` was **non-hermetic** —
+  it never stubbed the runtime probes, so `start_server`'s exclusivity check
+  made a *real* localhost call, found the dev machine's live ollama up, and
+  early-returned before `offer_wired_limit` (→ `KeyError: 'wired'`). Red only
+  when ollama is running; green on a clean CI runner. Fixed by calling the
+  sibling helper `_exclusive_env(monkeypatch, [])` (tests/test_setup_screen.py).
+  Now deterministic everywhere.
+- [x] **B1.5. Gate telemetry in tests (F5). ✅** Added `tests/conftest.py`
+  (session-scoped autouse fixture) that strips `POSTHOG_PROJECT_TOKEN` /
+  `POSTHOG_HOST` after collection, so `build_app` builds no client and the suite
+  makes zero outbound calls. **Side effect: local suite went 21.3s → 0.3s** —
+  telemetry was ~99% of runtime. (`.env` is gitignored and CI carries no token,
+  so this was a local-only leak; the fix is still correct defense-in-depth.)
+- [x] **B2. Gate the suite. ✅ (already existed)** F1 was **wrong** —
+  `.github/workflows/ci.yml` was committed at `91d4b85` (uv sync + pytest on
+  push/PR to main). It never caught B1 because the test was non-hermetic (green
+  on a runner with no ollama). B1's fix is what makes the existing gate
+  *meaningful*: CI-green now genuinely implies suite-green. **Suite: 214/214.**
 
 ### P1 — Deliver the core promise (prove savings)
 - [ ] **B3. Build `experiments/run_experiment.py`** — the harness from the
