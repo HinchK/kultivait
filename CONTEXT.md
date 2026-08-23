@@ -27,3 +27,11 @@ _Avoid_: gate, filter, classifier (that's the embedding router)
 **Escalation**:
 An archived, cloud-worthy prompt that was served locally anyway, distillable into a paste-ready brief. Predates the trolltoll; unrelated to it.
 _Avoid_: trolltoll (they are different mechanisms)
+
+**Re-fit**:
+The per-boundary re-weighing of model + effort for the next sub-task in a conversation fingerprint.
+_Avoid_: re-route, re-classify (that's the embedding router's output)
+
+**Sub-task candidates**:
+The decomposition a preprocessor emits for compound or tool-bearing prompts, returned in-band as structured metadata for the client's agent loop.
+_Avoid_: plan, task list
