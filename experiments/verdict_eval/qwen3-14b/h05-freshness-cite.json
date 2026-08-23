@@ -1,0 +1,75 @@
+{
+  "slug": "h05-freshness-cite",
+  "label": "frontier",
+  "label_rationale": "External documentation verification requiring fresh citations on recent version changes",
+  "prompt": "Does ollama 0.7 still treat piped stdin prompts the same way current docs describe, or has that changed this year? Cite current docs.",
+  "latency_s": 18.55,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.8,
+  "derived_verdict": "contested",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.8,
+    "task_type": "docs_lookup",
+    "complexity": 5
+  },
+  "targets": [
+    {
+      "target": "codex",
+      "fit": 0.6,
+      "effort": "medium"
+    },
+    {
+      "target": "agy",
+      "fit": 0.7,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "medium"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "docs_lookup",
+      "complexity": 5,
+      "signals": [
+        "ollama",
+        "0.7",
+        "piped stdin prompts",
+        "current docs",
+        "changed this year"
+      ]
+    },
+    "rewrite": "Has the behavior of ollama 0.7 regarding piped stdin prompts changed compared to what is described in the current documentation? Provide a citation from the current documentation.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.8,
+      "targets": [
+        {
+          "target": "codex",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

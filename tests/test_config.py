@@ -155,3 +155,46 @@ def test_detect_ignores_embedding_models_for_generation():
     roles = {t.role: t for t in config.tiers}
     assert roles["simple"].model == "llama3.1:8b"
     assert config.embed_model == "bge-m3:latest"
+
+
+def test_detect_recognizes_codex_as_architect_when_claude_absent():
+    config = detect(
+        ollama_models=["llama3.1:8b", "nomic-embed-text:latest"],
+        available_clis=["codex"],
+    )
+    roles = {t.role: t for t in config.tiers}
+    assert roles["architect"].name == "codex"
+    assert roles["architect"].kind == "cli"
+    assert roles["architect"].command == ["codex"]
+    assert roles["architect"].price_in == 1.25
+    assert roles["architect"].price_out == 10.0
+
+
+def test_detect_recognizes_opencode_as_architect_when_claude_absent():
+    config = detect(
+        ollama_models=["llama3.1:8b", "nomic-embed-text:latest"],
+        available_clis=["opencode"],
+    )
+    roles = {t.role: t for t in config.tiers}
+    assert roles["architect"].name == "opencode"
+    assert roles["architect"].kind == "cli"
+    assert roles["architect"].command == ["opencode"]
+    assert roles["architect"].price_in == 3.0
+    assert roles["architect"].price_out == 15.0
+
+
+def test_detect_first_seen_cli_wins_per_role():
+    config_claude_first = detect(
+        ollama_models=["llama3.1:8b", "nomic-embed-text:latest"],
+        available_clis=["claude", "codex", "opencode"],
+    )
+    roles1 = {t.role: t for t in config_claude_first.tiers}
+    assert roles1["architect"].name == "claude"
+
+    config_codex_first = detect(
+        ollama_models=["llama3.1:8b", "nomic-embed-text:latest"],
+        available_clis=["codex", "claude"],
+    )
+    roles2 = {t.role: t for t in config_codex_first.tiers}
+    assert roles2["architect"].name == "codex"
+

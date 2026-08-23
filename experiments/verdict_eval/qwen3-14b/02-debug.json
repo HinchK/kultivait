@@ -1,0 +1,74 @@
+{
+  "slug": "02-debug",
+  "label": "local",
+  "label_rationale": "In-repo diagnostic on known codebase timeout parameter",
+  "prompt": "Why does kultivait route hang forever when ollama is slow to answer? Where is that timeout set?",
+  "latency_s": 8.89,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": true,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.85,
+    "task_type": "debugging",
+    "complexity": 6
+  },
+  "targets": [
+    {
+      "target": "agy",
+      "fit": 0.9,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.7,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.6,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 6,
+      "signals": [
+        "timeout",
+        "ollama",
+        "kultivait",
+        "hang"
+      ]
+    },
+    "rewrite": "Why does kultivait route hang indefinitely when ollama is slow to respond? Where is the timeout value for this behavior configured?",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.85,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.9,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.6,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "slug": "h05-freshness-cite",
+  "label": "frontier",
+  "label_rationale": "External documentation verification requiring fresh citations on recent version changes",
+  "prompt": "Does ollama 0.7 still treat piped stdin prompts the same way current docs describe, or has that changed this year? Cite current docs.",
+  "latency_s": 6.2,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "docs_lookup",
+    "complexity": 4
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.85,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.9,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "docs_lookup",
+      "complexity": 4,
+      "signals": [
+        "version specific query (0.7)",
+        "behavioral change verification",
+        "citation requirement"
+      ]
+    },
+    "rewrite": "Verify whether Ollama version 0.7 maintains the documented behavior for piped stdin prompts compared to the current documentation. Provide a direct comparison of the behavior and cite the specific sections in the official Ollama documentation that confirm or contradict this behavior.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}

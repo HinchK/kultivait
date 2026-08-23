@@ -122,3 +122,20 @@ def test_ollama_tool_calls_convert_to_openai_format():
     assert call["function"]["name"] == "bash"
     assert call["function"]["arguments"] == '{"cmd": "ls"}'  # JSON string
     assert call["id"].startswith("call_")
+
+
+def test_backends_have_local_attribute():
+    from kultivait.backends import CLIBackend, LlamaCppBackend, OllamaBackend
+
+    ollama = OllamaBackend("qwen3:14b")
+    assert ollama.local is True
+    assert OllamaBackend.local is True
+
+    llamacpp = LlamaCppBackend("model.gguf")
+    assert llamacpp.local is True
+    assert LlamaCppBackend.local is True
+
+    cli = CLIBackend(["claude"], price_in=3.0, price_out=15.0)
+    assert cli.local is False
+    assert CLIBackend.local is False
+

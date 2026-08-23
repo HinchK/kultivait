@@ -1,13 +1,15 @@
 """OpenAI-compatible proxy: weigh locally, route deliberately, tally everything."""
 
 import atexit
+import hashlib
 import json
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Callable
+from typing import Any, Callable
 
+import httpx
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -17,9 +19,17 @@ from posthog import Posthog
 load_dotenv()
 
 from kultivait.backends import Backend, Completion
+from kultivait.effort import resolve_effort
 from kultivait.escalations import EscalationStore
 from kultivait.gates import Gate
 from kultivait.ledger import Ledger
+from kultivait.preprocessor import (
+    MARK_FAIL,
+    MARK_OK,
+    MARK_SKIPPED,
+    MARK_TIMEOUT,
+    run as run_preprocessor,
+)
 from kultivait.router import Decision, Router
 
 
@@ -47,6 +57,70 @@ def _normalize(messages: list[dict]) -> list[dict]:
     return out
 
 
+def _conversation_fingerprint(messages: list[dict]) -> str:
+    """Hash of system prompt + first user message to group requests in a conversation."""
+    system_text = ""
+    first_user_text = ""
+    for m in messages:
+        role = m.get("role")
+        if role == "system" and not system_text:
+            system_text = _text_of(m.get("content", ""))
+        elif role == "user" and not first_user_text:
+            first_user_text = _text_of(m.get("content", ""))
+    raw = f"{system_text}\n---\n{first_user_text}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _apply_rewrite(messages: list[dict], rewrite: str) -> list[dict]:
+    """Replace the last user message content with the rewritten prompt."""
+    last_user_idx = None
+    for i, m in enumerate(messages):
+        if m.get("role") == "user":
+            last_user_idx = i
+    out = []
+    for i, m in enumerate(messages):
+        if i == last_user_idx:
+            out.append({**m, "content": rewrite})
+        else:
+            out.append(dict(m))
+    return out
+
+
+def _default_preprocess_generate_for(
+    chat_base_url: str = "http://localhost:11434",
+    runtime: str = "ollama",
+    model: str | None = None,
+    num_ctx: int = 32768,
+):
+    import re
+
+    def generate(target_model: str, prompt: str) -> tuple[str, float]:
+        actual_model = target_model or model or "qwen3.5:4b"
+        messages = [{"role": "user", "content": prompt}]
+        t0 = time.monotonic()
+        if runtime == "llamacpp":
+            payload = {"model": actual_model, "messages": messages, "stream": False}
+            r = httpx.post(f"{chat_base_url}/v1/chat/completions", json=payload, timeout=600)
+            r.raise_for_status()
+            text = r.json()["choices"][0]["message"]["content"] or ""
+        else:
+            payload = {
+                "model": actual_model,
+                "messages": messages,
+                "stream": False,
+                "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": 700},
+            }
+            if actual_model.startswith("qwen3"):
+                payload["think"] = False
+            r = httpx.post(f"{chat_base_url}/api/chat", json=payload, timeout=600)
+            r.raise_for_status()
+            text = r.json()["message"]["content"]
+        clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        return clean_text, time.monotonic() - t0
+
+    return generate
+
+
 def create_app(
     router: Router,
     embed: Callable[[str], np.ndarray],
@@ -54,7 +128,13 @@ def create_app(
     ledger: Ledger,
     gate: Gate,
     escalations: EscalationStore,
+    preprocess_generate: Callable[[str, str], Any] | None = None,
+    preprocess_timeout_s: float = 15.0,
+    effort_overrides: dict | None = None,
 ) -> FastAPI:
+    if preprocess_generate is None:
+        preprocess_generate = _default_preprocess_generate_for()
+
     project_token = os.getenv("POSTHOG_PROJECT_TOKEN")
     posthog_client = (
         Posthog(
@@ -138,7 +218,67 @@ def create_app(
         messages = _normalize(body.get("messages", []))
         tools = body.get("tools")
         decision = _classify(messages)
-        tier, fallback_reason = _resolve_tier(decision.tier, tools)
+        fingerprint = _conversation_fingerprint(messages)
+
+        is_contested = decision.escalated or decision.margin < router._margin
+
+        if not is_contested:
+            preprocess_mark = MARK_SKIPPED
+            target_tier = decision.tier
+            tier, fallback_reason = _resolve_tier(target_tier, tools)
+            verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
+            max_fit = 0.0
+            subtask_candidates_count = 0
+            canonical_effort = "balanced"
+            cli_effort_flags = []
+            dispatch_messages = messages
+        else:
+            prep_result = run_preprocessor(
+                messages,
+                generate=preprocess_generate,
+                timeout_s=preprocess_timeout_s,
+            )
+            preprocess_mark = prep_result.mark
+            max_fit = prep_result.max_fit
+            subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
+
+            if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
+                verdict = prep_result.derived_verdict
+                if verdict == "local":
+                    target_tier = router.capability_order[0]
+                    tier, fallback_reason = _resolve_tier(target_tier, tools)
+                    dispatch_messages = messages
+                elif verdict == "frontier":
+                    target_tier = router.capability_order[-1]
+                    tier, fallback_reason = _resolve_tier(target_tier, tools)
+                    backend = backends.get(tier)
+                    if backend and not backend.local:
+                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                    else:
+                        dispatch_messages = messages
+                else:  # contested
+                    tier, fallback_reason = _resolve_tier(decision.tier, tools)
+                    backend = backends.get(tier)
+                    if backend and not backend.local:
+                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                    else:
+                        dispatch_messages = messages
+
+                effort_plan = resolve_effort(
+                    complexity=prep_result.analysis.complexity,
+                    task_type=prep_result.analysis.task_type,
+                    target_cli=tier,
+                    overrides=effort_overrides,
+                )
+                canonical_effort = effort_plan.canonical
+                cli_effort_flags = effort_plan.cli_flags
+            else:
+                tier, fallback_reason = _resolve_tier(decision.tier, tools)
+                verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
+                dispatch_messages = messages
+                canonical_effort = "balanced"
+                cli_effort_flags = []
+
         # A silent downgrade must leave a recoverable trail: archive the full
         # conversation so a paste-ready brief can be distilled on demand.
         escalation_id = (
@@ -147,7 +287,19 @@ def create_app(
             else None
         )
         meta = _decision_meta(decision, fallback_reason, messages)
-        meta["escalation_id"] = escalation_id
+        meta.update(
+            {
+                "escalation_id": escalation_id,
+                "fingerprint": fingerprint,
+                "preprocess_mark": preprocess_mark,
+                "verdict": verdict,
+                "max_fit": max_fit,
+                "canonical_effort": canonical_effort,
+                "cli_effort_flags": cli_effort_flags,
+                "toll": "skipped",
+                "subtask_candidates": subtask_candidates_count,
+            }
+        )
 
         def kultivait_meta(local: bool) -> dict:
             return {
@@ -157,6 +309,13 @@ def create_app(
                 "fallback_reason": fallback_reason,
                 "escalation_id": escalation_id,
                 "local": local,
+                "verdict": verdict,
+                "max_fit": max_fit,
+                "preprocess_mark": preprocess_mark,
+                "subtask_candidates": subtask_candidates_count,
+                "canonical_effort": canonical_effort,
+                "cli_effort_flags": cli_effort_flags,
+                "fingerprint": fingerprint,
             }
 
         if body.get("stream"):
@@ -175,7 +334,7 @@ def create_app(
 
             def sse():
                 yield chunk({"role": "assistant"})
-                for item in backends[tier].stream(messages, tools=tools):
+                for item in backends[tier].stream(dispatch_messages, tools=tools):
                     if isinstance(item, Completion):
                         _record(tier, item, **meta)
                         _capture(
@@ -207,7 +366,7 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[tier].complete(messages, tools=tools)
+        completion = backends[tier].complete(dispatch_messages, tools=tools)
         _record(tier, completion, **meta)
         _capture(
             "chat_completion_completed",
@@ -250,7 +409,80 @@ def create_app(
         if system:
             messages = [{"role": "system", "content": _text_of(system)}, *messages]
         decision = _classify(messages)
-        meta = _decision_meta(decision, None, messages)
+        fingerprint = _conversation_fingerprint(messages)
+
+        is_contested = decision.escalated or decision.margin < router._margin
+
+        if not is_contested:
+            preprocess_mark = MARK_SKIPPED
+            target_tier = decision.tier
+            tier, fallback_reason = _resolve_tier(target_tier, None)
+            verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
+            max_fit = 0.0
+            subtask_candidates_count = 0
+            canonical_effort = "balanced"
+            cli_effort_flags = []
+            dispatch_messages = messages
+        else:
+            prep_result = run_preprocessor(
+                messages,
+                generate=preprocess_generate,
+                timeout_s=preprocess_timeout_s,
+            )
+            preprocess_mark = prep_result.mark
+            max_fit = prep_result.max_fit
+            subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
+
+            if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
+                verdict = prep_result.derived_verdict
+                if verdict == "local":
+                    target_tier = router.capability_order[0]
+                    tier, fallback_reason = _resolve_tier(target_tier, None)
+                    dispatch_messages = messages
+                elif verdict == "frontier":
+                    target_tier = router.capability_order[-1]
+                    tier, fallback_reason = _resolve_tier(target_tier, None)
+                    backend = backends.get(tier)
+                    if backend and not backend.local:
+                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                    else:
+                        dispatch_messages = messages
+                else:  # contested
+                    tier, fallback_reason = _resolve_tier(decision.tier, None)
+                    backend = backends.get(tier)
+                    if backend and not backend.local:
+                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                    else:
+                        dispatch_messages = messages
+
+                effort_plan = resolve_effort(
+                    complexity=prep_result.analysis.complexity,
+                    task_type=prep_result.analysis.task_type,
+                    target_cli=tier,
+                    overrides=effort_overrides,
+                )
+                canonical_effort = effort_plan.canonical
+                cli_effort_flags = effort_plan.cli_flags
+            else:
+                tier, fallback_reason = _resolve_tier(decision.tier, None)
+                verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
+                dispatch_messages = messages
+                canonical_effort = "balanced"
+                cli_effort_flags = []
+
+        meta = _decision_meta(decision, fallback_reason, messages)
+        meta.update(
+            {
+                "fingerprint": fingerprint,
+                "preprocess_mark": preprocess_mark,
+                "verdict": verdict,
+                "max_fit": max_fit,
+                "canonical_effort": canonical_effort,
+                "cli_effort_flags": cli_effort_flags,
+                "toll": "skipped",
+                "subtask_candidates": subtask_candidates_count,
+            }
+        )
         msg_id = f"kult-{uuid.uuid4().hex[:12]}"
 
         if body.get("stream"):
@@ -268,7 +500,7 @@ def create_app(
                             "id": msg_id,
                             "type": "message",
                             "role": "assistant",
-                            "model": decision.tier,
+                            "model": tier,
                             "content": [],
                             "usage": {"input_tokens": 0, "output_tokens": 0},
                         }
@@ -278,14 +510,14 @@ def create_app(
                     "content_block_start",
                     {"index": 0, "content_block": {"type": "text", "text": ""}},
                 )
-                for item in backends[decision.tier].stream(messages):
+                for item in backends[tier].stream(dispatch_messages):
                     if isinstance(item, Completion):
-                        _record(decision.tier, item, **meta)
+                        _record(tier, item, **meta)
                         _capture(
                             "message_completion_completed",
                             request,
                             {
-                                "tier": decision.tier,
+                                "tier": tier,
                                 "local": item.local,
                                 "streaming": True,
                             },
@@ -310,13 +542,13 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[decision.tier].complete(messages)
-        _record(decision.tier, completion, **meta)
+        completion = backends[tier].complete(dispatch_messages)
+        _record(tier, completion, **meta)
         _capture(
             "message_completion_completed",
             request,
             {
-                "tier": decision.tier,
+                "tier": tier,
                 "local": completion.local,
                 "streaming": False,
             },
@@ -325,7 +557,7 @@ def create_app(
             "id": msg_id,
             "type": "message",
             "role": "assistant",
-            "model": decision.tier,
+            "model": tier,
             "content": [{"type": "text", "text": completion.text}],
             "stop_reason": "end_turn",
             "stop_sequence": None,

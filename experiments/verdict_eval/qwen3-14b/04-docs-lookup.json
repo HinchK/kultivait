@@ -1,0 +1,53 @@
+{
+  "slug": "04-docs-lookup",
+  "label": "frontier",
+  "label_rationale": "Freshness-dependent lookup of specific external CLI version documentation",
+  "prompt": "What values does the --effort flag accept in claude CLI 2.1.238?",
+  "latency_s": 7.54,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.8,
+    "task_type": "docs_lookup",
+    "complexity": 3
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.9,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "docs_lookup",
+      "complexity": 3,
+      "signals": [
+        "--effort flag",
+        "claude CLI 2.1.238",
+        "values accepted"
+      ]
+    },
+    "rewrite": "What specific values are accepted by the --effort flag in the claude CLI version 2.1.238?",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.8,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.9,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}

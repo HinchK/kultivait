@@ -1,0 +1,94 @@
+{
+  "slug": "h01-local-constant",
+  "label": "local",
+  "label_rationale": "Single-file mechanical refactoring of test constants",
+  "prompt": "In tests/test_config.py replace the magic numbers 3.0 and 15.0 with named constants imported from kultivait.config.",
+  "latency_s": 6.36,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.95,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": true,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "simple_edit",
+    "complexity": 2
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.9,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "low"
+    },
+    {
+      "target": "codex",
+      "fit": 0.95,
+      "effort": "low"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.9,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 2,
+      "signals": [
+        "file path specified (tests/test_config.py)",
+        "action specified (replace magic numbers)",
+        "target values identified (3.0 and 15.0)",
+        "source location identified (kultivait.config)"
+      ]
+    },
+    "rewrite": "In the file tests/test_config.py, identify all occurrences of the numeric literals 3.0 and 15.0 and replace them with named constants imported from the module kultivait.config.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "codex",
+          "fit": 0.95,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.9,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}

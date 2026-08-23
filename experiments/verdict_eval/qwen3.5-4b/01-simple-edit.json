@@ -1,0 +1,93 @@
+{
+  "slug": "01-simple-edit",
+  "label": "local",
+  "label_rationale": "Mechanical rename across a single config file and its imports",
+  "prompt": "Rename the variable cfg to settings everywhere in src/kultivait/config.py and fix the imports.",
+  "latency_s": 8.94,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": true,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "simple_edit",
+    "complexity": 3
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.9,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "low"
+    },
+    {
+      "target": "codex",
+      "fit": 0.9,
+      "effort": "low"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.85,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 3,
+      "signals": [
+        "rename variable",
+        "fix imports",
+        "specific file path"
+      ]
+    },
+    "rewrite": "In the file src/kultivait/config.py, perform a global find-and-replace to rename all occurrences of the variable 'cfg' to 'settings'. Additionally, review and correct any import statements that reference the old variable name or are broken by this change.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.85,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}

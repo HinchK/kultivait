@@ -1,0 +1,97 @@
+{
+  "slug": "05-compound",
+  "label": "frontier",
+  "label_rationale": "Orchestration-worthy compound multi-component feature and documentation update",
+  "prompt": "Add a kultivait choose subcommand that drains pending tolls: queue file, TTY chooser, heartbeat POST endpoint, and tests. Then update the README section about the tollbooth.",
+  "latency_s": 6.89,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "compound",
+    "complexity": 7
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.85,
+      "effort": "medium"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.65,
+      "effort": "high"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.7,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "compound",
+      "complexity": 7,
+      "signals": [
+        "add subcommand",
+        "drain pending tolls",
+        "queue file",
+        "TTY chooser",
+        "heartbeat POST endpoint",
+        "tests",
+        "update README"
+      ]
+    },
+    "rewrite": "Implement a new 'choose' subcommand for the kultivait tollbooth system that processes and drains pending toll requests. The implementation must support: (1) reading from a queue file, (2) handling input via TTY chooser, (3) exposing a heartbeat POST endpoint for status monitoring, and (4) including unit tests for the new logic. Additionally, update the project README to document this new subcommand and its functionality.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.65,
+          "effort": "high"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.7,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

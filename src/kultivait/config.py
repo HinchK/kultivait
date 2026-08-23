@@ -23,9 +23,18 @@ RUNTIME_URLS = {
 # Known embedding models (never generation candidates), preferred first.
 EMBED_MODELS = ["nomic-embed-text", "bge-m3", "all-minilm", "mxbai-embed"]
 
-KNOWN_CLIS = {"claude": "architect", "agy": "docs", "gemini": "docs"}
+KNOWN_CLIS = {
+    "claude": "architect",
+    "codex": "architect",
+    "opencode": "architect",
+    "agy": "docs",
+    "gemini": "docs",
+}
 CLI_PRICING = {  # USD per million tokens, rough frontier-tier defaults
     "claude": (3.0, 15.0),
+    "codex": (1.25, 10.0),
+    # opencode is multi-provider so price varies by selected provider/model; conservative default:
+    "opencode": (3.0, 15.0),
     "agy": (1.25, 10.0),
     "gemini": (1.25, 10.0),
 }
@@ -54,6 +63,7 @@ class Config:
     # llama.cpp may need a dedicated embedding server (its --embedding flag
     # is server-wide); empty means "same server as chat".
     embed_base_url: str = ""
+    preprocess_timeout_s: float = 15.0
 
     def capability_order(self) -> "list[str]":
         return [t.name for t in self.tiers]
@@ -155,6 +165,7 @@ def save_config(config: Config, path: Path) -> None:
         f"distill_model = {_toml_str(config.distill_model)}",
         f"num_ctx = {config.num_ctx}",
         f"port = {config.port}",
+        f"preprocess_timeout_s = {config.preprocess_timeout_s}",
     ]
     for t in config.tiers:
         lines += ["", "[[tiers]]", f'name = "{t.name}"', f'role = "{t.role}"', f'kind = "{t.kind}"']
@@ -196,4 +207,5 @@ def load_config(path: Path) -> Config:
         runtime=data.get("runtime") or "ollama",
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
+        preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
     )

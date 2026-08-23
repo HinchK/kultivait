@@ -1,3 +1,4 @@
+import json
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -48,7 +49,7 @@ class FakeBackend:
         yield self._completion()
 
 
-def make_client(tmp_path, embed):
+def make_client(tmp_path, embed, preprocess_generate=None, preprocess_timeout_s=15.0):
     backends = {
         "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
         "claude": FakeBackend("claude", local=False),
@@ -60,6 +61,8 @@ def make_client(tmp_path, embed):
         ledger=Ledger(tmp_path / "ledger.jsonl"),
         gate=Gate(generate=lambda p: "FINDINGS: distilled.", compost_dir=tmp_path / "compost"),
         escalations=EscalationStore(tmp_path / "escalations"),
+        preprocess_generate=preprocess_generate,
+        preprocess_timeout_s=preprocess_timeout_s,
     )
     return TestClient(app), backends
 
@@ -399,3 +402,212 @@ def test_completion_is_recorded_in_ledger(tmp_path):
     assert stats["prompts"] == 1
     assert stats["local_prompts"] == 0
     assert stats["spent_usd"] == 0.01
+
+
+def test_fat_margin_skips_preprocessor(tmp_path):
+    import json
+    calls = []
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return "{}", 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.9, 0.1]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "rename this var"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 0  # preprocessor was NOT called
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "skipped"
+    assert km["verdict"] == "local"
+    assert km["max_fit"] == 0.0
+    assert km["subtask_candidates"] == 0
+    assert "fingerprint" in km and len(km["fingerprint"]) > 0
+
+    entry = json.loads((tmp_path / "ledger.jsonl").read_text())
+    assert entry["preprocess_mark"] == "skipped"
+    assert entry["toll"] == "skipped"
+    assert entry["fingerprint"] == km["fingerprint"]
+
+
+def test_contested_runs_preprocessor_and_serves_local_verdict(tmp_path):
+    import json
+    calls = []
+    sample_res = {
+        "analysis": {"task_type": "simple_edit", "complexity": 2, "signals": []},
+        "rewrite": "Rewritten prompt",
+        "judge": {
+            "local_sufficient": True,
+            "confidence": 0.9,
+            "targets": [{"target": "claude", "fit": 0.40, "effort": "low"}],
+        },
+    }
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return json.dumps(sample_res), 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),  # thin margin (< 0.02)
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "contested task"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert "contested task" in calls[0]
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["verdict"] == "local"
+    assert km["max_fit"] == 0.40
+    assert resp.json()["model"] == "llama3.1:8b"
+    # Local dispatch gets original message, NOT rewrite
+    assert backends["llama3.1:8b"].calls[0] == [{"role": "user", "content": "contested task"}]
+
+
+def test_contested_runs_preprocessor_and_serves_frontier_verdict_with_rewrite(tmp_path):
+    import json
+    calls = []
+    sample_res = {
+        "analysis": {
+            "task_type": "architecture",
+            "complexity": 8,
+            "signals": ["multi-file"],
+            "subtask_candidates": ["design queue", "write tests"],
+        },
+        "rewrite": "Self-contained architecture prompt for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.95,
+            "targets": [{"target": "claude", "fit": 0.92, "effort": "high"}],
+        },
+    }
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return json.dumps(sample_res), 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "vague arch prompt"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["verdict"] == "frontier"
+    assert km["max_fit"] == 0.92
+    assert km["subtask_candidates"] == 2
+    assert km["canonical_effort"] == "deep"
+    assert km["cli_effort_flags"] == ["--effort", "high"]
+    assert resp.json()["model"] == "claude"
+    # Frontier CLI dispatch receives rewritten text
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Self-contained architecture prompt for claude"}
+    ]
+
+    entry = json.loads((tmp_path / "ledger.jsonl").read_text())
+    assert entry["preprocess_mark"] == "ok"
+    assert entry["verdict"] == "frontier"
+    assert entry["max_fit"] == 0.92
+    assert entry["canonical_effort"] == "deep"
+    assert entry["cli_effort_flags"] == ["--effort", "high"]
+    assert entry["toll"] == "skipped"
+    assert entry["subtask_candidates"] == 2
+
+
+def test_contested_preprocessor_timeout_falls_back_to_router(tmp_path):
+    def fake_gen(model: str, prompt: str):
+        raise TimeoutError("local model timeout")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "timeout prompt"}]},
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "preprocess_timeout"
+    assert km["verdict"] == "frontier"  # router escalated to claude
+    assert resp.json()["model"] == "claude"
+    # Fallback uses original message
+    assert backends["claude"].calls[0] == [{"role": "user", "content": "timeout prompt"}]
+
+
+def test_contested_preprocessor_parse_fail_falls_back_to_router(tmp_path):
+    def fake_gen(model: str, prompt: str):
+        return "I am just raw prose output without JSON brackets.", 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "parse fail prompt"}]},
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "preprocess_fail"
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [{"role": "user", "content": "parse fail prompt"}]
+
+
+def test_tool_bearing_contested_request_preprocessed_with_tool_fallback(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "compound",
+            "complexity": 7,
+            "signals": ["tool call required"],
+            "subtask_candidates": ["run tests", "refactor"],
+        },
+        "rewrite": "Tool prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.90,
+            "targets": [{"target": "claude", "fit": 0.95, "effort": "medium"}],
+        },
+    }
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "tools": TOOLS,
+            "messages": [{"role": "user", "content": "do tool task"}],
+        },
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["subtask_candidates"] == 2
+    # Frontier requested by preprocessor, but claude does not support tools -> falls back to llama
+    assert km["fallback_reason"] == "tools_unsupported"
+    assert resp.json()["model"] == "llama3.1:8b"
+    # Local fallback served gets original message
+    assert backends["llama3.1:8b"].calls[0] == [{"role": "user", "content": "do tool task"}]
+

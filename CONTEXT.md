@@ -35,3 +35,12 @@ _Avoid_: re-route, re-classify (that's the embedding router's output)
 **Sub-task candidates**:
 The decomposition a preprocessor emits for compound or tool-bearing prompts, returned in-band as structured metadata for the client's agent loop.
 _Avoid_: plan, task list
+
+**Route menu**:
+The ranked set of choices a tollbooth presents — top three installed frontier targets by judge fit with fitted effort, plus keep-it-local as the anchor.
+_Avoid_: model picker, target list
+
+**Auto-policy**:
+The verdict-default dispatch taken when a trolltoll expires unanswered — local when the local tier can serve, else the top-ranked frontier target; the missed menu archives escalation-style.
+_Avoid_: fallback (that's _resolve_tier's silent downgrade), default route
+

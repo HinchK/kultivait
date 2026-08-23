@@ -341,6 +341,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         ledger=Ledger(LEDGER_PATH),
         gate=build_gate(config),
         escalations=EscalationStore(ESCALATIONS_DIR),
+        preprocess_timeout_s=config.preprocess_timeout_s,
     )
     port = args.port or config.port
     print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
@@ -416,6 +417,34 @@ def format_harvest(stats: dict) -> str:
         f"  frontier baseline  ${stats['baseline_usd']:.2f}",
         f"  kept in pocket     ${stats['saved_usd']:.2f}",
     ]
+    toll = stats.get("toll_activity")
+    if toll and (
+        toll.get("fired", 0) > 0
+        or toll.get("answered", 0) > 0
+        or toll.get("expired", 0) > 0
+        or toll.get("skipped", 0) > 0
+        or any(toll.get("preprocess_marks", {}).values())
+        or bool(toll.get("route_choices"))
+    ):
+        toll_rate_pct = round(100 * toll.get("toll_rate", 0.0))
+        lines += [
+            "",
+            "  toll activity",
+            f"    tolls fired        {toll.get('fired', 0)}  ({toll_rate_pct}% toll rate)",
+            f"    answered {toll.get('answered', 0)}, expired {toll.get('expired', 0)}, skipped {toll.get('skipped', 0)}",
+        ]
+        rcs = toll.get("route_choices", {})
+        if rcs:
+            lines.append("    route choices:")
+            for choice, count in rcs.items():
+                if count > 0:
+                    lines.append(f"      {choice:<22} {count}")
+        marks = toll.get("preprocess_marks", {})
+        if marks and any(marks.values()):
+            lines.append(
+                f"    preprocessor marks  ok: {marks.get('ok', 0)}, skipped: {marks.get('skipped', 0)}, timeout: {marks.get('timeout', 0)}, fail: {marks.get('fail', 0)}"
+            )
+
     esc = stats.get("escalations", {"count": 0, "recent": []})
     if esc["count"]:
         lines += ["", f"  {esc['count']} cloud-worthy prompt(s) served locally:"]

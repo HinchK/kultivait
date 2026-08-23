@@ -30,6 +30,7 @@ def is_truncated(prompt_eval_count: int, num_ctx: int) -> bool:
 
 class Backend(Protocol):
     supports_tools: bool
+    local: bool
 
     def complete(self, messages: list[dict], tools: "list[dict] | None" = None) -> Completion: ...
 
@@ -82,6 +83,7 @@ class OllamaBackend:
     """Local model via the ollama chat API. Free by definition."""
 
     supports_tools = True
+    local = True
 
     def __init__(
         self, model: str, base_url: str = "http://localhost:11434", num_ctx: int = 32768
@@ -192,6 +194,7 @@ class LlamaCppBackend:
     """
 
     supports_tools = True
+    local = True
 
     def __init__(self, model: str, base_url: str = "http://localhost:8080"):
         self.model = model
@@ -285,6 +288,7 @@ class CLIBackend:
     """
 
     supports_tools = False
+    local = False
 
     def __init__(self, command: list[str], price_in: float, price_out: float):
         self.command = command

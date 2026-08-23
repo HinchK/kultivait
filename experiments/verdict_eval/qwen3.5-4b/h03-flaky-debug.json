@@ -1,0 +1,94 @@
+{
+  "slug": "h03-flaky-debug",
+  "label": "borderline",
+  "label_rationale": "Open-ended concurrency debugging with incomplete context and no reproduction repository",
+  "prompt": "This async test flakes about one run in five on CI but always passes locally, probably timing related. Where should I start looking? (no repro repo attached)",
+  "latency_s": 7.78,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.85,
+    "task_type": "debugging",
+    "complexity": 6
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.9,
+      "effort": "medium"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "high"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.6,
+      "effort": "high"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.5,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 6,
+      "signals": [
+        "flaky test",
+        "CI vs local discrepancy",
+        "timing related hypothesis",
+        "no repository provided"
+      ]
+    },
+    "rewrite": "Debug a flaky asynchronous test that passes locally but fails approximately 20% of the time on CI. The failure is suspected to be timing-related. Since no source code or CI configuration is available, provide a prioritized list of diagnostic steps and tools to isolate the race condition, including how to instrument the code for deterministic reproduction.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.85,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.9,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "high"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.6,
+          "effort": "high"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.5,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "slug": "h06-small-feature",
+  "label": "borderline",
+  "label_rationale": "Multi-step feature spanning CLI argument parsing, serialization, and documentation",
+  "prompt": "Add a --json flag to kultivait route that prints the Decision object, then note the flag in the README route section.",
+  "latency_s": 18.56,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.9,
+    "task_type": "simple_edit",
+    "complexity": 3
+  },
+  "targets": [
+    {
+      "target": "agy",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "codex",
+      "fit": 0.75,
+      "effort": "low"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.7,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 3,
+      "signals": [
+        "add flag to route",
+        "update README"
+      ]
+    },
+    "rewrite": "Add a --json flag to the 'kultivait route' command that prints the Decision object, and update the README's 'route' section to note the addition of this flag.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.9,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "codex",
+          "fit": 0.75,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.7,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}
