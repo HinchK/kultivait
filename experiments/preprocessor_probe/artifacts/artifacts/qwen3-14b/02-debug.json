@@ -1,0 +1,41 @@
+{
+  "case": "02-debug",
+  "prompt": "Why does kultivait route hang forever when ollama is slow to answer? Where is that timeout set?",
+  "latency_s": 7.65,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 6,
+      "signals": [
+        "timeout",
+        "performance issue",
+        "ollama",
+        "kultivait routing"
+      ]
+    },
+    "rewrite": "Why does kultivait route hang indefinitely when ollama is slow to respond? Where is the timeout for this behavior configured?",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.75,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.7,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

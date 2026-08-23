@@ -270,6 +270,8 @@ def test_real_driver_download_advisory_when_no_brew(monkeypatch):
 
 def test_real_driver_start_server_resolves_wired_answer(monkeypatch):
     seen = {}
+    _exclusive_env(monkeypatch, [])  # neither runtime up — reach offer_wired_limit
+    # without a real localhost probe (else a live ollama early-returns)
 
     monkeypatch.setattr(
         setup_screen.bootstrap, "write_artifacts",

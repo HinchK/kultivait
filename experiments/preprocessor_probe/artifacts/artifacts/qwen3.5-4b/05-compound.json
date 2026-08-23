@@ -1,0 +1,54 @@
+{
+  "case": "05-compound",
+  "prompt": "Add a kultivait choose subcommand that drains pending tolls: queue file, TTY chooser, heartbeat POST endpoint, and tests. Then update the README section about the tollbooth.",
+  "latency_s": 6.18,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "compound",
+      "complexity": 5,
+      "signals": [
+        "Add subcommand",
+        "drain pending tolls",
+        "queue file",
+        "TTY chooser",
+        "heartbeat POST endpoint",
+        "tests",
+        "update README"
+      ]
+    },
+    "rewrite": "Implement a new 'choose' subcommand in the kultivait CLI that drains pending tolls from the queue. The implementation must support: (1) processing a queue file, (2) handling TTY input via a chooser interface, (3) exposing a heartbeat POST endpoint for status monitoring, and (4) writing unit tests for these features. Additionally, update the project README to document this new subcommand and its functionality.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "high"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.7,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

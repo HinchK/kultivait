@@ -1,0 +1,50 @@
+{
+  "case": "02-debug",
+  "prompt": "Why does kultivait route hang forever when ollama is slow to answer? Where is that timeout set?",
+  "latency_s": 5.03,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 4,
+      "signals": [
+        "hang forever",
+        "timeout setting",
+        "ollama integration"
+      ]
+    },
+    "rewrite": "In the Kultivait application, requests to Ollama sometimes hang indefinitely when Ollama takes a long time to generate a response. Please locate the specific timeout configuration that controls this behavior and explain how it is set.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.85,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}
