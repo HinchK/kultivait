@@ -1,0 +1,4 @@
+FROM /Users/hinchk/seeds/_KULT_/kultivait/experiments/distill_probe/fused
+TEMPLATE «contract template: llama-3.2 chat; system = preprocessor contract»
+SYSTEM """the preprocessor contract (docs/superpowers/specs distillation section)"""
+# ollama create kv-judge-llama32-1b-g0-probe -f Modelfile   (printed, not executed — probe hygiene)

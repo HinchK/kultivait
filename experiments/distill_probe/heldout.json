@@ -1,0 +1,50 @@
+[
+ {
+  "prompt": "Explain the purpose of review uncommitted changes that have been simply.",
+  "label": "local"
+ },
+ {
+  "prompt": "List the steps review might integrate some tactics used takes, briefly.",
+  "label": "local"
+ },
+ {
+  "prompt": "Summarize what Design migration plan move session storage does in two sentences.",
+  "label": "local"
+ },
+ {
+  "prompt": "Explain the purpose of review uncommitted changes that have been simply.",
+  "label": "local"
+ },
+ {
+  "prompt": "Improve review uncommitted changes that have been's error handling; some callers may depend on current behavior.",
+  "label": "contested"
+ },
+ {
+  "prompt": "review might integrate some tactics used behaves inconsistently under load \u2014 investigate and propose a fix.",
+  "label": "contested"
+ },
+ {
+  "prompt": "Improve Design migration plan move session storage's error handling; some callers may depend on current behavior.",
+  "label": "contested"
+ },
+ {
+  "prompt": "Refactor review uncommitted changes that have been to handle edge cases, but keep the public API \u2014 decide how deep to go.",
+  "label": "contested"
+ },
+ {
+  "prompt": "Design the full architecture to replace review uncommitted changes that have been with a distributed system.",
+  "label": "frontier"
+ },
+ {
+  "prompt": "Overhaul review might integrate some tactics used for multi-tenant scale: schema, API, migration plan.",
+  "label": "frontier"
+ },
+ {
+  "prompt": "Root-cause the intermittent failure in Design migration plan move session storage and specify the production fix.",
+  "label": "frontier"
+ },
+ {
+  "prompt": "Root-cause the intermittent failure in review uncommitted changes that have been and specify the production fix.",
+  "label": "frontier"
+ }
+]
