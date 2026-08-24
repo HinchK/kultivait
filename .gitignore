@@ -22,3 +22,6 @@ wheels/
 herdr-activity-report.md
 kultivait-testing-log.md
 opencode.json
+experiments/distill_probe/
+experiments/verdict_eval/
+
