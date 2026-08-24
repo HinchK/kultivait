@@ -8,6 +8,7 @@ editable.
 
 import argparse
 import json
+import random
 import os
 import shutil
 import sys
@@ -762,6 +763,41 @@ def cmd_distill_corpus(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
+def cmd_distill_generate(args: argparse.Namespace) -> None:
+    """D2: run the dual-teacher generator. --live dispatches real CLI teachers
+    (subscription; ledger-tagged); without it the command refuses — synthetic
+    training data comes from teachers, never silently from a stub."""
+    from kultivait.distill.corpus import load_harvest, split_heldout, write_corpus
+    from kultivait.distill.generator import generate_corpus, real_teacher_fns
+
+    if not args.live:
+        print("refusing to generate without --live: teacher dispatches are real "
+              "(subscription CLIs, ledger-tagged). Re-run with --live.")
+        return
+    entries, escalations = load_harvest(Path(args.harvest_dir))
+    from kultivait.distill.corpus import extract_anchors
+    seeds, heldout = split_heldout(extract_anchors(entries, escalations, []))
+    if not seeds:
+        print("no seed anchors in the harvest (escalation pool empty)")
+        return
+    fns = real_teacher_fns(judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli)
+    rng = random.Random(args.seed)
+
+    def ledger_tag(**entry):
+        ledger = Ledger(LEDGER_PATH)
+        ledger.record(**entry)
+
+    report = generate_corpus(
+        seeds, vary_fn=fns["vary_fn"], label_fn=fns["label_fn"],
+        rewrite_fn=fns["rewrite_fn"], target_pairs=args.target_pairs, rng=rng,
+        ledger_record=ledger_tag,
+    )
+    out = Path(args.out_dir)
+    write_corpus(report.pairs, [], out, heldout=heldout)
+    print(json.dumps({"out_dir": str(out), "pairs": len(report.pairs),
+                      "stats": report.stats}, indent=2))
+
+
 def cmd_eval(args: argparse.Namespace) -> None:
     from kultivait.capability_eval import (
         format_eval_summary,
@@ -843,6 +879,19 @@ def main() -> None:
     corpus_cmd.add_argument("--harvest-dir", default=str(KULTIVAIT_HOME),
                             help="harvest directory (default ~/.kultivait)")
     corpus_cmd.set_defaults(func=cmd_distill_corpus)
+    gen_cmd = distill_sub.add_parser("generate", help="run the dual-teacher synthetic generator")
+    gen_cmd.add_argument("--live", action="store_true",
+                         help="dispatch real CLI teachers (subscription; ledger-tagged)")
+    gen_cmd.add_argument("--target-pairs", type=int, default=1500,
+                         help="target corpus size (strata-exact quotas)")
+    gen_cmd.add_argument("--out-dir", default=str(KULTIVAIT_HOME / "distill-corpus"),
+                         help="output directory for train/valid JSONL + sidecars")
+    gen_cmd.add_argument("--harvest-dir", default=str(KULTIVAIT_HOME),
+                         help="harvest directory for seed anchors")
+    gen_cmd.add_argument("--judge-cli", default="opencode", help="judge teacher CLI (neutral family)")
+    gen_cmd.add_argument("--rewriter-cli", default="claude", help="rewriter teacher CLI")
+    gen_cmd.add_argument("--seed", type=int, default=42, help="rng seed")
+    gen_cmd.set_defaults(func=cmd_distill_generate)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
