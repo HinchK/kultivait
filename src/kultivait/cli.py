@@ -826,6 +826,38 @@ def cmd_distill_export(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_distill_eval(args: argparse.Namespace) -> None:
+    """D5: run the held-out gate eval on a model through the production
+    generate path (probe #52's discovery: raw-chat framing lies)."""
+    from kultivait.distill.eval import run_gates
+    from kultivait.server import _default_preprocess_generate_for
+
+    heldout_path = Path(args.heldout)
+    cases = [json.loads(line) for line in heldout_path.read_text().splitlines() if line.strip()]
+    if not cases:
+        print(f"no held-out cases in {heldout_path}")
+        raise SystemExit(1)
+    # prompts live in the roster's `prompt` field when exported with them, else
+    # the D1 roster carries ids only — the eval needs prompt+label pairs
+    if not all(c.get("prompt") and (c.get("label") or c.get("tier")) for c in cases):
+        print("held-out file must carry prompt + label/tier per case")
+        raise SystemExit(1)
+
+    generate = _default_preprocess_generate_for()
+    incumbent = None
+    if args.incumbent:
+        from kultivait.distill.eval import run_gates as _rg
+        incumbent = _rg(cases, generate, model=args.incumbent_model)
+    report = run_gates(
+        cases, generate, model=args.model,
+        incumbent_agreement=(incumbent.gates["agreement"] if incumbent else None),
+        incumbent_latency_p50_s=(incumbent.gates["latency_p50_s"] if incumbent else None),
+    )
+    print(report.to_json())
+    if not report.passed:
+        raise SystemExit(1)
+
+
 def cmd_eval(args: argparse.Namespace) -> None:
     from kultivait.capability_eval import (
         format_eval_summary,
@@ -939,6 +971,13 @@ def main() -> None:
     export_cmd.add_argument("--no-quantize", action="store_true",
                             help="skip quantize-at-import (default q4_K_M)")
     export_cmd.set_defaults(func=cmd_distill_export)
+    eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
+    eval_d.add_argument("--model", required=True, help="model name under evaluation")
+    eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
+    eval_d.add_argument("--incumbent", action="store_true",
+                        help="recompute the incumbent baseline first (same path)")
+    eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
+    eval_d.set_defaults(func=cmd_distill_eval)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
