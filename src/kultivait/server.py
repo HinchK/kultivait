@@ -183,12 +183,27 @@ def create_app(
             )
 
     def _record(tier: str, completion: Completion, **decision_meta) -> None:
+        backend = backends.get(tier)
+        # Metered cash: API backend reports real metered spend; CLI/local is 0.0
+        # Notional value: value at target's own pricing
+        is_api = bool(backend and not backend.local and getattr(backend, "supports_tools", False))
+        if is_api:
+            metered_cash = completion.cost_usd
+            notional = completion.cost_usd
+        elif completion.local:
+            metered_cash = 0.0
+            notional = 0.0
+        else:  # CLI backend
+            metered_cash = 0.0
+            notional = completion.cost_usd
+
         ledger.record(
             tier=tier,
             local=completion.local,
             tokens_in=completion.tokens_in,
             tokens_out=completion.tokens_out,
-            cost_usd=completion.cost_usd,
+            cost_usd=metered_cash,
+            notional_usd=notional,
             truncated=completion.truncated,
             **decision_meta,
         )
@@ -530,6 +545,7 @@ def create_app(
     @app.post("/v1/messages")
     def anthropic_messages(body: dict, request: Request):
         messages = _normalize(body.get("messages", []))
+        tools = body.get("tools")
         system = body.get("system")
         if system:
             messages = [{"role": "system", "content": _text_of(system)}, *messages]
@@ -545,7 +561,7 @@ def create_app(
         if not is_contested:
             preprocess_mark = MARK_SKIPPED
             target_tier = decision.tier
-            tier, fallback_reason = _resolve_tier(target_tier, None)
+            tier, fallback_reason = _resolve_tier(target_tier, tools)
             verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
             max_fit = 0.0
             subtask_candidates_count = 0
@@ -570,7 +586,7 @@ def create_app(
                 if derived_verdict == "local":
                     verdict = "local"
                     target_tier = router.capability_order[0]
-                    tier, fallback_reason = _resolve_tier(target_tier, None)
+                    tier, fallback_reason = _resolve_tier(target_tier, tools)
                     dispatch_messages = messages
                     effort_plan = resolve_effort(
                         complexity=prep_result.analysis.complexity,
@@ -585,7 +601,7 @@ def create_app(
                 elif derived_verdict == "frontier":
                     verdict = "frontier"
                     target_tier = router.capability_order[-1]
-                    tier, fallback_reason = _resolve_tier(target_tier, None)
+                    tier, fallback_reason = _resolve_tier(target_tier, tools)
                     backend = backends.get(tier)
                     if backend and not backend.local:
                         dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
@@ -638,7 +654,7 @@ def create_app(
                     if "local" in route_choice:
                         verdict = "local"
                         target_tier = local_tier
-                        tier, fallback_reason = _resolve_tier(target_tier, None)
+                        tier, fallback_reason = _resolve_tier(target_tier, tools)
                         dispatch_messages = messages
                         canonical_effort = "balanced"
                         cli_effort_flags = []
@@ -649,7 +665,7 @@ def create_app(
                     else:
                         target_cli = route_choice.split(":")[-1]
                         target_tier = target_cli
-                        tier, fallback_reason = _resolve_tier(target_tier, None)
+                        tier, fallback_reason = _resolve_tier(target_tier, tools)
                         verdict = "frontier"
                         backend = backends.get(tier)
                         if backend and not backend.local:
@@ -681,7 +697,7 @@ def create_app(
                         effort_flags = effort_plan.cli_flags
                         model_override = effort_plan.model_override
             else:
-                tier, fallback_reason = _resolve_tier(decision.tier, None)
+                tier, fallback_reason = _resolve_tier(decision.tier, tools)
                 verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
                 dispatch_messages = messages
                 canonical_effort = "balanced"
@@ -731,12 +747,11 @@ def create_app(
                         }
                     },
                 )
-                yield event(
-                    "content_block_start",
-                    {"index": 0, "content_block": {"type": "text", "text": ""}},
-                )
+                block_idx = 0
+                started_text_block = False
                 for item in backends[tier].stream(
                     dispatch_messages,
+                    tools=tools,
                     effort_flags=effort_flags,
                     model_override=model_override,
                 ):
@@ -749,13 +764,50 @@ def create_app(
                                 "tier": tier,
                                 "local": item.local,
                                 "streaming": True,
+                                "has_tool_calls": bool(item.tool_calls),
                             },
                         )
-                        yield event("content_block_stop", {"index": 0})
+                        if started_text_block:
+                            yield event("content_block_stop", {"index": block_idx})
+                            block_idx += 1
+                        if item.tool_calls:
+                            for tc in item.tool_calls:
+                                fn = tc.get("function", {})
+                                yield event(
+                                    "content_block_start",
+                                    {
+                                        "index": block_idx,
+                                        "content_block": {
+                                            "type": "tool_use",
+                                            "id": tc.get("id", ""),
+                                            "name": fn.get("name", ""),
+                                            "input": {},
+                                        },
+                                    },
+                                )
+                                args_str = fn.get("arguments", "{}")
+                                if not isinstance(args_str, str):
+                                    args_str = json.dumps(args_str)
+                                yield event(
+                                    "content_block_delta",
+                                    {
+                                        "index": block_idx,
+                                        "delta": {
+                                            "type": "input_json_delta",
+                                            "partial_json": args_str,
+                                        },
+                                    },
+                                )
+                                yield event("content_block_stop", {"index": block_idx})
+                                block_idx += 1
+
                         yield event(
                             "message_delta",
                             {
-                                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                                "delta": {
+                                    "stop_reason": "tool_use" if item.tool_calls else "end_turn",
+                                    "stop_sequence": None,
+                                },
                                 "usage": {
                                     "input_tokens": item.tokens_in,
                                     "output_tokens": item.tokens_out,
@@ -764,9 +816,15 @@ def create_app(
                             },
                         )
                     else:
+                        if not started_text_block:
+                            yield event(
+                                "content_block_start",
+                                {"index": block_idx, "content_block": {"type": "text", "text": ""}},
+                            )
+                            started_text_block = True
                         yield event(
                             "content_block_delta",
-                            {"index": 0, "delta": {"type": "text_delta", "text": item}},
+                            {"index": block_idx, "delta": {"type": "text_delta", "text": item}},
                         )
                 yield event("message_stop", {})
 
@@ -774,6 +832,7 @@ def create_app(
 
         completion = backends[tier].complete(
             dispatch_messages,
+            tools=tools,
             effort_flags=effort_flags,
             model_override=model_override,
         )
@@ -785,15 +844,39 @@ def create_app(
                 "tier": tier,
                 "local": completion.local,
                 "streaming": False,
+                "has_tool_calls": bool(completion.tool_calls),
             },
         )
+        content_blocks: list[dict] = []
+        if completion.text:
+            content_blocks.append({"type": "text", "text": completion.text})
+        if completion.tool_calls:
+            for tc in completion.tool_calls:
+                fn = tc.get("function", {})
+                args = fn.get("arguments", "{}")
+                if isinstance(args, str):
+                    try:
+                        parsed_args = json.loads(args)
+                    except Exception:
+                        parsed_args = {}
+                else:
+                    parsed_args = args
+                content_blocks.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", ""),
+                    "name": fn.get("name", ""),
+                    "input": parsed_args,
+                })
+        if not content_blocks:
+            content_blocks.append({"type": "text", "text": ""})
+
         return {
             "id": msg_id,
             "type": "message",
             "role": "assistant",
             "model": tier,
-            "content": [{"type": "text", "text": completion.text}],
-            "stop_reason": "end_turn",
+            "content": content_blocks,
+            "stop_reason": "tool_use" if completion.tool_calls else "end_turn",
             "stop_sequence": None,
             "usage": {
                 "input_tokens": completion.tokens_in,

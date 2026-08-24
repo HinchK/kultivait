@@ -207,3 +207,72 @@ def test_harvest_legacy_only_all_zeros(tmp_path):
     assert toll_act["route_choices"] == {}
     assert toll_act["preprocess_marks"] == {"ok": 0, "skipped": 0, "timeout": 0, "fail": 0}
 
+
+def test_dual_track_costs_and_legacy_compatibility(tmp_path):
+    import json
+    path = tmp_path / "ledger.jsonl"
+    ledger = Ledger(path, baseline_in=3.0, baseline_out=15.0)
+
+    # 1. API request: metered cash = 0.005, notional = 0.005
+    ledger.record(
+        tier="openrouter",
+        local=False,
+        tokens_in=1000,
+        tokens_out=200,
+        cost_usd=0.005,
+        notional_usd=0.005,
+    )
+
+    # 2. CLI request: metered cash = 0.0 (flat/subscription), notional = 0.015
+    ledger.record(
+        tier="claude",
+        local=False,
+        tokens_in=1000,
+        tokens_out=800,
+        cost_usd=0.0,
+        notional_usd=0.015,
+    )
+
+    # 3. Local request: metered cash = 0.0, notional = 0.0
+    ledger.record(
+        tier="qwen3:14b",
+        local=True,
+        tokens_in=5000,
+        tokens_out=1000,
+        cost_usd=0.0,
+        notional_usd=0.0,
+    )
+
+    # 4. Write a raw legacy entry with only cost_usd (no notional_usd key)
+    legacy_entry = {
+        "ts": 1234567890.0,
+        "tier": "legacy_claude",
+        "local": False,
+        "tokens_in": 1000,
+        "tokens_out": 500,
+        "cost_usd": 0.0105,
+    }
+    with path.open("a") as f:
+        f.write(json.dumps(legacy_entry) + "\n")
+
+    stats = ledger.harvest()
+    assert stats["prompts"] == 4
+    # tokens_in = 1000 + 1000 + 5000 + 1000 = 8000 (baseline in: 8000 * 3/1e6 = 0.024)
+    # tokens_out = 200 + 800 + 1000 + 500 = 2500 (baseline out: 2500 * 15/1e6 = 0.0375)
+    # baseline_usd = 0.024 + 0.0375 = 0.0615
+    assert abs(stats["baseline_usd"] - 0.0615) < 1e-9
+
+    # metered_spent_usd: 0.005 + 0.0 + 0.0 + 0.0105 = 0.0155
+    assert abs(stats["metered_spent_usd"] - 0.0155) < 1e-9
+
+    # notional_spent_usd: 0.005 + 0.015 + 0.0 + 0.0105 (legacy defaults to cost_usd) = 0.0305
+    assert abs(stats["notional_spent_usd"] - 0.0305) < 1e-9
+    assert abs(stats["spent_usd"] - 0.0305) < 1e-9
+
+    # saved_usd: 0.0615 - 0.0305 = 0.0310
+    assert abs(stats["saved_usd"] - 0.0310) < 1e-9
+
+    # metered_saved_usd: 0.0615 - 0.0155 = 0.0460
+    assert abs(stats["metered_saved_usd"] - 0.0460) < 1e-9
+
+
