@@ -828,6 +828,47 @@ def cmd_distill_export(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_cutover(args: argparse.Namespace) -> None:
+    """D7: the human flip — rewrite [distill] model after gate-passing shadow
+    evidence. Never automatic; confirmation required; rollback printed."""
+    from dataclasses import replace as _replace
+
+    from kultivait.distill.shadow import shadow_summary
+
+    config_path = Path(args.config) if args.config else CONFIG_PATH
+    config = load_config(config_path) if config_path.exists() else Config()
+    current = config.distill.model
+    if args.model == current:
+        print(f"[distill] model is already {current!r}; nothing to do.")
+        return
+
+    summary = shadow_summary()
+    if not summary["cutover_ready"]:
+        print(json.dumps(summary, indent=2))
+        print(f"\nWARNING: cutover criteria not met "
+              f"({'; '.join(summary['reasons'])}). "
+              "The shadow evidence is thin — flip anyway only with judgment.")
+    else:
+        print(json.dumps(summary, indent=2))
+        print("\ncutover criteria MET.")
+
+    if not args.yes:
+        answer = input(
+            f"\nFlip the live preprocessor from {current!r} to {args.model!r}? [y/N] "
+        )
+        if answer.strip().lower() != "y":
+            print("aborted — no changes written.")
+            return
+
+    new_config = _replace(config, distill=_replace(
+        config.distill, model=args.model))
+    save_config(new_config, config_path)
+    print(f"\ncutover complete: [distill] model = {args.model!r}")
+    print(f"rollback: kultivait cutover --model {current} --config {config_path}")
+    print("rollback is instant — the seat resolves per call; "
+          "the next request serves the reverted model.")
+
+
 def cmd_shadow(args: argparse.Namespace) -> None:
     """D6: summarize the shadow log + cutover-readiness (ADR 0017)."""
     from kultivait.distill.shadow import shadow_summary
@@ -990,6 +1031,14 @@ def main() -> None:
     shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
     shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
     shadow_cmd.set_defaults(func=cmd_shadow)
+    cutover_cmd = sub.add_parser(
+        "cutover", help="flip the live preprocessor model (human confirmation; prints rollback)")
+    cutover_cmd.add_argument("--model", required=True, help="the distillate to flip to")
+    cutover_cmd.add_argument("--yes", action="store_true",
+                             help="skip the interactive prompt (explicit confirmation)")
+    cutover_cmd.add_argument("--config", default=None,
+                             help="config path (default ~/.kultivait/config.toml)")
+    cutover_cmd.set_defaults(func=cmd_cutover)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
