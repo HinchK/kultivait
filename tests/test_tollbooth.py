@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from kultivait.effort import EffortPlan, resolve_effort
+from kultivait.escalations import EscalationStore
+from kultivait.ledger import Ledger
 from kultivait.preprocessor import AnalysisResult, TargetFit
 from kultivait.tollbooth import (
     RouteOption,
@@ -286,16 +288,72 @@ def test_hold_ticket_timeout_expires(tmp_path):
 
 
 def test_answer_ticket_late_records_counterfactual(tmp_path):
+    ledger_path = tmp_path / "ledger.jsonl"
+    ledger = Ledger(ledger_path)
+    escalations = EscalationStore(tmp_path / "escalations")
     queue = TollboothQueue(
         enabled=True,
         queue_path=tmp_path / "pending_tolls.jsonl",
+        ledger=ledger,
+        escalations=escalations,
     )
     # Answering an unknown / expired ticket
-    success = queue.answer_ticket("toll-nonexistent", "codex")
+    success = queue.answer_ticket("toll-nonexistent", "codex", effort_canonical="deep")
     assert success is False
     assert len(queue._counterfactuals) == 1
     assert queue._counterfactuals[0]["ticket_id"] == "toll-nonexistent"
     assert queue._counterfactuals[0]["choice"] == "human:frontier:codex"
+
+    # Counterfactual persisted to ledger
+    assert ledger_path.exists()
+    entries = [json.loads(line) for line in ledger_path.read_text().splitlines() if line.strip()]
+    assert len(entries) == 1
+    assert entries[0]["tag"] == "counterfactual"
+    assert entries[0]["counterfactual_choice"] == "human:frontier:codex"
+    assert entries[0]["counterfactual_ticket_id"] == "toll-nonexistent"
+    assert entries[0]["effort_canonical"] == "deep"
+
+
+def test_missed_menu_archived_to_escalation_store_via_save_raw(tmp_path):
+    store = EscalationStore(tmp_path / "escalations")
+    queue = TollboothQueue(
+        enabled=True,
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        escalations=store,
+    )
+    # has_presence is False -> holds will immediately expire and archive missed menu
+    opt = RouteOption(
+        target="claude",
+        display_name="Claude",
+        fit=0.85,
+        effort=resolve_effort(5, "code", "claude"),
+        estimated_cost_usd=0.015,
+        prompt_to_send="rewritten",
+        cash_annotation="subscription: $0",
+        kind="cli",
+    )
+    ticket = TollTicket(
+        ticket_id="toll-missed-123",
+        fingerprint="fp-missed",
+        created_at=time.time(),
+        timeout_s=5.0,
+        options=[opt],
+        default_auto_choice="auto:local",
+        original_prompt="missed prompt",
+    )
+    choice, mark, override = queue.hold_ticket(ticket)
+    assert choice == "auto:local"
+    assert mark == "expired"
+
+    # Verify menu archive in escalation store
+    menu_file = tmp_path / "escalations" / "menu-toll-missed-123.json"
+    assert menu_file.exists()
+    data = json.loads(menu_file.read_text())
+    assert data["ticket_id"] == "toll-missed-123"
+    assert data["reason"] == "no_presence"
+    assert len(data["options"]) == 1
+    assert data["options"][0]["target"] == "claude"
+
 
 
 def test_async_hold_ticket(tmp_path):

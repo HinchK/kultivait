@@ -276,3 +276,26 @@ def test_dual_track_costs_and_legacy_compatibility(tmp_path):
     assert abs(stats["metered_saved_usd"] - 0.0460) < 1e-9
 
 
+def test_harvest_reports_counterfactuals(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    ledger = Ledger(path)
+
+    ledger.record(tier="qwen3:14b", local=True, tokens_in=500, tokens_out=100, cost_usd=0.0)
+    ledger.record(
+        tier="counterfactual",
+        local=False,
+        tokens_in=0,
+        tokens_out=0,
+        cost_usd=0.0,
+        tag="counterfactual",
+        counterfactual_choice="human:frontier:codex",
+        counterfactual_ticket_id="toll-late-99",
+    )
+
+    stats = ledger.harvest()
+    assert stats["prompts"] == 1  # only the routed prompt counts
+    assert stats["counterfactuals"] == 1
+    assert stats["toll_activity"]["counterfactuals"] == 1
+
+
+

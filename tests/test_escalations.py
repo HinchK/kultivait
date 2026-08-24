@@ -45,3 +45,22 @@ def test_render_transcript_covers_tools_and_roles():
     assert 'read({"path": "docs/spec.md"})' in text
     assert "[tool] ENOENT" in text
     assert "[assistant] The file does not exist." in text
+
+
+def test_save_raw_menu_record(tmp_path):
+    store = EscalationStore(tmp_path)
+    menu_record = {
+        "ticket_id": "toll-abc12345",
+        "reason": "timeout",
+        "options": [{"target": "claude", "display_name": "Claude"}],
+    }
+    rid = store.save_raw(menu_record, prefix="menu")
+    assert rid == "menu-toll-abc12345"
+    saved_file = tmp_path / f"{rid}.json"
+    assert saved_file.exists()
+    import json
+    data = json.loads(saved_file.read_text())
+    assert data["ticket_id"] == "toll-abc12345"
+    assert data["reason"] == "timeout"
+    assert len(data["options"]) == 1
+
