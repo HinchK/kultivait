@@ -31,6 +31,7 @@ from kultivait.preprocessor import (
     run as run_preprocessor,
 )
 from kultivait.credentials import probe_candidate_targets
+from kultivait.distill.shadow import DistillSeat, shadow_after_response
 from kultivait.router import Decision, Router
 from kultivait.tollbooth import (
     RouteOption,
@@ -142,9 +143,12 @@ def create_app(
     tollbooth: TollboothQueue | None = None,
     toll_timeout_s: float = 60.0,
     toll_enabled: bool = True,
+    distill_seat: "DistillSeat | None" = None,
 ) -> FastAPI:
     if preprocess_generate is None:
         preprocess_generate = _default_preprocess_generate_for()
+    if distill_seat is None:
+        distill_seat = DistillSeat("qwen3.5:4b", "", "off")
 
     if tollbooth is None:
         tollbooth = TollboothQueue(
@@ -259,6 +263,7 @@ def create_app(
         route_choice = None
         toll_mark = "skipped"
         escalation_id = None
+        preprocess_model_used = None
 
         if not is_contested:
             preprocess_mark = MARK_SKIPPED
@@ -276,9 +281,11 @@ def create_app(
             prep_result = run_preprocessor(
                 messages,
                 generate=preprocess_generate,
+                model=distill_seat.model,
                 timeout_s=preprocess_timeout_s,
             )
             preprocess_mark = prep_result.mark
+            preprocess_model_used = distill_seat.model
             max_fit = prep_result.max_fit
             # Suppress subtask_candidates on tool-bearing requests per ADR 0007
             subtask_candidates_count = 0 if has_tools else len(prep_result.analysis.subtask_candidates)
@@ -428,6 +435,10 @@ def create_app(
             escalation_id = escalations.save(messages, requested_tier=decision.tier)
 
         meta = _decision_meta(decision, fallback_reason, messages)
+        if preprocess_model_used:
+            # ADR 0017: every preprocessed entry tags its model; legacy
+            # entries imply the incumbent. Shadow rows never enter the ledger.
+            meta["preprocess_model"] = preprocess_model_used
         meta.update(
             {
                 "escalation_id": escalation_id,
@@ -462,6 +473,29 @@ def create_app(
                 "toll": toll_mark,
                 "route_choice": route_choice,
             }
+
+        # ADR 0017 shadow pass: post-response fire-and-forget on contested
+        # traffic (where the incumbent preprocessor ran). Zero latency by
+        # construction (executor submit, total exception isolation); shadow
+        # outcomes go to shadow.jsonl, never the main ledger.
+        if is_contested and preprocess_model_used:
+            _shadow_prompt = next(
+                (_text_of(m.get("content")) for m in reversed(messages)
+                 if m.get("role") == "user"),
+                "",
+            )
+            shadow_after_response(
+                shadow_mode=distill_seat.shadow_mode,
+                shadow_model=distill_seat.shadow_model,
+                prompt=_shadow_prompt,
+                fingerprint=fingerprint,
+                incumbent_model=distill_seat.model,
+                incumbent_verdict=verdict,
+                incumbent_max_fit=max_fit,
+                incumbent_latency_s=getattr(prep_result, "latency_s", 0.0),
+                generate=preprocess_generate,
+                sample_rate=distill_seat.shadow_sample_rate,
+            )
 
         return {
             "tier": tier,

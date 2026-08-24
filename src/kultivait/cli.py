@@ -597,6 +597,7 @@ def cmd_choose(
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
+    from kultivait.distill.shadow import DistillSeat
     from kultivait.server import create_app
     from kultivait.tollbooth import TollboothQueue
 
@@ -628,6 +629,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         tollbooth=tollbooth,
         toll_timeout_s=config.toll_timeout_s,
         toll_enabled=config.toll_enabled,
+        distill_seat=DistillSeat.from_config(config),
     )
     port = args.port or config.port
     print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
@@ -826,6 +828,13 @@ def cmd_distill_export(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_shadow(args: argparse.Namespace) -> None:
+    """D6: summarize the shadow log + cutover-readiness (ADR 0017)."""
+    from kultivait.distill.shadow import shadow_summary
+
+    print(json.dumps(shadow_summary(Path(args.log) if args.log else None), indent=2))
+
+
 def cmd_distill_eval(args: argparse.Namespace) -> None:
     """D5: run the held-out gate eval on a model through the production
     generate path (probe #52's discovery: raw-chat framing lies)."""
@@ -978,6 +987,9 @@ def main() -> None:
                         help="recompute the incumbent baseline first (same path)")
     eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
     eval_d.set_defaults(func=cmd_distill_eval)
+    shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
+    shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
+    shadow_cmd.set_defaults(func=cmd_shadow)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
