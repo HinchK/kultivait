@@ -19,12 +19,15 @@ class Ledger:
         tokens_in: int,
         tokens_out: int,
         cost_usd: float,
+        notional_usd: float | None = None,
         fingerprint: str | None = None,
         **extra,
     ) -> None:
         """Extra keyword fields (routing decision metadata, truncation flags,
         prompt snippets) are stored verbatim — the ledger is the analysis
         substrate, so silent failure modes must leave a trace here."""
+        if notional_usd is None:
+            notional_usd = cost_usd
         entry = {
             "ts": time.time(),
             "tier": tier,
@@ -32,6 +35,7 @@ class Ledger:
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "cost_usd": cost_usd,
+            "notional_usd": notional_usd,
         }
         if fingerprint is not None:
             entry["fingerprint"] = fingerprint
@@ -47,7 +51,8 @@ class Ledger:
                 entries = [json.loads(line) for line in f if line.strip()]
         tokens_in = sum(e["tokens_in"] for e in entries)
         tokens_out = sum(e["tokens_out"] for e in entries)
-        spent = sum(e["cost_usd"] for e in entries)
+        metered_spent = sum(e.get("cost_usd", 0.0) for e in entries)
+        notional_spent = sum(e.get("notional_usd", e.get("cost_usd", 0.0)) for e in entries)
         baseline = (tokens_in * self._baseline_in + tokens_out * self._baseline_out) / 1e6
         # fallback_reason is current; tool_fallback is the pre-config legacy field
         escalations = [e for e in entries if e.get("fallback_reason") or e.get("tool_fallback")]
@@ -90,9 +95,12 @@ class Ledger:
             "prompts": len(entries),
             "local_prompts": sum(1 for e in entries if e["local"]),
             "tokens_local": sum(e["tokens_in"] + e["tokens_out"] for e in entries if e["local"]),
-            "spent_usd": spent,
+            "spent_usd": notional_spent,
+            "notional_spent_usd": notional_spent,
+            "metered_spent_usd": metered_spent,
             "baseline_usd": baseline,
-            "saved_usd": baseline - spent,
+            "saved_usd": baseline - notional_spent,
+            "metered_saved_usd": baseline - metered_spent,
             "escalations": {
                 "count": len(escalations),
                 "recent": [

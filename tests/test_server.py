@@ -956,5 +956,144 @@ def test_contested_verdict_tollbooth_with_effort_override(tmp_path):
     assert backends["claude"].effort_flags_seen[0] == ["--effort", "high"]
 
 
+def test_api_backend_tool_bearing_chat_completions_no_fallback(tmp_path):
+    tool_call = {
+        "id": "call_weather_1",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+    }
+    api_backend = FakeBackend("openrouter", local=False, tool_calls=[tool_call])
+    api_backend.supports_tools = True
+
+    backends = {
+        "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
+        "openrouter": api_backend,
+    }
+    app = create_app(
+        router=Router(centroids={"llama3.1:8b": np.array([1.0, 0.0]), "openrouter": np.array([0.0, 1.0])}, capability_order=["llama3.1:8b", "openrouter"]),
+        embed=lambda text: np.array([0.0, 1.0]),  # routes to openrouter
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+
+    # 1. Non-streaming tool call
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Paris"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather"}}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["choices"][0]["finish_reason"] == "tool_calls"
+    assert data["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert data["kultivait"]["tier"] == "openrouter"
+    assert data["kultivait"]["fallback_reason"] is None
+
+    # 2. Streaming tool call
+    resp_stream = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Paris"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather"}}],
+            "stream": True,
+        },
+    )
+    assert resp_stream.status_code == 200
+    events = [line for line in resp_stream.text.split("\n\n") if line.startswith("data: ")]
+    chunks = [json.loads(line[6:]) for line in events if line[6:] != "[DONE]"]
+    tool_chunk = next(c for c in chunks if c["choices"][0]["delta"].get("tool_calls"))
+    assert tool_chunk["choices"][0]["delta"]["tool_calls"][0]["function"]["name"] == "get_weather"
+
+    # 3. Check ledger has recorded dual-track cost (cost_usd = 0.01, notional_usd = 0.01 for API)
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["tier"] == "openrouter"
+    assert records[-1]["cost_usd"] == 0.01
+    assert records[-1]["notional_usd"] == 0.01
+    assert records[-1]["fallback_reason"] is None
+
+
+def test_api_backend_tool_bearing_anthropic_messages_no_fallback(tmp_path):
+    tool_call = {
+        "id": "call_weather_2",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city": "Berlin"}'},
+    }
+    api_backend = FakeBackend("openrouter", local=False, tool_calls=[tool_call])
+    api_backend.supports_tools = True
+
+    backends = {
+        "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
+        "openrouter": api_backend,
+    }
+    app = create_app(
+        router=Router(centroids={"llama3.1:8b": np.array([1.0, 0.0]), "openrouter": np.array([0.0, 1.0])}, capability_order=["llama3.1:8b", "openrouter"]),
+        embed=lambda text: np.array([0.0, 1.0]),  # routes to openrouter
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+
+    # 1. Non-streaming tool call
+    resp = client.post(
+        "/v1/messages",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Berlin"}],
+            "tools": [{"name": "get_weather", "input_schema": {"type": "object"}}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["stop_reason"] == "tool_use"
+    assert data["content"][0]["type"] == "tool_use"
+    assert data["content"][0]["name"] == "get_weather"
+    assert data["content"][0]["input"] == {"city": "Berlin"}
+
+    # 2. Streaming tool call
+    resp_stream = client.post(
+        "/v1/messages",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Berlin"}],
+            "tools": [{"name": "get_weather", "input_schema": {"type": "object"}}],
+            "stream": True,
+        },
+    )
+    assert resp_stream.status_code == 200
+    lines = resp_stream.text.strip().split("\n\n")
+    parsed_events = []
+    for block in lines:
+        if not block.strip():
+            continue
+        ev_type = None
+        ev_data = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                ev_type = line[7:]
+            elif line.startswith("data: "):
+                ev_data = json.loads(line[6:])
+        if ev_type and ev_data:
+            parsed_events.append((ev_type, ev_data))
+
+    start_ev = next(d for t, d in parsed_events if t == "content_block_start" and d["content_block"].get("type") == "tool_use")
+    assert start_ev["content_block"]["name"] == "get_weather"
+    delta_ev = next(d for t, d in parsed_events if t == "content_block_delta" and d["delta"].get("type") == "input_json_delta")
+    assert "Berlin" in delta_ev["delta"]["partial_json"]
+    msg_delta = next(d for t, d in parsed_events if t == "message_delta")
+    assert msg_delta["delta"]["stop_reason"] == "tool_use"
+
+
+
 
 

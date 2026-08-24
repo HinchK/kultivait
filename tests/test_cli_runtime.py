@@ -100,3 +100,29 @@ def test_distiller_uses_openai_chat_for_llamacpp(monkeypatch):
     assert seen["url"] == "http://localhost:8080/v1/chat/completions"
     # num_ctx is an ollama option; the OpenAI payload must not carry it
     assert "options" not in seen["payload"]
+
+
+def test_build_backends_with_api_tiers(monkeypatch):
+    from kultivait.config import TierSpec
+    from kultivait.api_backends import OpenRouterBackend, AnthropicBackend, OpenAIBackend
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-123")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-456")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("kultivait.credentials._get_keychain_key", lambda s, a: None)
+    monkeypatch.setattr("kultivait.credentials._get_file_key", lambda p, credentials_path=None: None)
+
+    config = Config(
+        tiers=[
+            TierSpec(name="router", role="frontier", kind="api", model="anthropic/claude-3.7-sonnet"),
+            TierSpec(name="claude", role="frontier", kind="api", model="claude-3-7-sonnet-20250219"),
+            TierSpec(name="openai", role="frontier", kind="api", model="gpt-4o"),
+        ]
+    )
+
+    backends = cli.build_backends(config)
+    assert isinstance(backends.get("router"), OpenRouterBackend)
+    assert isinstance(backends.get("claude"), AnthropicBackend)
+    # openai key is not resolvable -> not in backends (registered but not served)
+    assert "openai" not in backends
+

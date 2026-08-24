@@ -18,7 +18,9 @@ from pathlib import Path
 import httpx
 import numpy as np
 
+from kultivait.api_backends import AnthropicBackend, OpenAIBackend, OpenRouterBackend
 from kultivait.backends import CLIBackend, LlamaCppBackend, OllamaBackend
+from kultivait.credentials import resolve_provider_key
 from kultivait.config import (
     KNOWN_CLIS,
     RUNTIME_URLS,
@@ -229,6 +231,25 @@ def build_router(config: Config) -> Router:
     return Router(centroids=centroids, capability_order=config.capability_order())
 
 
+def _provider_for_tier(name: str, model: str | None) -> str:
+    name_lower = name.lower()
+    if "openrouter" in name_lower:
+        return "openrouter"
+    if "anthropic" in name_lower or "claude" in name_lower:
+        return "anthropic"
+    if "openai" in name_lower or "gpt" in name_lower or "o3" in name_lower:
+        return "openai"
+    if model:
+        model_lower = model.lower()
+        if "/" in model_lower:
+            return "openrouter"
+        if "claude" in model_lower:
+            return "anthropic"
+        if "gpt" in model_lower or "o1" in model_lower or "o3" in model_lower:
+            return "openai"
+    return name_lower
+
+
 def build_backends(config: Config) -> dict:
     backends = {}
     for tier in config.tiers:
@@ -242,6 +263,31 @@ def build_backends(config: Config) -> dict:
             backends[tier.name] = CLIBackend(
                 tier.command, price_in=tier.price_in, price_out=tier.price_out
             )
+        elif tier.kind == "api":
+            prov = _provider_for_tier(tier.name, tier.model)
+            key = resolve_provider_key(prov)
+            if key:
+                if prov == "openrouter":
+                    backends[tier.name] = OpenRouterBackend(
+                        model=tier.model or "anthropic/claude-3.7-sonnet",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
+                elif prov == "anthropic":
+                    backends[tier.name] = AnthropicBackend(
+                        model=tier.model or "claude-3-7-sonnet-20250219",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
+                elif prov == "openai":
+                    backends[tier.name] = OpenAIBackend(
+                        model=tier.model or "gpt-4o",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
         # "virtual" tiers get no backend: classified, never served — the
         # escalation path fires instead.
     return backends
