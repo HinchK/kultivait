@@ -84,3 +84,27 @@ _Avoid_: health check, validation (no state is stored), key check
 The dispatch posture where the proxy buffers a provider's full stream before relaying it — client streaming survives, but failures surface clean and pre-stream, never as truncated content.
 _Avoid_: passthrough streaming, store-and-forward, mid-stream errors
 
+**Distillate**:
+A fine-tuned generation of a local model, produced by the distillation pipeline from harvested routing data and named so the herd can tell generations and bases apart in the ledger.
+_Avoid_: fine-tune (that's the process), adapter, custom model
+
+**Anchor set**:
+The real harvested prompts that seed synthetic corpus generation — while every real verdict-bearing case stays permanently held out as the eval set, never trained on.
+_Avoid_: seed set, eval set (that's the held-out half), training data
+
+**Resource ladder**:
+The fixed escalation order a training run climbs when it presses the hardware envelope — batch down, adapted layers down, gradient checkpointing, wired-limit raise — aborting rather than swapping if still over.
+_Avoid_: fallback config, memory tuning, degradation path
+
+**Band discipline**:
+The two-sided guard on a judge's contested band — gold-contested cases must land in it (floor), the full set must not flood it (ceiling) — so toll-rate wins can't be gamed by dodging the band.
+_Avoid_: calibration check, toll guard, band population (that's one side)
+
+**Agreement filter**:
+The synthetic-corpus gate where the teacher labels a generated prompt's tier in a second, independent pass, and only pairs whose intended band matches the labeled band survive into training.
+_Avoid_: self-check, label verification, double-labeling
+
+**Shadow pass**:
+The post-response background run of a gate-passing distillate on contested traffic — compared against the incumbent without touching the live response, logged outside the main ledger until the human cuts over.
+_Avoid_: shadow mode (that's the config state), canary, A/B test (no traffic splits)
+

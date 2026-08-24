@@ -1,0 +1,22 @@
+# Training method: mlx-lm QLoRA on both bases, defaults first, llama-3.2-3b-instruct challenger, universal fused route, capped envelope with an escalation ladder
+
+V1 trains with **mlx-lm LoRA over 4-bit QLoRA bases for both bake-off candidates** — the incumbent `qwen3.5:4b` and the challenger **`llama-3.2-3b-instruct`** (Llama family: genuinely different architecture from the Qwen incumbent for clean attribution, 3B for fast probe cadence, strong instruct/JSON baseline, and the family unlocks both export paths opportunistically). QLoRA even where fp16 would fit: the 2.5–3 GB working set keeps the herd serving alongside training, and it makes deployment uniform. **Hyperparameters are mlx-lm documented defaults as the v1 baseline** — rank 16, default linear target modules, batch 4 with gradient accumulation 4, default learning rate, `--mask-prompt` so loss lands on the contract JSON only — with iterations scaled to epochs as the single tuned knob; hyperparameter search is explicitly deferred until the probe validates the default recipe. Export is the **universal fused route**: `mlx_lm.fuse` → fused safetensors directory → Ollama Modelfile (`FROM` the directory, optional `--quantize q4_K_M` at import, template/system carried from the contract) → `ollama create` under a **distillate name that encodes base and generation** (e.g. `kv-judge-qwen35-4b-g1`), so the ledger tells generations and bases apart; GGUF export (`mlx_lm.fuse --export-gguf`, Llama/Mistral fp16 only) is used opportunistically where the family allows — the Qwen incumbent can never take the direct-ADAPTER path (not in Ollama's architecture list), which the fused route renders moot. The hardware envelope is **two hard caps with an escalation ladder**: peak training working set ≤ 16 GB and ≤ 45 min/epoch at the 1k-pair corpus (~35 min projected, margin for the 2k ceiling); a run pressing the cap climbs the ladder — batch 4 → 2 → 1, adapted layers 16 → 8 → 4, gradient checkpointing on, and only then the documented `iogpu.wired_limit_mb` raise as last resort — and **aborts rather than swaps** if still over. Serving envelope: a deployed distillate stays ≤ 4 GB resident (q4_K_M 4B ≈ 2.5 GB) so the herd keeps serving during shadow rollout. Checkpoints land every epoch with `--resume-adapter-file` resumption.
+
+## Considered Options
+
+- **fp16 LoRA where it fits** (4B incumbent fp16, challenger QLoRA): rejected — mixed modes muddy the bake-off's attribution and the ~8 GB fp16 working set crowds a machine the herd serves on.
+- **Hyperparameter sweep before training**: rejected — v1 proves the pipeline, not the perfect rank; every sweep doubles M4 Pro hours before the probe has validated anything.
+- **qwen-family challenger** (qwen3-1.7b / qwen3-4b variant): rejected — same family as the incumbent muddies architecture-vs-training attribution; still needs the fused route.
+- **gemma4:e4b or llama3.1:8b as challenger** (both already local): rejected — heavier than the incumbent (slower epochs, tighter memory) for marginal v1 gain; the 3B challenger downloads once and trains fast.
+- **Per-family export paths** (direct ADAPTER for Llama/Gemma, fused for Qwen): rejected — two deployment codepaths, and direct-ADAPTER is only documented-safe for non-QLoRA adapters; ours are QLoRA.
+- **GGUF export everywhere**: impossible — mlx-lm GGUF export covers Mistral/Mixtral/Llama fp16 only.
+- **Soft or tighter envelope targets**: rejected — soft re-litigates the budget mid-build; tighter (12 GB / 30 min) forces batch-1 by default for no stated need.
+
+## Consequences
+
+- Both candidates share one recipe, one export path, one envelope: bake-off outcomes attribute cleanly to base + training, not tooling variance.
+- The corpus ticket's `train.jsonl`/`valid.jsonl` chat format plugs straight into `mlx_lm.lora --data` (format already settled in the landscape findings).
+- The probe (#52) runs the default recipe end-to-end at toy scale and inherits the ladder verbatim; it also becomes the first empirical check of the ~35 min/epoch projection.
+- The deployed distillate's q4_K_M quantization-at-import keeps serving memory inside the herd's existing footprint; the fused fp16 artifacts remain on disk for re-quantization.
+- Distillate naming (`kv-judge-<base>-g<generation>`) becomes a ledger-visible contract; #51's shadow rollout distinguishes candidates by it.
+- Term canonized in CONTEXT.md: **Resource ladder**.
