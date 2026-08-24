@@ -64,6 +64,8 @@ class Config:
     # is server-wide); empty means "same server as chat".
     embed_base_url: str = ""
     preprocess_timeout_s: float = 15.0
+    toll_timeout_s: float = 60.0
+    toll_enabled: bool = True
 
     def capability_order(self) -> "list[str]":
         return [t.name for t in self.tiers]

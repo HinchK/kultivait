@@ -54,6 +54,7 @@ freely, re-run `init` anytime.
 
 ```bash
 kultivait serve                    # run the routing proxy
+kultivait choose                   # answer pending tolls out-of-band
 kultivait route "why does this test deadlock?"    # dry-run a classification
 kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
 kultivait escalations [--brief]    # cloud-worthy prompts served locally

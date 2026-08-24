@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -24,6 +26,8 @@ class FakeBackend:
         self.tool_calls = tool_calls
         self.calls = []
         self.tools_seen = []
+        self.effort_flags_seen = []
+        self.model_overrides_seen = []
 
     def _completion(self):
         return Completion(
@@ -35,21 +39,47 @@ class FakeBackend:
             tool_calls=self.tool_calls,
         )
 
-    def complete(self, messages, tools=None):
+    def complete(
+        self,
+        messages,
+        tools=None,
+        effort_flags=None,
+        model_override=None,
+        **kwargs,
+    ):
         self.calls.append(messages)
         self.tools_seen.append(tools)
+        self.effort_flags_seen.append(effort_flags)
+        self.model_overrides_seen.append(model_override)
         return self._completion()
 
-    def stream(self, messages, tools=None):
+    def stream(
+        self,
+        messages,
+        tools=None,
+        effort_flags=None,
+        model_override=None,
+        **kwargs,
+    ):
         self.calls.append(messages)
         self.tools_seen.append(tools)
+        self.effort_flags_seen.append(effort_flags)
+        self.model_overrides_seen.append(model_override)
         if not self.tool_calls:
             yield "answered by "
             yield self.name
         yield self._completion()
 
 
-def make_client(tmp_path, embed, preprocess_generate=None, preprocess_timeout_s=15.0):
+def make_client(
+    tmp_path,
+    embed,
+    preprocess_generate=None,
+    preprocess_timeout_s=15.0,
+    tollbooth=None,
+    toll_timeout_s=60.0,
+    toll_enabled=True,
+):
     backends = {
         "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
         "claude": FakeBackend("claude", local=False),
@@ -63,6 +93,9 @@ def make_client(tmp_path, embed, preprocess_generate=None, preprocess_timeout_s=
         escalations=EscalationStore(tmp_path / "escalations"),
         preprocess_generate=preprocess_generate,
         preprocess_timeout_s=preprocess_timeout_s,
+        tollbooth=tollbooth,
+        toll_timeout_s=toll_timeout_s,
+        toll_enabled=toll_enabled,
     )
     return TestClient(app), backends
 
@@ -515,10 +548,11 @@ def test_contested_runs_preprocessor_and_serves_frontier_verdict_with_rewrite(tm
     assert km["canonical_effort"] == "deep"
     assert km["cli_effort_flags"] == ["--effort", "high"]
     assert resp.json()["model"] == "claude"
-    # Frontier CLI dispatch receives rewritten text
+    # Frontier CLI dispatch receives rewritten text and effort flags
     assert backends["claude"].calls[0] == [
         {"role": "user", "content": "Self-contained architecture prompt for claude"}
     ]
+    assert backends["claude"].effort_flags_seen[0] == ["--effort", "high"]
 
     entry = json.loads((tmp_path / "ledger.jsonl").read_text())
     assert entry["preprocess_mark"] == "ok"
@@ -610,4 +644,317 @@ def test_tool_bearing_contested_request_preprocessed_with_tool_fallback(tmp_path
     assert resp.json()["model"] == "llama3.1:8b"
     # Local fallback served gets original message
     assert backends["llama3.1:8b"].calls[0] == [{"role": "user", "content": "do tool task"}]
+
+
+def test_contested_verdict_triggers_tollbooth_and_answers_frontier(tmp_path):
+    import threading
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": ["isolate test"],
+        },
+        "rewrite": "Contested prompt rewritten for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_when_pending():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude")
+                return
+
+    t = threading.Thread(target=answer_when_pending)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "frontier"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:frontier:claude"
+    assert km["canonical_effort"] == "balanced"
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Contested prompt rewritten for claude"}
+    ]
+
+    # Verify ledger entry
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["toll"] == "answered"
+    assert records[-1]["route_choice"] == "human:frontier:claude"
+    assert records[-1]["verdict"] == "frontier"
+
+
+def test_contested_verdict_tollbooth_no_presence_auto_policy_local(tmp_path):
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    # No presence registered
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+        escalations=EscalationStore(tmp_path / "escalations"),
+    )
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "local"
+    assert km["toll"] == "expired"
+    assert km["route_choice"] == "auto:local"
+    assert resp.json()["model"] == "llama3.1:8b"
+    assert backends["llama3.1:8b"].calls[0] == [
+        {"role": "user", "content": "fix my bug"}
+    ]
+
+    # Verify missed menu archived
+    menus = list((tmp_path / "escalations").glob("menu-*.json"))
+    assert len(menus) == 1
+    menu_data = json.loads(menus[0].read_text())
+    assert menu_data["reason"] == "no_presence"
+    assert menu_data["auto_choice"] == "auto:local"
+
+
+def test_contested_verdict_tollbooth_human_local_choice_archives_escalation(tmp_path):
+    import threading
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+        escalations=EscalationStore(tmp_path / "escalations"),
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_local():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "local")
+                return
+
+    t = threading.Thread(target=answer_local)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "local"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:local"
+    assert resp.json()["model"] == "llama3.1:8b"
+    assert backends["llama3.1:8b"].calls[0] == [
+        {"role": "user", "content": "fix my bug"}
+    ]
+
+    # Verify escalation created for deliberate local choice
+    escs = list((tmp_path / "escalations").glob("esc-*.json"))
+    assert len(escs) == 1
+
+
+def test_anthropic_messages_contested_verdict_tollbooth(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    from kultivait.tollbooth import TollboothQueue
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_frontier():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude")
+                return
+
+    t = threading.Thread(target=answer_frontier)
+    t.start()
+
+    resp = client.post(
+        "/v1/messages",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Contested prompt rewritten for claude"}
+    ]
+
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["toll"] == "answered"
+    assert records[-1]["route_choice"] == "human:frontier:claude"
+
+
+def test_contested_verdict_tollbooth_with_effort_override(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,  # normally maps to balanced
+            "signals": ["complex bug"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    from kultivait.tollbooth import TollboothQueue
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_with_deep_effort():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude", effort_canonical="deep")
+                return
+
+    t = threading.Thread(target=answer_with_deep_effort)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "deep debugging needed"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "frontier"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:frontier:claude"
+    assert km["canonical_effort"] == "deep"
+    assert km["cli_effort_flags"] == ["--effort", "high"]
+    assert backends["claude"].effort_flags_seen[0] == ["--effort", "high"]
+
+
+
 

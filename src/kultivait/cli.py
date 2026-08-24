@@ -11,6 +11,8 @@ import json
 import os
 import shutil
 import sys
+import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -47,6 +49,9 @@ CONFIG_PATH = KULTIVAIT_HOME / "config.toml"
 LEDGER_PATH = KULTIVAIT_HOME / "ledger.jsonl"
 COMPOST_DIR = KULTIVAIT_HOME / "compost"
 ESCALATIONS_DIR = KULTIVAIT_HOME / "escalations"
+PENDING_TOLLS_PATH = KULTIVAIT_HOME / "pending_tolls.jsonl"
+PRESENCE_PATH = KULTIVAIT_HOME / "presence.json"
+TOLL_ANSWERS_DIR = KULTIVAIT_HOME / "toll_answers"
 
 
 def _survey_ollama() -> "tuple[list[str], dict[str, int]]":
@@ -327,21 +332,255 @@ def cmd_init(args: argparse.Namespace) -> None:
     _survey_and_save(forced or _detect_runtime())
 
 
+def _render_route_menu(ticket: "Any") -> str:
+    if hasattr(ticket, "ticket_id"):
+        tid = ticket.ticket_id
+        orig_prompt = ticket.original_prompt
+        options = ticket.options
+        created_at = ticket.created_at
+        timeout_s = ticket.timeout_s
+    else:
+        tid = ticket.get("ticket_id", "")
+        orig_prompt = ticket.get("original_prompt", "")
+        options = ticket.get("options", [])
+        created_at = ticket.get("created_at", time.time())
+        timeout_s = ticket.get("timeout_s", 60.0)
+
+    remaining = max(0, int(timeout_s - (time.time() - created_at)))
+    lines = [
+        f"Route Menu — Contested Request [ticket: {tid}] ({remaining}s remaining)",
+    ]
+    if orig_prompt:
+        snippet = orig_prompt[:80] + ("..." if len(orig_prompt) > 80 else "")
+        lines.append(f"Prompt: {snippet}")
+    lines.append("")
+
+    for i, opt in enumerate(options, 1):
+        if hasattr(opt, "target"):
+            target = opt.target
+            display_name = opt.display_name
+            fit = opt.fit
+            cost = opt.estimated_cost_usd
+            canonical = opt.effort.canonical
+            cli_flags = " ".join(opt.effort.cli_flags)
+        else:
+            target = opt.get("target", "")
+            display_name = opt.get("display_name", target)
+            fit = opt.get("fit", 0.0)
+            cost = opt.get("estimated_cost_usd", 0.0)
+            canonical = opt.get("effort", "balanced")
+            cli_flags = " ".join(opt.get("cli_flags", []))
+
+        fit_str = f"{fit:.2f}" if fit > 0 else "—"
+        cost_str = f"${cost:.4f}" if cost > 0 else "$0.00"
+        effort_str = f"{canonical} ({cli_flags})" if cli_flags else canonical
+        if target == "local":
+            lines.append(f"  [{i}] {display_name:<20} keep-it-local (original prompt, $0.00)")
+        else:
+            lines.append(
+                f"  [{i}] {display_name:<20} fit: {fit_str:<5} cost: {cost_str:<8} effort: {effort_str}"
+            )
+
+    lines.append("")
+    lines.append(f"Controls: [1-{len(options)}] select, [e] override effort, [q] quit")
+    return "\n".join(lines)
+
+
+def _prompt_choice(options_count: int, input_fn=input) -> "tuple[int, str | None] | None":
+    while True:
+        try:
+            raw = input_fn(f"selection [1-{options_count}, e, q]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+        if raw in ("q", "quit", "exit"):
+            return None
+
+        if raw == "e":
+            opt_idx = 0
+            if options_count > 1:
+                try:
+                    opt_raw = input_fn(f"option to override [1-{options_count}]: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    return None
+                if not opt_raw.isdigit() or not (1 <= int(opt_raw) <= options_count):
+                    print(f"invalid option: {opt_raw}")
+                    continue
+                opt_idx = int(opt_raw) - 1
+
+            try:
+                eff_raw = input_fn("effort level [1: fast, 2: balanced, 3: deep]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return None
+
+            eff_map = {
+                "1": "fast", "f": "fast", "fast": "fast",
+                "2": "balanced", "b": "balanced", "balanced": "balanced",
+                "3": "deep", "d": "deep", "deep": "deep",
+            }
+            if eff_raw in eff_map:
+                return (opt_idx, eff_map[eff_raw])
+            else:
+                print(f"invalid effort level: {eff_raw}")
+                continue
+
+        if raw.isdigit() and 1 <= int(raw) <= options_count:
+            return (int(raw) - 1, None)
+
+        print(f"invalid selection: {raw}")
+
+
+_INPUT_LOCK = threading.Lock()
+
+
+def _start_tty_watcher(
+    tollbooth: "Any",
+    poll_interval: float = 0.2,
+    input_fn=input,
+) -> threading.Thread:
+    handled_tickets = set()
+
+    def _watcher_loop():
+        while True:
+            time.sleep(poll_interval)
+            if not tollbooth.enabled:
+                continue
+            pending = list(tollbooth._pending.values())
+            for ticket in pending:
+                if ticket.ticket_id in handled_tickets:
+                    continue
+                handled_tickets.add(ticket.ticket_id)
+                if ticket.ticket_id not in tollbooth._pending:
+                    continue
+                with _INPUT_LOCK:
+                    if ticket.ticket_id not in tollbooth._pending:
+                        continue
+                    tui.console.print(_render_route_menu(ticket))
+                    try:
+                        res = _prompt_choice(len(ticket.options), input_fn=input_fn)
+                        if res is not None:
+                            opt_idx, effort_override = res
+                            chosen_opt = ticket.options[opt_idx]
+                            tollbooth.answer_ticket(
+                                ticket.ticket_id,
+                                chosen_opt.target,
+                                effort_canonical=effort_override,
+                            )
+                            tui.console.print(f"toll answered: {chosen_opt.target}")
+                    except (EOFError, KeyboardInterrupt):
+                        pass
+                    except Exception:
+                        pass
+
+    t = threading.Thread(target=_watcher_loop, daemon=True, name="tollbooth-tty-watcher")
+    t.start()
+    return t
+
+
+def cmd_choose(
+    args: argparse.Namespace | None = None,
+    queue_path: Path | None = None,
+    answers_dir: Path | None = None,
+    presence_path: Path | None = None,
+    input_fn=input,
+) -> None:
+    q_path = queue_path or getattr(args, "queue_path", None) or PENDING_TOLLS_PATH
+    ans_dir = answers_dir or getattr(args, "answers_dir", None) or TOLL_ANSWERS_DIR
+    pres_path = presence_path or getattr(args, "presence_path", None) or PRESENCE_PATH
+
+    try:
+        pres_path.parent.mkdir(parents=True, exist_ok=True)
+        pres_path.write_text(json.dumps({"ts": time.time(), "surface": "choose"}))
+    except Exception:
+        pass
+
+    if not q_path.exists():
+        tui.console.print("[dim]no pending tolls[/dim]")
+        return
+
+    while True:
+        if not q_path.exists():
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+        lines = [l.strip() for l in q_path.read_text().splitlines() if l.strip()]
+        if not lines:
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+
+        ticket_data = json.loads(lines[0])
+        ticket_id = ticket_data.get("ticket_id")
+        options = ticket_data.get("options", [])
+        if not options:
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+
+        tui.console.print(_render_route_menu(ticket_data))
+        res = _prompt_choice(len(options), input_fn=input_fn)
+        if res is None:
+            break
+
+        opt_idx, effort_override = res
+        chosen_opt = options[opt_idx]
+        target = chosen_opt.get("target") if isinstance(chosen_opt, dict) else chosen_opt.target
+        choice_str = "human:local" if target == "local" else f"human:frontier:{target}"
+
+        ans_dir.mkdir(parents=True, exist_ok=True)
+        ans_file = ans_dir / f"{ticket_id}.json"
+        ans_file.write_text(
+            json.dumps(
+                {
+                    "choice": choice_str,
+                    "effort_canonical": effort_override,
+                    "ts": time.time(),
+                }
+            )
+        )
+        tui.console.print(f"toll answered: {choice_str}")
+        try:
+            pres_path.write_text(json.dumps({"ts": time.time(), "surface": "choose"}))
+        except Exception:
+            pass
+
+        time.sleep(0.15)
+        new_lines = [l.strip() for l in q_path.read_text().splitlines() if l.strip()]
+        if len(new_lines) <= 1 and (not new_lines or json.loads(new_lines[0]).get("ticket_id") == ticket_id):
+            break
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
     from kultivait.server import create_app
+    from kultivait.tollbooth import TollboothQueue
 
     config = get_config()
     print("cultivating centroids from seed prompts...", file=sys.stderr)
+    escalations = EscalationStore(ESCALATIONS_DIR)
+    ledger = Ledger(LEDGER_PATH)
+    tollbooth = TollboothQueue(
+        queue_path=PENDING_TOLLS_PATH,
+        presence_path=PRESENCE_PATH,
+        answers_dir=TOLL_ANSWERS_DIR,
+        default_timeout_s=config.toll_timeout_s,
+        enabled=config.toll_enabled,
+        escalations=escalations,
+        ledger=ledger,
+    )
+    if _stdin_is_tty():
+        tollbooth.register_presence("tty")
+        _start_tty_watcher(tollbooth)
+
     app = create_app(
         router=build_router(config),
         embed=lambda text: _embed_batch(config, [text])[0],
         backends=build_backends(config),
-        ledger=Ledger(LEDGER_PATH),
+        ledger=ledger,
         gate=build_gate(config),
-        escalations=EscalationStore(ESCALATIONS_DIR),
+        escalations=escalations,
         preprocess_timeout_s=config.preprocess_timeout_s,
+        tollbooth=tollbooth,
+        toll_timeout_s=config.toll_timeout_s,
+        toll_enabled=config.toll_enabled,
     )
     port = args.port or config.port
     print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
@@ -503,6 +742,9 @@ def main() -> None:
     harvest = sub.add_parser("harvest", help="show cumulative savings")
     harvest.add_argument("--json", action="store_true", help="machine-readable output")
     harvest.set_defaults(func=cmd_harvest)
+
+    choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
+    choose.set_defaults(func=cmd_choose)
 
     args = parser.parse_args()
     args.func(args)

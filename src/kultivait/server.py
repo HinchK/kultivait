@@ -31,6 +31,13 @@ from kultivait.preprocessor import (
     run as run_preprocessor,
 )
 from kultivait.router import Decision, Router
+from kultivait.tollbooth import (
+    RouteOption,
+    TollTicket,
+    TollboothQueue,
+    build_route_menu,
+    resolve_auto_policy,
+)
 
 
 def _text_of(content) -> str:
@@ -131,9 +138,20 @@ def create_app(
     preprocess_generate: Callable[[str, str], Any] | None = None,
     preprocess_timeout_s: float = 15.0,
     effort_overrides: dict | None = None,
+    tollbooth: TollboothQueue | None = None,
+    toll_timeout_s: float = 60.0,
+    toll_enabled: bool = True,
 ) -> FastAPI:
     if preprocess_generate is None:
         preprocess_generate = _default_preprocess_generate_for()
+
+    if tollbooth is None:
+        tollbooth = TollboothQueue(
+            default_timeout_s=toll_timeout_s,
+            enabled=toll_enabled,
+            escalations=escalations,
+            ledger=ledger,
+        )
 
     project_token = os.getenv("POSTHOG_PROJECT_TOKEN")
     posthog_client = (
@@ -219,6 +237,9 @@ def create_app(
         tools = body.get("tools")
         decision = _classify(messages)
         fingerprint = _conversation_fingerprint(messages)
+        target_fits_dict = None
+        route_choice = None
+        toll_mark = "skipped"
 
         is_contested = decision.escalated or decision.margin < router._margin
 
@@ -231,6 +252,8 @@ def create_app(
             subtask_candidates_count = 0
             canonical_effort = "balanced"
             cli_effort_flags = []
+            effort_flags = None
+            model_override = None
             dispatch_messages = messages
         else:
             prep_result = run_preprocessor(
@@ -241,14 +264,27 @@ def create_app(
             preprocess_mark = prep_result.mark
             max_fit = prep_result.max_fit
             subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
+            target_fits_dict = {tf.target: tf.fit for tf in prep_result.target_fits}
 
             if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
-                verdict = prep_result.derived_verdict
-                if verdict == "local":
+                derived_verdict = prep_result.derived_verdict
+                if derived_verdict == "local":
+                    verdict = "local"
                     target_tier = router.capability_order[0]
                     tier, fallback_reason = _resolve_tier(target_tier, tools)
                     dispatch_messages = messages
-                elif verdict == "frontier":
+                    effort_plan = resolve_effort(
+                        complexity=prep_result.analysis.complexity,
+                        task_type=prep_result.analysis.task_type,
+                        target_cli=tier,
+                        overrides=effort_overrides,
+                    )
+                    canonical_effort = effort_plan.canonical
+                    cli_effort_flags = effort_plan.cli_flags
+                    effort_flags = None
+                    model_override = None
+                elif derived_verdict == "frontier":
+                    verdict = "frontier"
                     target_tier = router.capability_order[-1]
                     tier, fallback_reason = _resolve_tier(target_tier, tools)
                     backend = backends.get(tier)
@@ -256,28 +292,103 @@ def create_app(
                         dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
                     else:
                         dispatch_messages = messages
+                    effort_plan = resolve_effort(
+                        complexity=prep_result.analysis.complexity,
+                        task_type=prep_result.analysis.task_type,
+                        target_cli=tier,
+                        overrides=effort_overrides,
+                    )
+                    canonical_effort = effort_plan.canonical
+                    cli_effort_flags = effort_plan.cli_flags
+                    effort_flags = effort_plan.cli_flags
+                    model_override = effort_plan.model_override
                 else:  # contested
-                    tier, fallback_reason = _resolve_tier(decision.tier, tools)
-                    backend = backends.get(tier)
-                    if backend and not backend.local:
-                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
-                    else:
-                        dispatch_messages = messages
+                    user_text = next(
+                        (_text_of(m["content"]) for m in reversed(messages) if m.get("role") == "user"),
+                        "",
+                    )
+                    local_tier = router.capability_order[0]
+                    local_backend = backends.get(local_tier)
+                    local_serving_capable = bool(local_backend and (not tools or local_backend.supports_tools))
+                    installed_clis = [name for name, b in backends.items() if not b.local]
 
-                effort_plan = resolve_effort(
-                    complexity=prep_result.analysis.complexity,
-                    task_type=prep_result.analysis.task_type,
-                    target_cli=tier,
-                    overrides=effort_overrides,
-                )
-                canonical_effort = effort_plan.canonical
-                cli_effort_flags = effort_plan.cli_flags
+                    options = build_route_menu(
+                        target_fits=prep_result.target_fits,
+                        installed_clis=installed_clis,
+                        analysis=prep_result.analysis,
+                        rewrite=prep_result.rewrite,
+                        original_prompt=user_text,
+                        local_tier_name=local_tier,
+                        pricing=None,
+                        effort_overrides=effort_overrides,
+                    )
+                    default_auto = resolve_auto_policy(options, local_serving_capable=local_serving_capable)
+                    ticket = TollTicket(
+                        ticket_id=f"toll-{uuid.uuid4().hex[:8]}",
+                        fingerprint=fingerprint,
+                        created_at=time.time(),
+                        timeout_s=tollbooth.default_timeout_s,
+                        options=options,
+                        default_auto_choice=default_auto,
+                        original_prompt=user_text,
+                        task_type=prep_result.analysis.task_type,
+                        complexity=prep_result.analysis.complexity,
+                    )
+                    route_choice, toll_mark, effort_override = tollbooth.hold_ticket(ticket)
+
+                    if "local" in route_choice:
+                        verdict = "local"
+                        target_tier = local_tier
+                        tier, fallback_reason = _resolve_tier(target_tier, tools)
+                        dispatch_messages = messages
+                        canonical_effort = "balanced"
+                        cli_effort_flags = []
+                        effort_flags = None
+                        model_override = None
+                        if route_choice.startswith("human:local") or route_choice == "human:local":
+                            escalations.save(messages, requested_tier="local")
+                    else:
+                        target_cli = route_choice.split(":")[-1]
+                        target_tier = target_cli
+                        tier, fallback_reason = _resolve_tier(target_tier, tools)
+                        verdict = "frontier"
+                        backend = backends.get(tier)
+                        if backend and not backend.local:
+                            dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                        else:
+                            dispatch_messages = messages
+
+                        if effort_override:
+                            eff_overrides = {**(effort_overrides or {}), target_cli: effort_override}
+                            effort_plan = resolve_effort(
+                                complexity=prep_result.analysis.complexity,
+                                task_type=prep_result.analysis.task_type,
+                                target_cli=tier,
+                                overrides=eff_overrides,
+                            )
+                        else:
+                            selected_opt = next((o for o in options if o.target == target_cli), None)
+                            if selected_opt:
+                                effort_plan = selected_opt.effort
+                            else:
+                                effort_plan = resolve_effort(
+                                    complexity=prep_result.analysis.complexity,
+                                    task_type=prep_result.analysis.task_type,
+                                    target_cli=tier,
+                                    overrides=effort_overrides,
+                                )
+                        canonical_effort = effort_plan.canonical
+                        cli_effort_flags = effort_plan.cli_flags
+                        effort_flags = effort_plan.cli_flags
+                        model_override = effort_plan.model_override
             else:
                 tier, fallback_reason = _resolve_tier(decision.tier, tools)
                 verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
                 dispatch_messages = messages
                 canonical_effort = "balanced"
                 cli_effort_flags = []
+                effort_flags = None
+                model_override = None
 
         # A silent downgrade must leave a recoverable trail: archive the full
         # conversation so a paste-ready brief can be distilled on demand.
@@ -296,8 +407,10 @@ def create_app(
                 "max_fit": max_fit,
                 "canonical_effort": canonical_effort,
                 "cli_effort_flags": cli_effort_flags,
-                "toll": "skipped",
+                "toll": toll_mark,
+                "route_choice": route_choice,
                 "subtask_candidates": subtask_candidates_count,
+                "target_fits": target_fits_dict,
             }
         )
 
@@ -316,6 +429,8 @@ def create_app(
                 "canonical_effort": canonical_effort,
                 "cli_effort_flags": cli_effort_flags,
                 "fingerprint": fingerprint,
+                "toll": toll_mark,
+                "route_choice": route_choice,
             }
 
         if body.get("stream"):
@@ -334,7 +449,12 @@ def create_app(
 
             def sse():
                 yield chunk({"role": "assistant"})
-                for item in backends[tier].stream(dispatch_messages, tools=tools):
+                for item in backends[tier].stream(
+                    dispatch_messages,
+                    tools=tools,
+                    effort_flags=effort_flags,
+                    model_override=model_override,
+                ):
                     if isinstance(item, Completion):
                         _record(tier, item, **meta)
                         _capture(
@@ -366,7 +486,12 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[tier].complete(dispatch_messages, tools=tools)
+        completion = backends[tier].complete(
+            dispatch_messages,
+            tools=tools,
+            effort_flags=effort_flags,
+            model_override=model_override,
+        )
         _record(tier, completion, **meta)
         _capture(
             "chat_completion_completed",
@@ -410,6 +535,10 @@ def create_app(
             messages = [{"role": "system", "content": _text_of(system)}, *messages]
         decision = _classify(messages)
         fingerprint = _conversation_fingerprint(messages)
+        target_fits_dict = None
+        route_choice = None
+        toll_mark = "skipped"
+        escalation_id = None
 
         is_contested = decision.escalated or decision.margin < router._margin
 
@@ -422,6 +551,8 @@ def create_app(
             subtask_candidates_count = 0
             canonical_effort = "balanced"
             cli_effort_flags = []
+            effort_flags = None
+            model_override = None
             dispatch_messages = messages
         else:
             prep_result = run_preprocessor(
@@ -432,14 +563,27 @@ def create_app(
             preprocess_mark = prep_result.mark
             max_fit = prep_result.max_fit
             subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
+            target_fits_dict = {tf.target: tf.fit for tf in prep_result.target_fits}
 
             if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
-                verdict = prep_result.derived_verdict
-                if verdict == "local":
+                derived_verdict = prep_result.derived_verdict
+                if derived_verdict == "local":
+                    verdict = "local"
                     target_tier = router.capability_order[0]
                     tier, fallback_reason = _resolve_tier(target_tier, None)
                     dispatch_messages = messages
-                elif verdict == "frontier":
+                    effort_plan = resolve_effort(
+                        complexity=prep_result.analysis.complexity,
+                        task_type=prep_result.analysis.task_type,
+                        target_cli=tier,
+                        overrides=effort_overrides,
+                    )
+                    canonical_effort = effort_plan.canonical
+                    cli_effort_flags = effort_plan.cli_flags
+                    effort_flags = None
+                    model_override = None
+                elif derived_verdict == "frontier":
+                    verdict = "frontier"
                     target_tier = router.capability_order[-1]
                     tier, fallback_reason = _resolve_tier(target_tier, None)
                     backend = backends.get(tier)
@@ -447,40 +591,121 @@ def create_app(
                         dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
                     else:
                         dispatch_messages = messages
+                    effort_plan = resolve_effort(
+                        complexity=prep_result.analysis.complexity,
+                        task_type=prep_result.analysis.task_type,
+                        target_cli=tier,
+                        overrides=effort_overrides,
+                    )
+                    canonical_effort = effort_plan.canonical
+                    cli_effort_flags = effort_plan.cli_flags
+                    effort_flags = effort_plan.cli_flags
+                    model_override = effort_plan.model_override
                 else:  # contested
-                    tier, fallback_reason = _resolve_tier(decision.tier, None)
-                    backend = backends.get(tier)
-                    if backend and not backend.local:
-                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
-                    else:
-                        dispatch_messages = messages
+                    user_text = next(
+                        (_text_of(m["content"]) for m in reversed(messages) if m.get("role") == "user"),
+                        "",
+                    )
+                    local_tier = router.capability_order[0]
+                    local_backend = backends.get(local_tier)
+                    local_serving_capable = bool(local_backend and local_backend.supports_tools)
+                    installed_clis = [name for name, b in backends.items() if not b.local]
 
-                effort_plan = resolve_effort(
-                    complexity=prep_result.analysis.complexity,
-                    task_type=prep_result.analysis.task_type,
-                    target_cli=tier,
-                    overrides=effort_overrides,
-                )
-                canonical_effort = effort_plan.canonical
-                cli_effort_flags = effort_plan.cli_flags
+                    options = build_route_menu(
+                        target_fits=prep_result.target_fits,
+                        installed_clis=installed_clis,
+                        analysis=prep_result.analysis,
+                        rewrite=prep_result.rewrite,
+                        original_prompt=user_text,
+                        local_tier_name=local_tier,
+                        pricing=None,
+                        effort_overrides=effort_overrides,
+                    )
+                    default_auto = resolve_auto_policy(options, local_serving_capable=local_serving_capable)
+                    ticket = TollTicket(
+                        ticket_id=f"toll-{uuid.uuid4().hex[:8]}",
+                        fingerprint=fingerprint,
+                        created_at=time.time(),
+                        timeout_s=tollbooth.default_timeout_s,
+                        options=options,
+                        default_auto_choice=default_auto,
+                        original_prompt=user_text,
+                        task_type=prep_result.analysis.task_type,
+                        complexity=prep_result.analysis.complexity,
+                    )
+                    route_choice, toll_mark, effort_override = tollbooth.hold_ticket(ticket)
+
+                    if "local" in route_choice:
+                        verdict = "local"
+                        target_tier = local_tier
+                        tier, fallback_reason = _resolve_tier(target_tier, None)
+                        dispatch_messages = messages
+                        canonical_effort = "balanced"
+                        cli_effort_flags = []
+                        effort_flags = None
+                        model_override = None
+                        if route_choice.startswith("human:local") or route_choice == "human:local":
+                            escalation_id = escalations.save(messages, requested_tier="local")
+                    else:
+                        target_cli = route_choice.split(":")[-1]
+                        target_tier = target_cli
+                        tier, fallback_reason = _resolve_tier(target_tier, None)
+                        verdict = "frontier"
+                        backend = backends.get(tier)
+                        if backend and not backend.local:
+                            dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
+                        else:
+                            dispatch_messages = messages
+
+                        if effort_override:
+                            eff_overrides = {**(effort_overrides or {}), target_cli: effort_override}
+                            effort_plan = resolve_effort(
+                                complexity=prep_result.analysis.complexity,
+                                task_type=prep_result.analysis.task_type,
+                                target_cli=tier,
+                                overrides=eff_overrides,
+                            )
+                        else:
+                            selected_opt = next((o for o in options if o.target == target_cli), None)
+                            if selected_opt:
+                                effort_plan = selected_opt.effort
+                            else:
+                                effort_plan = resolve_effort(
+                                    complexity=prep_result.analysis.complexity,
+                                    task_type=prep_result.analysis.task_type,
+                                    target_cli=tier,
+                                    overrides=effort_overrides,
+                                )
+                        canonical_effort = effort_plan.canonical
+                        cli_effort_flags = effort_plan.cli_flags
+                        effort_flags = effort_plan.cli_flags
+                        model_override = effort_plan.model_override
             else:
                 tier, fallback_reason = _resolve_tier(decision.tier, None)
                 verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
                 dispatch_messages = messages
                 canonical_effort = "balanced"
                 cli_effort_flags = []
+                effort_flags = None
+                model_override = None
+
+        if fallback_reason and not escalation_id:
+            escalation_id = escalations.save(messages, requested_tier=decision.tier)
 
         meta = _decision_meta(decision, fallback_reason, messages)
         meta.update(
             {
+                "escalation_id": escalation_id,
                 "fingerprint": fingerprint,
                 "preprocess_mark": preprocess_mark,
                 "verdict": verdict,
                 "max_fit": max_fit,
                 "canonical_effort": canonical_effort,
                 "cli_effort_flags": cli_effort_flags,
-                "toll": "skipped",
+                "toll": toll_mark,
+                "route_choice": route_choice,
                 "subtask_candidates": subtask_candidates_count,
+                "target_fits": target_fits_dict,
             }
         )
         msg_id = f"kult-{uuid.uuid4().hex[:12]}"
@@ -510,7 +735,11 @@ def create_app(
                     "content_block_start",
                     {"index": 0, "content_block": {"type": "text", "text": ""}},
                 )
-                for item in backends[tier].stream(dispatch_messages):
+                for item in backends[tier].stream(
+                    dispatch_messages,
+                    effort_flags=effort_flags,
+                    model_override=model_override,
+                ):
                     if isinstance(item, Completion):
                         _record(tier, item, **meta)
                         _capture(
@@ -530,6 +759,7 @@ def create_app(
                                 "usage": {
                                     "input_tokens": item.tokens_in,
                                     "output_tokens": item.tokens_out,
+                                    "total_cost_usd": item.cost_usd,
                                 },
                             },
                         )
@@ -542,7 +772,11 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[tier].complete(dispatch_messages)
+        completion = backends[tier].complete(
+            dispatch_messages,
+            effort_flags=effort_flags,
+            model_override=model_override,
+        )
         _record(tier, completion, **meta)
         _capture(
             "message_completion_completed",

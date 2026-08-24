@@ -17,3 +17,8 @@ wheels/
 .idea/*
 .vscode/*
 .env
+
+# Activity & Testing Logs
+herdr-activity-report.md
+kultivait-testing-log.md
+opencode.json
