@@ -49,18 +49,20 @@ class Ledger:
         if self._path.exists():
             with self._path.open() as f:
                 entries = [json.loads(line) for line in f if line.strip()]
-        tokens_in = sum(e["tokens_in"] for e in entries)
-        tokens_out = sum(e["tokens_out"] for e in entries)
-        metered_spent = sum(e.get("cost_usd", 0.0) for e in entries)
-        notional_spent = sum(e.get("notional_usd", e.get("cost_usd", 0.0)) for e in entries)
+        prompt_entries = [e for e in entries if e.get("tag") != "counterfactual" and e.get("tier") != "counterfactual"]
+        tokens_in = sum(e["tokens_in"] for e in prompt_entries)
+        tokens_out = sum(e["tokens_out"] for e in prompt_entries)
+        metered_spent = sum(e.get("cost_usd", 0.0) for e in prompt_entries)
+        notional_spent = sum(e.get("notional_usd", e.get("cost_usd", 0.0)) for e in prompt_entries)
         baseline = (tokens_in * self._baseline_in + tokens_out * self._baseline_out) / 1e6
         # fallback_reason is current; tool_fallback is the pre-config legacy field
-        escalations = [e for e in entries if e.get("fallback_reason") or e.get("tool_fallback")]
+        escalations = [e for e in prompt_entries if e.get("fallback_reason") or e.get("tool_fallback")]
 
-        tolls_fired = sum(1 for e in entries if e.get("toll") in ("fired", "answered", "expired"))
-        tolls_answered = sum(1 for e in entries if e.get("toll") == "answered")
-        tolls_expired = sum(1 for e in entries if e.get("toll") == "expired")
-        tolls_skipped = sum(1 for e in entries if e.get("toll") == "skipped")
+        tolls_fired = sum(1 for e in prompt_entries if e.get("toll") in ("fired", "answered", "expired"))
+        tolls_answered = sum(1 for e in prompt_entries if e.get("toll") == "answered")
+        tolls_expired = sum(1 for e in prompt_entries if e.get("toll") == "expired")
+        tolls_skipped = sum(1 for e in prompt_entries if e.get("toll") == "skipped")
+        counterfactuals_count = sum(1 for e in entries if e.get("tag") == "counterfactual" or e.get("counterfactual_choice"))
 
         route_choices: dict[str, int] = {}
         route_choice_groups = {
@@ -69,7 +71,7 @@ class Ledger:
             "auto:local": 0,
             "auto:frontier": 0,
         }
-        for e in entries:
+        for e in prompt_entries:
             rc = e.get("route_choice")
             if rc:
                 route_choices[rc] = route_choices.get(rc, 0) + 1
@@ -83,24 +85,25 @@ class Ledger:
                     route_choice_groups["auto:frontier"] += 1
 
         preprocess_marks = {
-            "ok": sum(1 for e in entries if e.get("preprocess_mark") == "ok"),
-            "skipped": sum(1 for e in entries if e.get("preprocess_mark") == "skipped"),
-            "timeout": sum(1 for e in entries if e.get("preprocess_mark") == "preprocess_timeout"),
-            "fail": sum(1 for e in entries if e.get("preprocess_mark") == "preprocess_fail"),
+            "ok": sum(1 for e in prompt_entries if e.get("preprocess_mark") == "ok"),
+            "skipped": sum(1 for e in prompt_entries if e.get("preprocess_mark") == "skipped"),
+            "timeout": sum(1 for e in prompt_entries if e.get("preprocess_mark") == "preprocess_timeout"),
+            "fail": sum(1 for e in prompt_entries if e.get("preprocess_mark") == "preprocess_fail"),
         }
 
-        toll_rate = (tolls_fired / len(entries)) if entries else 0.0
+        toll_rate = (tolls_fired / len(prompt_entries)) if prompt_entries else 0.0
 
         return {
-            "prompts": len(entries),
-            "local_prompts": sum(1 for e in entries if e["local"]),
-            "tokens_local": sum(e["tokens_in"] + e["tokens_out"] for e in entries if e["local"]),
+            "prompts": len(prompt_entries),
+            "local_prompts": sum(1 for e in prompt_entries if e.get("local")),
+            "tokens_local": sum(e["tokens_in"] + e["tokens_out"] for e in prompt_entries if e.get("local")),
             "spent_usd": notional_spent,
             "notional_spent_usd": notional_spent,
             "metered_spent_usd": metered_spent,
             "baseline_usd": baseline,
             "saved_usd": baseline - notional_spent,
             "metered_saved_usd": baseline - metered_spent,
+            "counterfactuals": counterfactuals_count,
             "escalations": {
                 "count": len(escalations),
                 "recent": [
@@ -118,6 +121,7 @@ class Ledger:
                 "answered": tolls_answered,
                 "expired": tolls_expired,
                 "skipped": tolls_skipped,
+                "counterfactuals": counterfactuals_count,
                 "toll_rate": toll_rate,
                 "route_choices": route_choices,
                 "route_choice_groups": route_choice_groups,

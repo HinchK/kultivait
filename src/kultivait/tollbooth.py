@@ -418,6 +418,18 @@ class TollboothQueue:
             "effort_canonical": effort_canonical,
         }
         self._counterfactuals.append(cf)
+        if self.ledger:
+            self.ledger.record(
+                tier="counterfactual",
+                local=False,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=0.0,
+                tag="counterfactual",
+                counterfactual_choice=norm_choice,
+                counterfactual_ticket_id=ticket_id,
+                effort_canonical=effort_canonical,
+            )
         return False
 
     def _archive_missed_menu(self, ticket: TollTicket, choice: str, reason: str) -> None:
@@ -441,11 +453,15 @@ class TollboothQueue:
                     "cli_flags": opt.effort.cli_flags,
                     "model_override": opt.effort.model_override,
                     "estimated_cost_usd": opt.estimated_cost_usd,
+                    "cash_annotation": getattr(opt, "cash_annotation", ""),
+                    "kind": getattr(opt, "kind", "cli"),
                 }
                 for opt in ticket.options
             ],
         }
-        if hasattr(self.escalations, "_dir"):
+        if hasattr(self.escalations, "save_raw"):
+            self.escalations.save_raw(record_data, prefix="menu")
+        elif hasattr(self.escalations, "_dir"):
             menu_file = self.escalations._dir / f"menu-{ticket.ticket_id}.json"
             self.escalations._dir.mkdir(parents=True, exist_ok=True)
             menu_file.write_text(json.dumps(record_data, indent=2))
