@@ -753,6 +753,15 @@ def cmd_harvest(args: argparse.Namespace) -> None:
         print(format_harvest(stats))
 
 
+def cmd_distill_corpus(args: argparse.Namespace) -> None:
+    """D1 demo surface: materialize the anchor set + held-out roster from a
+    harvest directory (default: the live ~/.kultivait)."""
+    from kultivait.distill import dry_run_report
+
+    report = dry_run_report(Path(args.harvest_dir))
+    print(json.dumps(report, indent=2))
+
+
 def cmd_eval(args: argparse.Namespace) -> None:
     from kultivait.capability_eval import (
         format_eval_summary,
@@ -825,6 +834,15 @@ def main() -> None:
     harvest = sub.add_parser("harvest", help="show cumulative savings")
     harvest.add_argument("--json", action="store_true", help="machine-readable output")
     harvest.set_defaults(func=cmd_harvest)
+
+    distill = sub.add_parser("distill", help="distillation pipeline operations")
+    distill_sub = distill.add_subparsers(dest="distill_cmd")
+    corpus_cmd = distill_sub.add_parser("corpus", help="assemble the corpus from the harvest")
+    corpus_cmd.add_argument("--dry-run", action="store_true",
+                            help="print anchors, strata, and the held-out roster")
+    corpus_cmd.add_argument("--harvest-dir", default=str(KULTIVAIT_HOME),
+                            help="harvest directory (default ~/.kultivait)")
+    corpus_cmd.set_defaults(func=cmd_distill_corpus)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)

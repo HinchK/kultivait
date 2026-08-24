@@ -90,6 +90,17 @@ class TierSpec:
 
 
 @dataclass(frozen=True)
+class DistillConfig:
+    """The distillation pipeline's serving seat (ADR 0017): the live preprocess
+    model, resolved per-call so a config edit swaps models with no restart."""
+
+    model: str = "qwen3.5:4b"
+    shadow_model: str = ""  # gate-passing distillate name; empty = none
+    shadow_mode: str = "off"  # "off" | "on"
+    shadow_sample_rate: float = 1.0
+
+
+@dataclass(frozen=True)
 class Config:
     tiers: "list[TierSpec]" = field(default_factory=list)
     embed_model: "str | None" = "nomic-embed-text"
@@ -104,6 +115,7 @@ class Config:
     preprocess_timeout_s: float = 15.0
     toll_timeout_s: float = 60.0
     toll_enabled: bool = True
+    distill: DistillConfig = field(default_factory=DistillConfig)
 
     def capability_order(self) -> "list[str]":
         return [t.name for t in self.tiers]
@@ -218,6 +230,15 @@ def save_config(config: Config, path: Path) -> None:
         if t.price_in or t.price_out:
             lines.append(f"price_in = {t.price_in}")
             lines.append(f"price_out = {t.price_out}")
+    d = config.distill
+    lines += [
+        "",
+        "[distill]",
+        f"model = {_toml_str(d.model)}",
+        f"shadow_model = {_toml_str(d.shadow_model)}",
+        f'shadow_mode = "{d.shadow_mode}"',
+        f"shadow_sample_rate = {d.shadow_sample_rate}",
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
 
@@ -253,6 +274,10 @@ def load_config(path: Path) -> Config:
                 price_out=price_out,
             )
         )
+    dd = data.get("distill") or {}
+    shadow_mode = dd.get("shadow_mode") or "off"
+    if shadow_mode not in ("off", "on"):
+        raise ValueError(f"distill.shadow_mode must be 'off' or 'on', got {shadow_mode!r}")
     return Config(
         tiers=tiers,
         embed_model=data.get("embed_model") or None,
@@ -263,6 +288,10 @@ def load_config(path: Path) -> Config:
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
         preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
-        toll_timeout_s=float(data.get("toll_timeout_s", 60.0)),
-        toll_enabled=bool(data.get("toll_enabled", True)),
+        distill=DistillConfig(
+            model=dd.get("model") or "qwen3.5:4b",
+            shadow_model=dd.get("shadow_model") or "",
+            shadow_mode=shadow_mode,
+            shadow_sample_rate=float(dd.get("shadow_sample_rate", 1.0)),
+        ),
     )
