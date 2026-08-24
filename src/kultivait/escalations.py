@@ -93,6 +93,17 @@ class EscalationStore:
         (self._dir / f"{eid}.json").write_text(json.dumps(record))
         return eid
 
+    def save_raw(self, record: dict, prefix: str = "menu") -> str:
+        """Save an arbitrary raw record (e.g. missed/expired route menu) to the escalation store."""
+        ticket_id = record.get("ticket_id")
+        if ticket_id:
+            rid = f"{prefix}-{ticket_id}" if not ticket_id.startswith(f"{prefix}-") else ticket_id
+        else:
+            rid = f"{prefix}-{uuid.uuid4().hex[:8]}"
+        self._dir.mkdir(parents=True, exist_ok=True)
+        (self._dir / f"{rid}.json").write_text(json.dumps(record, indent=2))
+        return rid
+
     def _records(self) -> list[dict]:
         records = [json.loads(p.read_text()) for p in self._dir.glob("esc-*.json")]
         return sorted(records, key=lambda r: r["ts"])
@@ -105,3 +116,4 @@ class EscalationStore:
 
     def load_messages(self, eid: str) -> "list[dict]":  # quoted: list() method shadows builtin
         return json.loads((self._dir / f"{eid}.json").read_text())["messages"]
+

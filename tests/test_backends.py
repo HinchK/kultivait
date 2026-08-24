@@ -122,3 +122,281 @@ def test_ollama_tool_calls_convert_to_openai_format():
     assert call["function"]["name"] == "bash"
     assert call["function"]["arguments"] == '{"cmd": "ls"}'  # JSON string
     assert call["id"].startswith("call_")
+
+
+def test_backends_have_local_attribute():
+    from kultivait.backends import CLIBackend, LlamaCppBackend, OllamaBackend
+
+    ollama = OllamaBackend("qwen3:14b")
+    assert ollama.local is True
+    assert OllamaBackend.local is True
+
+    llamacpp = LlamaCppBackend("model.gguf")
+    assert llamacpp.local is True
+    assert LlamaCppBackend.local is True
+
+    cli = CLIBackend(["claude"], price_in=3.0, price_out=15.0)
+    assert cli.local is False
+    assert CLIBackend.local is False
+
+
+def test_cli_backend_template_selection(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hello"}]
+
+    # claude / agy / gemini -> -p
+    CLIBackend(["claude"], 3.0, 15.0).complete(messages)
+    assert captured_argv[-1][:2] == ["claude", "-p"]
+
+    CLIBackend(["agy"], 1.25, 10.0).complete(messages)
+    assert captured_argv[-1][:2] == ["agy", "-p"]
+
+    CLIBackend(["gemini"], 1.0, 5.0).complete(messages)
+    assert captured_argv[-1][:2] == ["gemini", "-p"]
+
+    # codex -> exec (no -p, has --json)
+    CLIBackend(["codex"], 3.0, 15.0).complete(messages)
+    assert captured_argv[-1][:2] == ["codex", "exec"]
+    assert "-p" not in captured_argv[-1]
+    assert "--json" in captured_argv[-1]
+
+    # opencode -> run (no -p)
+    CLIBackend(["opencode"], 3.0, 15.0).complete(messages)
+    assert captured_argv[-1][:2] == ["opencode", "run"]
+    assert "-p" not in captured_argv[-1]
+
+    # unknown -> legacy fallback
+    CLIBackend(["mytool"], 1.0, 1.0).complete(messages)
+    assert captured_argv[-1][:2] == ["mytool", "-p"]
+
+
+def test_cli_backend_flag_positions(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "my prompt"}]
+    prompt_val = "[user] my prompt"
+
+    # claude: [*template, prompt, *effort_flags, "--output-format", "json"]
+    CLIBackend(["claude"], 3.0, 15.0).complete(messages, effort_flags=["--effort", "high"])
+    assert captured_argv[-1] == ["claude", "-p", prompt_val, "--effort", "high", "--output-format", "json"]
+
+    # codex: [*template, *effort_flags, prompt] (prompt is argv[-1], includes --json)
+    CLIBackend(["codex"], 3.0, 15.0).complete(messages, effort_flags=["-c", "model_reasoning_effort=high"])
+    assert captured_argv[-1] == ["codex", "exec", "-c", "model_reasoning_effort=high", "--json", prompt_val]
+    assert captured_argv[-1][-1] == prompt_val
+
+    # opencode: [*template, *effort_flags, prompt]
+    CLIBackend(["opencode"], 3.0, 15.0).complete(messages, effort_flags=["--variant", "high"])
+    assert captured_argv[-1] == ["opencode", "run", "--variant", "high", prompt_val]
+    assert captured_argv[-1][-1] == prompt_val
+
+
+def test_cli_backend_model_override(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "my prompt"}]
+
+    CLIBackend(["gemini"], 1.0, 5.0).complete(messages, model_override="deep")
+    assert "-m" in captured_argv[-1]
+    m_idx = captured_argv[-1].index("-m")
+    assert captured_argv[-1][m_idx + 1] == "deep"
+
+
+def test_cli_backend_env_strip(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend, PROXY_ENV_STRIP
+
+    for var in PROXY_ENV_STRIP:
+        monkeypatch.setenv(var, "http://localhost:4114")
+    monkeypatch.setenv("KULTIVAIT_CONTROL_VAR", "preserved")
+
+    captured_env = {}
+
+    def fake_run(argv, env=None, **kwargs):
+        captured_env.update(env or {})
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "test"}]
+
+    CLIBackend(["claude"], 3.0, 15.0).complete(messages)
+
+    for var in PROXY_ENV_STRIP:
+        assert var not in captured_env
+    assert captured_env.get("KULTIVAIT_CONTROL_VAR") == "preserved"
+
+
+def test_cli_backend_claude_real_usage(monkeypatch):
+    import json
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+    payload = {
+        "result": "Hello from Claude",
+        "usage": {"input_tokens": 120, "output_tokens": 45},
+        "total_cost_usd": 0.0123,
+        "is_error": False,
+    }
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hello"}]
+
+    res = CLIBackend(["claude"], 3.0, 15.0).complete(messages)
+    assert res.text == "Hello from Claude"
+    assert res.tokens_in == 120
+    assert res.tokens_out == 45
+    assert res.cost_usd == 0.0123
+    assert res.local is False
+    assert "--output-format" in captured_argv[-1]
+    fmt_idx = captured_argv[-1].index("--output-format")
+    assert captured_argv[-1][fmt_idx + 1] == "json"
+
+
+def test_cli_backend_claude_is_error_raises_runtime_error(monkeypatch):
+    import json
+    import pytest
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    payload = {
+        "result": "Rate limit exceeded on provider",
+        "is_error": True,
+    }
+
+    def fake_run(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 1, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hello"}]
+
+    with pytest.raises(RuntimeError, match="claude error: Rate limit exceeded on provider"):
+        CLIBackend(["claude"], 3.0, 15.0).complete(messages)
+
+
+def test_cli_backend_codex_real_usage(monkeypatch):
+    import json
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+    jsonl_output = "\n".join([
+        json.dumps({"type": "turn.started"}),
+        json.dumps({"type": "item.completed", "item": {"role": "assistant", "content": "Generated by Codex"}}),
+        json.dumps({"type": "turn.completed", "usage": {"input": 80, "cached": 20, "output": 30}}),
+    ])
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=jsonl_output, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hello"}]
+
+    res = CLIBackend(["codex"], price_in=3.0, price_out=15.0).complete(messages)
+    assert res.text == "Generated by Codex"
+    assert res.tokens_in == 100  # 80 + 20
+    assert res.tokens_out == 30
+    # cost = (100 * 3.0 + 30 * 15.0) / 1e6 = (300 + 450) / 1e6 = 0.00075
+    assert abs(res.cost_usd - 0.00075) < 1e-9
+    assert res.local is False
+    assert "--json" in captured_argv[-1]
+
+
+def test_cli_backend_parse_failure_fallbacks(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    # claude returning garbage stdout (e.g. CLI printed non-JSON error)
+    def fake_run_claude(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout="Raw fallback text output", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run_claude)
+    messages = [{"role": "user", "content": "test prompt for claude"}]
+
+    res = CLIBackend(["claude"], 3.0, 15.0).complete(messages)
+    assert res.text == "Raw fallback text output"
+    assert res.tokens_in > 0
+    assert res.tokens_out > 0
+
+    # codex returning non-JSONL prose
+    def fake_run_codex(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout="Raw codex text output", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run_codex)
+    res_codex = CLIBackend(["codex"], 3.0, 15.0).complete(messages)
+    assert res_codex.text == "Raw codex text output"
+    assert res_codex.tokens_in > 0
+    assert res_codex.tokens_out > 0
+
+
+def test_cli_backend_no_effort_dispatch(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hi"}]
+
+    CLIBackend(["codex"], 3.0, 15.0).complete(messages)
+    assert captured_argv[-1] == ["codex", "exec", "--json", "[user] hi"]
+
+
+def test_cli_backend_stream_passes_effort_kwargs(monkeypatch):
+    import subprocess
+    from kultivait.backends import CLIBackend
+
+    captured_argv = []
+
+    def fake_run(argv, **kwargs):
+        captured_argv.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="streamed response", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    messages = [{"role": "user", "content": "hi"}]
+
+    stream_iter = CLIBackend(["claude"], 3.0, 15.0).stream(
+        messages, effort_flags=["--effort", "medium"], model_override="sonnet"
+    )
+    items = list(stream_iter)
+    assert len(items) == 2
+    assert items[0] == "streamed response"
+    assert captured_argv[-1] == [
+        "claude", "-p", "[user] hi", "--effort", "medium", "-m", "sonnet", "--output-format", "json"
+    ]
+
+

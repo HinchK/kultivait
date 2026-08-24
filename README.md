@@ -54,10 +54,18 @@ freely, re-run `init` anytime.
 
 ```bash
 kultivait serve                    # run the routing proxy
+kultivait choose                   # answer pending tolls out-of-band
 kultivait route "why does this test deadlock?"    # dry-run a classification
 kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
 kultivait escalations [--brief]    # cloud-worthy prompts served locally
 kultivait harvest [--json]         # cumulative savings
+kultivait distill corpus [--dry-run]              # assemble anchor set & held-out roster
+kultivait distill generate --live                 # dual-teacher synthetic data generation
+kultivait distill train --base <base> --corpus-dir <dir>  # train QLoRA under resource ladder
+kultivait distill eval --model <model> --heldout <path>   # 5-gate held-out validation
+kultivait distill export --base <base> --adapter-path <path> # fuse & register with Ollama
+kultivait shadow [--log <path>]                   # shadow log summary & cutover readiness
+kultivait cutover --model <distillate> [--yes]    # flip live preprocessor + print rollback
 ```
 
 `prune` distills a transcript into a FINDINGS / DECISIONS / CONSTRAINTS /
@@ -121,6 +129,75 @@ loops and can't return client-side tool calls. The response's `kultivait`
 metadata reports `tool_fallback: true` when this happens. Anthropic-endpoint
 tool support is not yet implemented.
 
+### Direct REST frontier providers & API tier registration
+
+In addition to local runtimes and CLI backends, kultivait supports direct REST API frontier providers (`anthropic`, `openai`, `openrouter`).
+
+#### 1. Configure an API tier
+
+Add an `api`-kind tier to `~/.kultivait/config.toml`:
+
+```toml
+[[tiers]]
+name = "anthropic"
+role = "architect"
+kind = "api"
+model = "claude-3-7-sonnet-20250219"
+price_in = 3.0
+price_out = 15.0
+
+[[tiers]]
+name = "openai"
+role = "architect"
+kind = "api"
+model = "gpt-4o"
+price_in = 2.5
+price_out = 10.0
+
+[[tiers]]
+name = "openrouter"
+role = "architect"
+kind = "api"
+model = "anthropic/claude-3.7-sonnet"
+price_in = 3.0
+price_out = 15.0
+```
+
+Unpriced API tiers load a conservative default ($3.00 in / $15.00 out per MTok) with a warning to ensure accurate ledger accounting.
+
+#### 2. Configure credentials
+
+API keys resolve from three sources with fixed precedence:
+
+1. **Environment variables** (highest precedence):
+   ```bash
+   export ANTHROPIC_API_KEY="sk-ant-..."
+   export OPENAI_API_KEY="sk-..."
+   export OPENROUTER_API_KEY="sk-or-..."
+   ```
+
+2. **OS Keychain** (macOS `security`):
+   ```bash
+   # Add key to Keychain (service: kultivait, account: <provider>)
+   security add-generic-password -s kultivait -a anthropic -w "sk-ant-..."
+   security add-generic-password -s kultivait -a openai -w "sk-..."
+   security add-generic-password -s kultivait -a openrouter -w "sk-or-..."
+   ```
+
+3. **Credentials file** (`~/.kultivait/credentials.toml`, `0600` permissions):
+   ```toml
+   [anthropic]
+   api_key = "sk-ant-..."
+
+   [openai]
+   api_key = "sk-..."
+
+   [openrouter]
+   api_key = "sk-or-..."
+   ```
+
+> **Security note**: API keys never live in `config.toml` and are never logged or exposed.
+
 ### Escalations: when the garden isn't enough
 
 Every tool-fallback is also archived as an *escalation* — the full
@@ -136,6 +213,99 @@ The brief (TASK / CONTEXT / PROGRESS / NEEDED) is distilled by your local
 model and names the recommended target — "take this to Claude" — so
 escalating costs one paste instead of re-explaining the whole session.
 Routing knows its limits; hygiene makes the handoff cheap.
+
+### Model distillation & shadow cutover
+
+Kultivait's preprocessor evaluates contested prompts to judge whether local models are sufficient or if a prompt should escalate or trigger a trolltoll. The **distillation pipeline** closes the loop: turning harvested routing data (toll choices, escalations, ledger entries) into fine-tuned local models (`qwen3.5:4b` or `llama-3.2-3b-instruct` distillates) to improve local judgment accuracy, reduce unnecessary tolls, and eliminate misroutes.
+
+#### 1. The Distillation Workflow
+
+```
+Harvest (~/.kultivait)
+  │
+  ├── 1. Corpus (distill corpus) ─── Extract real anchors & split held-out eval set
+  ├── 2. Generate (distill generate) ─ Dual-teacher synthesis (opencode + claude) + agreement filter
+  ├── 3. Train (distill train) ────── mlx-lm QLoRA on Apple Silicon under resource ladder
+  ├── 4. Eval (distill eval) ──────── 5-gate validation against permanent held-out set
+  ├── 5. Export (distill export) ──── Fuse QLoRA weights & register kv-judge-<base>-g<gen> in Ollama
+  ├── 6. Shadow (shadow) ──────────── Zero-latency background shadow pass on contested traffic
+  └── 7. Cutover (cutover) ────────── Human-confirmed flip to live preprocessor seat + instant rollback
+```
+
+#### 2. Pipeline Subcommands
+
+- **`kultivait distill corpus [--dry-run] [--harvest-dir PATH]`**  
+  Assembles training anchor prompts and separates a permanent held-out test roster from the harvest. Tier labels follow a strict truth hierarchy: human toll choices (gold), execution outcomes (silver), and eval records (bronze). Real verdict-bearing cases are permanently held out and never trained on. Use `--dry-run` to preview anchor counts and strata distributions.
+
+- **`kultivait distill generate [--live] [--target-pairs N] [--out-dir PATH] [--harvest-dir PATH] [--judge-cli CLI] [--rewriter-cli CLI]`**  
+  Runs the dual-teacher synthetic data generator targeting balanced strata (40% contested, 30% local, 30% frontier):
+  - **Judge teacher** (neutral family, e.g. `opencode` / GLM): creates band-targeted variations and performs an independent second-pass tier classification (**agreement filter**).
+  - **Rewriter teacher** (`claude` CLI): synthesizes prompt rewrites for each pair.
+  - **3-stage filter**: validates pairs with exact hash + embedding deduplication (cosine similarity < 0.92), JSON contract schema validation, and planted-fact recall checks.
+  - *Safety constraint*: Requires `--live` to dispatch real subscription CLI teachers (with ledger provenance tagging); refuses to generate from unverified stubs.
+
+- **`kultivait distill train --base <base> --corpus-dir <path> [--iters N] [--epochs N] [--adapter-path PATH] [--resume]`**  
+  Trains a QLoRA adapter using `mlx-lm` on supported bases (`qwen3.5:4b`, `llama-3.2-3b-instruct`). Strictly enforces the **resource ladder** on unified memory systems: automatically scales batch size (4→2→1), reduces adapted LoRA layers (16→8→4), enables gradient checkpointing, and aborts rather than causing memory swap.
+
+- **`kultivait distill eval --model <model> --heldout <path> [--incumbent] [--incumbent-model MODEL]`**  
+  Evaluates candidate distillates against the permanent held-out dataset through the production generate path (`extract_json` + framing). Validates all 5 acceptance gates:
+  1. **Zero dangerous misroutes**: Frontier-worthy requests never misclassified as local.
+  2. **100% parse rate**: Valid JSON contract formatting on all outputs.
+  3. **Latency budget**: p50 ≤ 8.0s, max ≤ 15.0s.
+  4. **Agreement**: ≥ incumbent baseline agreement.
+  5. **Band discipline**: Two-sided guard ensuring contested cases populate the band (floor ≥ 50%) without flooding (ceiling ≤ 25%), validated across temperature sweeps.
+
+- **`kultivait distill export --base <base> --adapter-path <path> [--out-root PATH] [--generation N] [--no-quantize]`**  
+  Fuses trained QLoRA weights into base weights via `mlx_lm.fuse`, generates an Ollama `Modelfile`, and registers the model in Ollama as `kv-judge-<base>-g<gen>` (quantized to `q4_K_M` by default to ensure serving RAM ≤ 4 GB).
+
+#### 3. Shadow Serving & Cutover Readiness
+
+A gate-passing distillate can be shadowed on live traffic before serving real routing verdicts:
+
+```toml
+# ~/.kultivait/config.toml
+[distill]
+model = "qwen3.5:4b"                     # live preprocessor seat
+shadow_model = "kv-judge-llama32-3b-g1"  # candidate distillate
+shadow_mode = "on"                       # "off" | "on"
+shadow_sample_rate = 1.0                 # 100% of contested requests
+```
+
+- **Zero latency impact**: The shadow pass runs asynchronously as a fire-and-forget background task *after* the live response has been sent to the client.
+- **Exception isolation**: Shadow evaluation failures or crashes are caught and recorded as anomalies, never disrupting live requests.
+- **Isolated shadow log**: Results land in `~/.kultivait/shadow.jsonl` outside the main ledger to avoid polluting harvest cost metrics or toll analytics.
+
+Check shadow agreement and cutover readiness anytime:
+
+```bash
+kultivait shadow
+```
+
+Outputs live statistics and evaluates ADR 0017 cutover readiness:
+- **Sample volume**: `n >= 30` shadowed contested requests.
+- **Agreement**: `agreement >= 90%` with the incumbent model.
+- **Zero anomalies**: `0 anomalies` (0 parse errors, 0 dangerous local verdicts on escalations).
+
+#### 4. Human Cutover & Instant Rollback
+
+Automated cutovers are deliberately disallowed. Model deployment is always a human decision:
+
+```bash
+kultivait cutover --model kv-judge-llama32-3b-g1
+```
+
+1. **Readiness check**: Checks `~/.kultivait/shadow.jsonl` and displays agreement/anomaly stats (or prints a warning if criteria are not yet met).
+2. **Explicit confirmation**: Prompts `[y/N]` before modifying any configuration (pass `--yes` to skip in scripted flows).
+3. **Atomic config update**: Rewrites `[distill] model = "<distillate>"` in `~/.kultivait/config.toml`.
+4. **Instant rollback guarantee**: `DistillSeat` in the proxy server resolves the `[distill] model` configuration dynamically per request. No server restarts are required.
+
+To roll back immediately, run the command printed during cutover:
+
+```bash
+kultivait cutover --model qwen3.5:4b --config ~/.kultivait/config.toml
+```
+
+The rollback takes effect on the very next incoming request.
 
 ## Requirements
 

@@ -1,0 +1,74 @@
+{
+  "slug": "h03-flaky-debug",
+  "label": "borderline",
+  "label_rationale": "Open-ended concurrency debugging with incomplete context and no reproduction repository",
+  "prompt": "This async test flakes about one run in five on CI but always passes locally, probably timing related. Where should I start looking? (no repro repo attached)",
+  "latency_s": 18.86,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.75,
+    "task_type": "debugging",
+    "complexity": 5
+  },
+  "targets": [
+    {
+      "target": "agy",
+      "fit": 0.85,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.7,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.65,
+      "effort": "medium"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 5,
+      "signals": [
+        "async test flaking",
+        "CI vs local behavior",
+        "timing-related issue",
+        "no repro repo attached"
+      ]
+    },
+    "rewrite": "An async test is failing approximately one out of every five runs on CI, but it always passes locally. The issue is likely timing-related. Where should I start looking for the cause? (No reproducible repository is attached.)",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.75,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.65,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

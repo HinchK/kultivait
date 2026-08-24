@@ -1,0 +1,2178 @@
+{
+  "qwen3.5:4b": {
+    "model": "qwen3.5:4b",
+    "metrics": {
+      "total_cases": 12,
+      "parse_ok_count": 12,
+      "parse_failure_count": 0,
+      "parse_ok_rate": 1.0,
+      "agreement_count": 5,
+      "agreement_rate": 0.417,
+      "dangerous_count": 0,
+      "dangerous_rate": 0.0,
+      "wasteful_count": 4,
+      "wasteful_rate": 0.333,
+      "toll_count": 0,
+      "toll_rate": 0.0,
+      "latency_p50_s": 6.89,
+      "latency_max_s": 8.94,
+      "low_threshold": 0.65,
+      "high_threshold": 0.85
+    },
+    "sweep": [
+      {
+        "low": 0.6,
+        "high": 0.8,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 0,
+        "toll_rate": 0.0
+      },
+      {
+        "low": 0.6,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 0,
+        "toll_rate": 0.0
+      },
+      {
+        "low": 0.65,
+        "high": 0.8,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 0,
+        "toll_rate": 0.0
+      },
+      {
+        "low": 0.65,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 0,
+        "toll_rate": 0.0
+      },
+      {
+        "low": 0.65,
+        "high": 0.9,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 2,
+        "toll_rate": 0.167
+      },
+      {
+        "low": 0.7,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 0,
+        "toll_rate": 0.0
+      },
+      {
+        "low": 0.7,
+        "high": 0.9,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 4,
+        "toll_count": 2,
+        "toll_rate": 0.167
+      }
+    ],
+    "cases": [
+      {
+        "slug": "01-simple-edit",
+        "label": "local",
+        "label_rationale": "Mechanical rename across a single config file and its imports",
+        "prompt": "Rename the variable cfg to settings everywhere in src/kultivait/config.py and fix the imports.",
+        "latency_s": 8.94,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "simple_edit",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.85,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 3,
+            "signals": [
+              "rename variable",
+              "fix imports",
+              "specific file path"
+            ]
+          },
+          "rewrite": "In the file src/kultivait/config.py, perform a global find-and-replace to rename all occurrences of the variable 'cfg' to 'settings'. Additionally, review and correct any import statements that reference the old variable name or are broken by this change.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.85,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "02-debug",
+        "label": "local",
+        "label_rationale": "In-repo diagnostic on known codebase timeout parameter",
+        "prompt": "Why does kultivait route hang forever when ollama is slow to answer? Where is that timeout set?",
+        "latency_s": 5.83,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.85,
+          "task_type": "debugging",
+          "complexity": 4
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.6,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.5,
+            "effort": "high"
+          },
+          {
+            "target": "codex",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.9,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 4,
+            "signals": [
+              "timeout configuration",
+              "routing behavior",
+              "Ollama latency",
+              "Kultivait hang"
+            ]
+          },
+          "rewrite": "In Kultivait, when Ollama takes longer than expected to respond, the request hangs indefinitely instead of timing out. Locate the specific timeout setting responsible for this behavior and explain how to configure it to prevent hanging.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.6,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.5,
+                "effort": "high"
+              },
+              {
+                "target": "codex",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.9,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "03-architecture",
+        "label": "frontier",
+        "label_rationale": "Cross-file design judgment comparing server lifecycle and archiving architectures",
+        "prompt": "Should the pending-tolls queue live inside the FastAPI server process or a separate worker? Compare against how escalations are archived today.",
+        "latency_s": 5.11,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.85,
+          "task_type": "architecture",
+          "complexity": 6
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.85,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.75,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "architecture",
+            "complexity": 6,
+            "signals": [
+              "pending-tolls queue placement",
+              "FastAPI server process vs separate worker",
+              "comparison against escalation archival mechanism"
+            ]
+          },
+          "rewrite": "Design the architecture for a 'pending-tolls' queue system. Should it run as an internal task queue within the FastAPI application process, or as a separate background worker service? Justify your recommendation by comparing this approach to the current implementation of the 'escalations' archival feature.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.85,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.75,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "04-docs-lookup",
+        "label": "frontier",
+        "label_rationale": "Freshness-dependent lookup of specific external CLI version documentation",
+        "prompt": "What values does the --effort flag accept in claude CLI 2.1.238?",
+        "latency_s": 4.54,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 1.0,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "docs_lookup",
+          "complexity": 4
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 1.0,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.2,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.3,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 4,
+            "signals": [
+              "specific software tool (claude CLI)",
+              "exact version number (2.1.238)",
+              "parameter query (--effort flag)"
+            ]
+          },
+          "rewrite": "What values are accepted for the --effort flag in the Claude Desktop application version 2.1.238?",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 1.0,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.2,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.3,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "05-compound",
+        "label": "frontier",
+        "label_rationale": "Orchestration-worthy compound multi-component feature and documentation update",
+        "prompt": "Add a kultivait choose subcommand that drains pending tolls: queue file, TTY chooser, heartbeat POST endpoint, and tests. Then update the README section about the tollbooth.",
+        "latency_s": 6.89,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "compound",
+          "complexity": 7
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.85,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.65,
+            "effort": "high"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.7,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "compound",
+            "complexity": 7,
+            "signals": [
+              "add subcommand",
+              "drain pending tolls",
+              "queue file",
+              "TTY chooser",
+              "heartbeat POST endpoint",
+              "tests",
+              "update README"
+            ]
+          },
+          "rewrite": "Implement a new 'choose' subcommand for the kultivait tollbooth system that processes and drains pending toll requests. The implementation must support: (1) reading from a queue file, (2) handling input via TTY chooser, (3) exposing a heartbeat POST endpoint for status monitoring, and (4) including unit tests for the new logic. Additionally, update the project README to document this new subcommand and its functionality.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.85,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.65,
+                "effort": "high"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.7,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "06-adversarial-truncated",
+        "label": "borderline",
+        "label_rationale": "Adversarially truncated context where missing information creates genuine ambiguity",
+        "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+        "latency_s": 7.06,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.65,
+          "task_type": "debugging",
+          "complexity": 4
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.6,
+            "effort": "high"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.55,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 4,
+            "signals": [
+              "Find the bug",
+              "returns None sometimes",
+              "def resolve_tier",
+              "truncated code",
+              "context limit"
+            ]
+          },
+          "rewrite": "Analyze the following Python function to identify why it returns None. The code is truncated and incomplete.\n\nFunction:\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n\nTask: Determine the logical error causing a None return based on visible syntax (e.g., undefined variable 'tiers', incomplete list comprehension) and explain how to fix it.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.65,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.6,
+                "effort": "high"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.55,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h01-local-constant",
+        "label": "local",
+        "label_rationale": "Single-file mechanical refactoring of test constants",
+        "prompt": "In tests/test_config.py replace the magic numbers 3.0 and 15.0 with named constants imported from kultivait.config.",
+        "latency_s": 6.36,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.95,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "simple_edit",
+          "complexity": 2
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.95,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.9,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 2,
+            "signals": [
+              "file path specified (tests/test_config.py)",
+              "action specified (replace magic numbers)",
+              "target values identified (3.0 and 15.0)",
+              "source location identified (kultivait.config)"
+            ]
+          },
+          "rewrite": "In the file tests/test_config.py, identify all occurrences of the numeric literals 3.0 and 15.0 and replace them with named constants imported from the module kultivait.config.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.95,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.9,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h02-inrepo-lookup",
+        "label": "local",
+        "label_rationale": "Static code extraction and lookup within a single repository file",
+        "prompt": "List the tier names ROLES defines in config.py and explain the order detect() sorts tiers by.",
+        "latency_s": 6.81,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "docs_lookup",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.7,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 3,
+            "signals": [
+              "mentions specific module 'config.py'",
+              "references specific function 'ROLES' and 'detect()'"
+            ]
+          },
+          "rewrite": "In the 'cultivait' codebase, locate the file 'config.py'. First, list all tier names defined within the 'ROLES' object. Second, explain the logic used by the 'detect()' function to determine the sorting order of these tiers.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.7,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h03-flaky-debug",
+        "label": "borderline",
+        "label_rationale": "Open-ended concurrency debugging with incomplete context and no reproduction repository",
+        "prompt": "This async test flakes about one run in five on CI but always passes locally, probably timing related. Where should I start looking? (no repro repo attached)",
+        "latency_s": 7.78,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.85,
+          "task_type": "debugging",
+          "complexity": 6
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "high"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.6,
+            "effort": "high"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.5,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 6,
+            "signals": [
+              "flaky test",
+              "CI vs local discrepancy",
+              "timing related hypothesis",
+              "no repository provided"
+            ]
+          },
+          "rewrite": "Debug a flaky asynchronous test that passes locally but fails approximately 20% of the time on CI. The failure is suspected to be timing-related. Since no source code or CI configuration is available, provide a prioritized list of diagnostic steps and tools to isolate the race condition, including how to instrument the code for deterministic reproduction.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "high"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.6,
+                "effort": "high"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.5,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h04-middleware-arch",
+        "label": "frontier",
+        "label_rationale": "Deep architectural analysis of HTTP request lifecycle, holding semantics, and headless client tradeoffs",
+        "prompt": "Evaluate whether kultivait's trolltoll hold should move from the FastAPI request handler into middleware so headless clients get consistent behavior; recommend with tradeoffs.",
+        "latency_s": 7.4,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.85,
+          "task_type": "compound",
+          "complexity": 6
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.6,
+            "effort": "high"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.5,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "compound",
+            "complexity": 6,
+            "signals": [
+              "architecture",
+              "tradeoffs",
+              "middleware vs request handler",
+              "headless clients"
+            ]
+          },
+          "rewrite": "Evaluate whether the 'trolltoll' hold in kultivait should be moved from a FastAPI request handler to middleware. Specifically, analyze how this change affects consistency for headless clients. Provide recommendations including specific tradeoffs regarding performance, maintainability, and error handling.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.6,
+                "effort": "high"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.5,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h05-freshness-cite",
+        "label": "frontier",
+        "label_rationale": "External documentation verification requiring fresh citations on recent version changes",
+        "prompt": "Does ollama 0.7 still treat piped stdin prompts the same way current docs describe, or has that changed this year? Cite current docs.",
+        "latency_s": 6.2,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "docs_lookup",
+          "complexity": 4
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.85,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 4,
+            "signals": [
+              "version specific query (0.7)",
+              "behavioral change verification",
+              "citation requirement"
+            ]
+          },
+          "rewrite": "Verify whether Ollama version 0.7 maintains the documented behavior for piped stdin prompts compared to the current documentation. Provide a direct comparison of the behavior and cite the specific sections in the official Ollama documentation that confirm or contradict this behavior.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.85,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h06-small-feature",
+        "label": "borderline",
+        "label_rationale": "Multi-step feature spanning CLI argument parsing, serialization, and documentation",
+        "prompt": "Add a --json flag to kultivait route that prints the Decision object, then note the flag in the README route section.",
+        "latency_s": 7.42,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "simple_edit",
+          "complexity": 2
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.7,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 2,
+            "signals": [
+              "Add --json flag",
+              "print Decision object",
+              "update README"
+            ]
+          },
+          "rewrite": "Implement a command-line flag '--json' for the 'route' command in kultivait. When this flag is present, the output must include the full JSON representation of the 'Decision' object. Additionally, update the documentation (README) to explicitly list and describe this new flag.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.7,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "qwen3:14b": {
+    "model": "qwen3:14b",
+    "metrics": {
+      "total_cases": 12,
+      "parse_ok_count": 12,
+      "parse_failure_count": 0,
+      "parse_ok_rate": 1.0,
+      "agreement_count": 5,
+      "agreement_rate": 0.417,
+      "dangerous_count": 0,
+      "dangerous_rate": 0.0,
+      "wasteful_count": 3,
+      "wasteful_rate": 0.25,
+      "toll_count": 3,
+      "toll_rate": 0.25,
+      "latency_p50_s": 15.43,
+      "latency_max_s": 18.86,
+      "low_threshold": 0.65,
+      "high_threshold": 0.85
+    },
+    "sweep": [
+      {
+        "low": 0.6,
+        "high": 0.8,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 3,
+        "toll_count": 1,
+        "toll_rate": 0.083
+      },
+      {
+        "low": 0.6,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 3,
+        "toll_count": 3,
+        "toll_rate": 0.25
+      },
+      {
+        "low": 0.65,
+        "high": 0.8,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 3,
+        "toll_count": 1,
+        "toll_rate": 0.083
+      },
+      {
+        "low": 0.65,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 3,
+        "toll_count": 3,
+        "toll_rate": 0.25
+      },
+      {
+        "low": 0.65,
+        "high": 0.9,
+        "agreement_count": 6,
+        "agreement_rate": 0.5,
+        "dangerous_count": 0,
+        "wasteful_count": 2,
+        "toll_count": 7,
+        "toll_rate": 0.583
+      },
+      {
+        "low": 0.7,
+        "high": 0.85,
+        "agreement_count": 5,
+        "agreement_rate": 0.417,
+        "dangerous_count": 0,
+        "wasteful_count": 3,
+        "toll_count": 3,
+        "toll_rate": 0.25
+      },
+      {
+        "low": 0.7,
+        "high": 0.9,
+        "agreement_count": 6,
+        "agreement_rate": 0.5,
+        "dangerous_count": 0,
+        "wasteful_count": 2,
+        "toll_count": 7,
+        "toll_rate": 0.583
+      }
+    ],
+    "cases": [
+      {
+        "slug": "01-simple-edit",
+        "label": "local",
+        "label_rationale": "Mechanical rename across a single config file and its imports",
+        "prompt": "Rename the variable cfg to settings everywhere in src/kultivait/config.py and fix the imports.",
+        "latency_s": 17.67,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.9,
+          "task_type": "simple_edit",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "codex",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.75,
+            "effort": "low"
+          },
+          {
+            "target": "claude",
+            "fit": 0.7,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.65,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.6,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 3,
+            "signals": [
+              "rename variable",
+              "fix imports"
+            ]
+          },
+          "rewrite": "Rename the variable 'cfg' to 'settings' throughout the file 'src/kultivait/config.py' and update any import statements that reference 'cfg' to use 'settings' instead.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.9,
+            "targets": [
+              {
+                "target": "codex",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.75,
+                "effort": "low"
+              },
+              {
+                "target": "claude",
+                "fit": 0.7,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.65,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.6,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "02-debug",
+        "label": "local",
+        "label_rationale": "In-repo diagnostic on known codebase timeout parameter",
+        "prompt": "Why does kultivait route hang forever when ollama is slow to answer? Where is that timeout set?",
+        "latency_s": 8.89,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.85,
+          "task_type": "debugging",
+          "complexity": 6
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.6,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 6,
+            "signals": [
+              "timeout",
+              "ollama",
+              "kultivait",
+              "hang"
+            ]
+          },
+          "rewrite": "Why does kultivait route hang indefinitely when ollama is slow to respond? Where is the timeout value for this behavior configured?",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.6,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "03-architecture",
+        "label": "frontier",
+        "label_rationale": "Cross-file design judgment comparing server lifecycle and archiving architectures",
+        "prompt": "Should the pending-tolls queue live inside the FastAPI server process or a separate worker? Compare against how escalations are archived today.",
+        "latency_s": 9.63,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.85,
+          "task_type": "debugging",
+          "complexity": 5
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": [
+              "comparison of architectures",
+              "queue management",
+              "system design considerations"
+            ]
+          },
+          "rewrite": "Should the pending-tolls queue be hosted within the FastAPI server process or in a separate worker? Compare this approach to the current method used for archiving escalations.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "04-docs-lookup",
+        "label": "frontier",
+        "label_rationale": "Freshness-dependent lookup of specific external CLI version documentation",
+        "prompt": "What values does the --effort flag accept in claude CLI 2.1.238?",
+        "latency_s": 7.54,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.8,
+          "task_type": "docs_lookup",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "claude",
+            "fit": 0.9,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 3,
+            "signals": [
+              "--effort flag",
+              "claude CLI 2.1.238",
+              "values accepted"
+            ]
+          },
+          "rewrite": "What specific values are accepted by the --effort flag in the claude CLI version 2.1.238?",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.8,
+            "targets": [
+              {
+                "target": "claude",
+                "fit": 0.9,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "05-compound",
+        "label": "frontier",
+        "label_rationale": "Orchestration-worthy compound multi-component feature and documentation update",
+        "prompt": "Add a kultivait choose subcommand that drains pending tolls: queue file, TTY chooser, heartbeat POST endpoint, and tests. Then update the README section about the tollbooth.",
+        "latency_s": 14.76,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.85,
+          "task_type": "simple_edit",
+          "complexity": 5
+        },
+        "targets": [
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "claude",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.6,
+            "effort": "medium"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.65,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 5,
+            "signals": [
+              "add subcommand",
+              "drain pending tolls",
+              "queue file",
+              "TTY chooser",
+              "heartbeat POST endpoint",
+              "tests",
+              "update README"
+            ]
+          },
+          "rewrite": "Add a 'kultivait choose' subcommand that drains pending tolls, including implementation for a queue file, TTY chooser, heartbeat POST endpoint, and associated tests. Update the README section about the tollbooth to reflect these changes.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.85,
+            "targets": [
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "claude",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.6,
+                "effort": "medium"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.65,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "06-adversarial-truncated",
+        "label": "borderline",
+        "label_rationale": "Adversarially truncated context where missing information creates genuine ambiguity",
+        "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+        "latency_s": 12.76,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.8,
+        "derived_verdict": "contested",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.6,
+          "task_type": "debugging",
+          "complexity": 5
+        },
+        "targets": [
+          {
+            "target": "codex",
+            "fit": 0.8,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.6,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": [
+              "function returns None sometimes",
+              "incomplete code snippet",
+              "conditional logic involving tier.kind and tools"
+            ]
+          },
+          "rewrite": "Identify the bug in the provided function `resolve_tier(tier, tools)` that causes it to return `None` in some cases. The function is incomplete and contains a syntax error in the list comprehension `[t for t in tiers if t.kind == 'l`.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.6,
+            "targets": [
+              {
+                "target": "codex",
+                "fit": 0.8,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.6,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h01-local-constant",
+        "label": "local",
+        "label_rationale": "Single-file mechanical refactoring of test constants",
+        "prompt": "In tests/test_config.py replace the magic numbers 3.0 and 15.0 with named constants imported from kultivait.config.",
+        "latency_s": 15.43,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.9,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": true,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.95,
+          "task_type": "simple_edit",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "codex",
+            "fit": 0.9,
+            "effort": "low"
+          },
+          {
+            "target": "agy",
+            "fit": 0.8,
+            "effort": "low"
+          },
+          {
+            "target": "claude",
+            "fit": 0.7,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.7,
+            "effort": "low"
+          },
+          {
+            "target": "opencode",
+            "fit": 0.6,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 3,
+            "signals": [
+              "magic numbers",
+              "named constants",
+              "import from kultivait.config"
+            ]
+          },
+          "rewrite": "In the file tests/test_config.py, replace the magic numbers 3.0 and 15.0 with named constants that are imported from the module kultivait.config.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.95,
+            "targets": [
+              {
+                "target": "codex",
+                "fit": 0.9,
+                "effort": "low"
+              },
+              {
+                "target": "agy",
+                "fit": 0.8,
+                "effort": "low"
+              },
+              {
+                "target": "claude",
+                "fit": 0.7,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.7,
+                "effort": "low"
+              },
+              {
+                "target": "opencode",
+                "fit": 0.6,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h02-inrepo-lookup",
+        "label": "local",
+        "label_rationale": "Static code extraction and lookup within a single repository file",
+        "prompt": "List the tier names ROLES defines in config.py and explain the order detect() sorts tiers by.",
+        "latency_s": 13.46,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.7,
+        "derived_verdict": "contested",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.8,
+          "task_type": "docs_lookup",
+          "complexity": 4
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.6,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.5,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 4,
+            "signals": [
+              "request for tier names defined in config.py",
+              "request for explanation of detect() sorting order"
+            ]
+          },
+          "rewrite": "List the names of the tiers defined in the ROLES configuration in config.py, and explain the order in which the detect() function sorts these tiers.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.8,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.6,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.5,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h03-flaky-debug",
+        "label": "borderline",
+        "label_rationale": "Open-ended concurrency debugging with incomplete context and no reproduction repository",
+        "prompt": "This async test flakes about one run in five on CI but always passes locally, probably timing related. Where should I start looking? (no repro repo attached)",
+        "latency_s": 18.86,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.75,
+          "task_type": "debugging",
+          "complexity": 5
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.85,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.65,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": [
+              "async test flaking",
+              "CI vs local behavior",
+              "timing-related issue",
+              "no repro repo attached"
+            ]
+          },
+          "rewrite": "An async test is failing approximately one out of every five runs on CI, but it always passes locally. The issue is likely timing-related. Where should I start looking for the cause? (No reproducible repository is attached.)",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.75,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.85,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.65,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h04-middleware-arch",
+        "label": "frontier",
+        "label_rationale": "Deep architectural analysis of HTTP request lifecycle, holding semantics, and headless client tradeoffs",
+        "prompt": "Evaluate whether kultivait's trolltoll hold should move from the FastAPI request handler into middleware so headless clients get consistent behavior; recommend with tradeoffs.",
+        "latency_s": 18.23,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": true,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": false
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.75,
+          "task_type": "architecture",
+          "complexity": 6
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.85,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.75,
+            "effort": "medium"
+          },
+          {
+            "target": "codex",
+            "fit": 0.65,
+            "effort": "high"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "architecture",
+            "complexity": 6,
+            "signals": [
+              "Evaluate architecture change",
+              "Recommend with tradeoffs",
+              "Consistency for headless clients"
+            ]
+          },
+          "rewrite": "Evaluate whether kultivait's trolltoll hold should be moved from the FastAPI request handler into middleware to ensure consistent behavior for headless clients; provide a recommendation with tradeoffs.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.75,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.85,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.75,
+                "effort": "medium"
+              },
+              {
+                "target": "codex",
+                "fit": 0.65,
+                "effort": "high"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h05-freshness-cite",
+        "label": "frontier",
+        "label_rationale": "External documentation verification requiring fresh citations on recent version changes",
+        "prompt": "Does ollama 0.7 still treat piped stdin prompts the same way current docs describe, or has that changed this year? Cite current docs.",
+        "latency_s": 18.55,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.8,
+        "derived_verdict": "contested",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": false,
+          "confidence": 0.8,
+          "task_type": "docs_lookup",
+          "complexity": 5
+        },
+        "targets": [
+          {
+            "target": "codex",
+            "fit": 0.6,
+            "effort": "medium"
+          },
+          {
+            "target": "agy",
+            "fit": 0.7,
+            "effort": "medium"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.8,
+            "effort": "medium"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "docs_lookup",
+            "complexity": 5,
+            "signals": [
+              "ollama",
+              "0.7",
+              "piped stdin prompts",
+              "current docs",
+              "changed this year"
+            ]
+          },
+          "rewrite": "Has the behavior of ollama 0.7 regarding piped stdin prompts changed compared to what is described in the current documentation? Provide a citation from the current documentation.",
+          "judge": {
+            "local_sufficient": false,
+            "confidence": 0.8,
+            "targets": [
+              {
+                "target": "codex",
+                "fit": 0.6,
+                "effort": "medium"
+              },
+              {
+                "target": "agy",
+                "fit": 0.7,
+                "effort": "medium"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.8,
+                "effort": "medium"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "slug": "h06-small-feature",
+        "label": "borderline",
+        "label_rationale": "Multi-step feature spanning CLI argument parsing, serialization, and documentation",
+        "prompt": "Add a --json flag to kultivait route that prints the Decision object, then note the flag in the README route section.",
+        "latency_s": 18.56,
+        "parse_ok": true,
+        "parse_error": null,
+        "max_fit": 0.85,
+        "derived_verdict": "frontier",
+        "outcome": {
+          "agree": false,
+          "dangerous": false,
+          "wasteful": false,
+          "miss": true
+        },
+        "diagnostics": {
+          "local_sufficient": true,
+          "confidence": 0.9,
+          "task_type": "simple_edit",
+          "complexity": 3
+        },
+        "targets": [
+          {
+            "target": "agy",
+            "fit": 0.85,
+            "effort": "low"
+          },
+          {
+            "target": "codex",
+            "fit": 0.75,
+            "effort": "low"
+          },
+          {
+            "target": "gemini",
+            "fit": 0.7,
+            "effort": "low"
+          }
+        ],
+        "raw_output": {
+          "analysis": {
+            "task_type": "simple_edit",
+            "complexity": 3,
+            "signals": [
+              "add flag to route",
+              "update README"
+            ]
+          },
+          "rewrite": "Add a --json flag to the 'kultivait route' command that prints the Decision object, and update the README's 'route' section to note the addition of this flag.",
+          "judge": {
+            "local_sufficient": true,
+            "confidence": 0.9,
+            "targets": [
+              {
+                "target": "agy",
+                "fit": 0.85,
+                "effort": "low"
+              },
+              {
+                "target": "codex",
+                "fit": 0.75,
+                "effort": "low"
+              },
+              {
+                "target": "gemini",
+                "fit": 0.7,
+                "effort": "low"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

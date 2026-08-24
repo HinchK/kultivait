@@ -1,3 +1,6 @@
+import json
+import threading
+import time
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -7,6 +10,7 @@ from kultivait.gates import Gate
 from kultivait.ledger import Ledger
 from kultivait.router import Router
 from kultivait.server import create_app
+from kultivait.tollbooth import TollboothQueue
 
 CENTROIDS = {
     "llama3.1:8b": np.array([1.0, 0.0]),
@@ -23,6 +27,8 @@ class FakeBackend:
         self.tool_calls = tool_calls
         self.calls = []
         self.tools_seen = []
+        self.effort_flags_seen = []
+        self.model_overrides_seen = []
 
     def _completion(self):
         return Completion(
@@ -34,21 +40,47 @@ class FakeBackend:
             tool_calls=self.tool_calls,
         )
 
-    def complete(self, messages, tools=None):
+    def complete(
+        self,
+        messages,
+        tools=None,
+        effort_flags=None,
+        model_override=None,
+        **kwargs,
+    ):
         self.calls.append(messages)
         self.tools_seen.append(tools)
+        self.effort_flags_seen.append(effort_flags)
+        self.model_overrides_seen.append(model_override)
         return self._completion()
 
-    def stream(self, messages, tools=None):
+    def stream(
+        self,
+        messages,
+        tools=None,
+        effort_flags=None,
+        model_override=None,
+        **kwargs,
+    ):
         self.calls.append(messages)
         self.tools_seen.append(tools)
+        self.effort_flags_seen.append(effort_flags)
+        self.model_overrides_seen.append(model_override)
         if not self.tool_calls:
             yield "answered by "
             yield self.name
         yield self._completion()
 
 
-def make_client(tmp_path, embed):
+def make_client(
+    tmp_path,
+    embed,
+    preprocess_generate=None,
+    preprocess_timeout_s=15.0,
+    tollbooth=None,
+    toll_timeout_s=60.0,
+    toll_enabled=True,
+):
     backends = {
         "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
         "claude": FakeBackend("claude", local=False),
@@ -60,6 +92,11 @@ def make_client(tmp_path, embed):
         ledger=Ledger(tmp_path / "ledger.jsonl"),
         gate=Gate(generate=lambda p: "FINDINGS: distilled.", compost_dir=tmp_path / "compost"),
         escalations=EscalationStore(tmp_path / "escalations"),
+        preprocess_generate=preprocess_generate,
+        preprocess_timeout_s=preprocess_timeout_s,
+        tollbooth=tollbooth,
+        toll_timeout_s=toll_timeout_s,
+        toll_enabled=toll_enabled,
     )
     return TestClient(app), backends
 
@@ -399,3 +436,770 @@ def test_completion_is_recorded_in_ledger(tmp_path):
     assert stats["prompts"] == 1
     assert stats["local_prompts"] == 0
     assert stats["spent_usd"] == 0.01
+
+
+def test_fat_margin_skips_preprocessor(tmp_path):
+    import json
+    calls = []
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return "{}", 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.9, 0.1]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "rename this var"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 0  # preprocessor was NOT called
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "skipped"
+    assert km["verdict"] == "local"
+    assert km["max_fit"] == 0.0
+    assert km["subtask_candidates"] == 0
+    assert "fingerprint" in km and len(km["fingerprint"]) > 0
+
+    entry = json.loads((tmp_path / "ledger.jsonl").read_text())
+    assert entry["preprocess_mark"] == "skipped"
+    assert entry["toll"] == "skipped"
+    assert entry["fingerprint"] == km["fingerprint"]
+
+
+def test_contested_runs_preprocessor_and_serves_local_verdict(tmp_path):
+    import json
+    calls = []
+    sample_res = {
+        "analysis": {"task_type": "simple_edit", "complexity": 2, "signals": []},
+        "rewrite": "Rewritten prompt",
+        "judge": {
+            "local_sufficient": True,
+            "confidence": 0.9,
+            "targets": [{"target": "claude", "fit": 0.40, "effort": "low"}],
+        },
+    }
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return json.dumps(sample_res), 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),  # thin margin (< 0.02)
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "contested task"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert "contested task" in calls[0]
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["verdict"] == "local"
+    assert km["max_fit"] == 0.40
+    assert resp.json()["model"] == "llama3.1:8b"
+    # Local dispatch gets original message, NOT rewrite
+    assert backends["llama3.1:8b"].calls[0] == [{"role": "user", "content": "contested task"}]
+
+
+def test_contested_runs_preprocessor_and_serves_frontier_verdict_with_rewrite(tmp_path):
+    import json
+    calls = []
+    sample_res = {
+        "analysis": {
+            "task_type": "architecture",
+            "complexity": 8,
+            "signals": ["multi-file"],
+            "subtask_candidates": ["design queue", "write tests"],
+        },
+        "rewrite": "Self-contained architecture prompt for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.95,
+            "targets": [{"target": "claude", "fit": 0.92, "effort": "high"}],
+        },
+    }
+
+    def fake_gen(model: str, prompt: str):
+        calls.append(prompt)
+        return json.dumps(sample_res), 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "vague arch prompt"}]},
+    )
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["verdict"] == "frontier"
+    assert km["max_fit"] == 0.92
+    assert km["subtask_candidates"] == 2
+    assert km["canonical_effort"] == "deep"
+    assert km["cli_effort_flags"] == ["--effort", "high"]
+    assert resp.json()["model"] == "claude"
+    # Frontier CLI dispatch receives rewritten text and effort flags
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Self-contained architecture prompt for claude"}
+    ]
+    assert backends["claude"].effort_flags_seen[0] == ["--effort", "high"]
+
+    entry = json.loads((tmp_path / "ledger.jsonl").read_text())
+    assert entry["preprocess_mark"] == "ok"
+    assert entry["verdict"] == "frontier"
+    assert entry["max_fit"] == 0.92
+    assert entry["canonical_effort"] == "deep"
+    assert entry["cli_effort_flags"] == ["--effort", "high"]
+    assert entry["toll"] == "skipped"
+    assert entry["subtask_candidates"] == 2
+
+
+def test_contested_preprocessor_timeout_falls_back_to_router(tmp_path):
+    def fake_gen(model: str, prompt: str):
+        raise TimeoutError("local model timeout")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "timeout prompt"}]},
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "preprocess_timeout"
+    assert km["verdict"] == "frontier"  # router escalated to claude
+    assert resp.json()["model"] == "claude"
+    # Fallback uses original message
+    assert backends["claude"].calls[0] == [{"role": "user", "content": "timeout prompt"}]
+
+
+def test_contested_preprocessor_parse_fail_falls_back_to_router(tmp_path):
+    def fake_gen(model: str, prompt: str):
+        return "I am just raw prose output without JSON brackets.", 0.05
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=fake_gen,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "parse fail prompt"}]},
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "preprocess_fail"
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [{"role": "user", "content": "parse fail prompt"}]
+
+
+def test_tool_bearing_contested_request_preprocessed_with_tool_fallback(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "compound",
+            "complexity": 7,
+            "signals": ["tool call required"],
+            "subtask_candidates": ["run tests", "refactor"],
+        },
+        "rewrite": "Tool prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.90,
+            "targets": [{"target": "claude", "fit": 0.95, "effort": "medium"}],
+        },
+    }
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "tools": TOOLS,
+            "messages": [{"role": "user", "content": "do tool task"}],
+        },
+    )
+    assert resp.status_code == 200
+    km = resp.json()["kultivait"]
+    assert km["preprocess_mark"] == "ok"
+    assert km["subtask_candidates"] == 0  # Suppressed on tool-bearing requests per ADR 0007
+    # Frontier requested by preprocessor, but claude does not support tools -> falls back to llama
+    assert km["fallback_reason"] == "tools_unsupported"
+    assert resp.json()["model"] == "llama3.1:8b"
+    # Local fallback served gets original message
+    assert backends["llama3.1:8b"].calls[0] == [{"role": "user", "content": "do tool task"}]
+
+
+def test_contested_verdict_triggers_tollbooth_and_answers_frontier(tmp_path):
+    import threading
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": ["isolate test"],
+        },
+        "rewrite": "Contested prompt rewritten for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_when_pending():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude")
+                return
+
+    t = threading.Thread(target=answer_when_pending)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "frontier"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:frontier:claude"
+    assert km["canonical_effort"] == "balanced"
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Contested prompt rewritten for claude"}
+    ]
+
+    # Verify ledger entry
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["toll"] == "answered"
+    assert records[-1]["route_choice"] == "human:frontier:claude"
+    assert records[-1]["verdict"] == "frontier"
+
+
+def test_contested_verdict_tollbooth_no_presence_auto_policy_local(tmp_path):
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    # No presence registered
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+        escalations=EscalationStore(tmp_path / "escalations"),
+    )
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "local"
+    assert km["toll"] == "expired"
+    assert km["route_choice"] == "auto:local"
+    assert resp.json()["model"] == "llama3.1:8b"
+    assert backends["llama3.1:8b"].calls[0] == [
+        {"role": "user", "content": "fix my bug"}
+    ]
+
+    # Verify missed menu archived
+    menus = list((tmp_path / "escalations").glob("menu-*.json"))
+    assert len(menus) == 1
+    menu_data = json.loads(menus[0].read_text())
+    assert menu_data["reason"] == "no_presence"
+    assert menu_data["auto_choice"] == "auto:local"
+
+
+def test_contested_verdict_tollbooth_human_local_choice_archives_escalation(tmp_path):
+    import threading
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+        escalations=EscalationStore(tmp_path / "escalations"),
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_local():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "local")
+                return
+
+    t = threading.Thread(target=answer_local)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "local"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:local"
+    assert resp.json()["model"] == "llama3.1:8b"
+    assert backends["llama3.1:8b"].calls[0] == [
+        {"role": "user", "content": "fix my bug"}
+    ]
+
+    # Verify escalation created for deliberate local choice
+    escs = list((tmp_path / "escalations").glob("esc-*.json"))
+    assert len(escs) == 1
+
+
+def test_anthropic_messages_contested_verdict_tollbooth(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,
+            "signals": ["test failure"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten for claude",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    from kultivait.tollbooth import TollboothQueue
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_frontier():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude")
+                return
+
+    t = threading.Thread(target=answer_frontier)
+    t.start()
+
+    resp = client.post(
+        "/v1/messages",
+        json={"model": "auto", "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "claude"
+    assert backends["claude"].calls[0] == [
+        {"role": "user", "content": "Contested prompt rewritten for claude"}
+    ]
+
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["toll"] == "answered"
+    assert records[-1]["route_choice"] == "human:frontier:claude"
+
+
+def test_contested_verdict_tollbooth_with_effort_override(tmp_path):
+    sample_res = {
+        "analysis": {
+            "task_type": "debugging",
+            "complexity": 5,  # normally maps to balanced
+            "signals": ["complex bug"],
+            "subtask_candidates": [],
+        },
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+
+    from kultivait.tollbooth import TollboothQueue
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        default_timeout_s=5.0,
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    client, backends = make_client(
+        tmp_path,
+        embed=lambda text: np.array([0.71, 0.70]),
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_with_deep_effort():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude", effort_canonical="deep")
+                return
+
+    t = threading.Thread(target=answer_with_deep_effort)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "deep debugging needed"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    km = data["kultivait"]
+    assert km["verdict"] == "frontier"
+    assert km["toll"] == "answered"
+    assert km["route_choice"] == "human:frontier:claude"
+    assert km["canonical_effort"] == "deep"
+    assert km["cli_effort_flags"] == ["--effort", "high"]
+    assert backends["claude"].effort_flags_seen[0] == ["--effort", "high"]
+
+
+def test_api_backend_tool_bearing_chat_completions_no_fallback(tmp_path):
+    tool_call = {
+        "id": "call_weather_1",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+    }
+    api_backend = FakeBackend("openrouter", local=False, tool_calls=[tool_call])
+    api_backend.supports_tools = True
+
+    backends = {
+        "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
+        "openrouter": api_backend,
+    }
+    app = create_app(
+        router=Router(centroids={"llama3.1:8b": np.array([1.0, 0.0]), "openrouter": np.array([0.0, 1.0])}, capability_order=["llama3.1:8b", "openrouter"]),
+        embed=lambda text: np.array([0.0, 1.0]),  # routes to openrouter
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+
+    # 1. Non-streaming tool call
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Paris"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather"}}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["choices"][0]["finish_reason"] == "tool_calls"
+    assert data["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert data["kultivait"]["tier"] == "openrouter"
+    assert data["kultivait"]["fallback_reason"] is None
+
+    # 2. Streaming tool call
+    resp_stream = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Paris"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather"}}],
+            "stream": True,
+        },
+    )
+    assert resp_stream.status_code == 200
+    events = [line for line in resp_stream.text.split("\n\n") if line.startswith("data: ")]
+    chunks = [json.loads(line[6:]) for line in events if line[6:] != "[DONE]"]
+    tool_chunk = next(c for c in chunks if c["choices"][0]["delta"].get("tool_calls"))
+    assert tool_chunk["choices"][0]["delta"]["tool_calls"][0]["function"]["name"] == "get_weather"
+
+    # 3. Check ledger has recorded dual-track cost (cost_usd = 0.01, notional_usd = 0.01 for API)
+    records = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert records[-1]["tier"] == "openrouter"
+    assert records[-1]["cost_usd"] == 0.01
+    assert records[-1]["notional_usd"] == 0.01
+    assert records[-1]["fallback_reason"] is None
+
+
+def test_api_backend_tool_bearing_anthropic_messages_no_fallback(tmp_path):
+    tool_call = {
+        "id": "call_weather_2",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city": "Berlin"}'},
+    }
+    api_backend = FakeBackend("openrouter", local=False, tool_calls=[tool_call])
+    api_backend.supports_tools = True
+
+    backends = {
+        "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
+        "openrouter": api_backend,
+    }
+    app = create_app(
+        router=Router(centroids={"llama3.1:8b": np.array([1.0, 0.0]), "openrouter": np.array([0.0, 1.0])}, capability_order=["llama3.1:8b", "openrouter"]),
+        embed=lambda text: np.array([0.0, 1.0]),  # routes to openrouter
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+
+    # 1. Non-streaming tool call
+    resp = client.post(
+        "/v1/messages",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Berlin"}],
+            "tools": [{"name": "get_weather", "input_schema": {"type": "object"}}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["stop_reason"] == "tool_use"
+    assert data["content"][0]["type"] == "tool_use"
+    assert data["content"][0]["name"] == "get_weather"
+    assert data["content"][0]["input"] == {"city": "Berlin"}
+
+    # 2. Streaming tool call
+    resp_stream = client.post(
+        "/v1/messages",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "weather in Berlin"}],
+            "tools": [{"name": "get_weather", "input_schema": {"type": "object"}}],
+            "stream": True,
+        },
+    )
+    assert resp_stream.status_code == 200
+    lines = resp_stream.text.strip().split("\n\n")
+    parsed_events = []
+    for block in lines:
+        if not block.strip():
+            continue
+        ev_type = None
+        ev_data = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                ev_type = line[7:]
+            elif line.startswith("data: "):
+                ev_data = json.loads(line[6:])
+        if ev_type and ev_data:
+            parsed_events.append((ev_type, ev_data))
+
+    start_ev = next(d for t, d in parsed_events if t == "content_block_start" and d["content_block"].get("type") == "tool_use")
+    assert start_ev["content_block"]["name"] == "get_weather"
+    delta_ev = next(d for t, d in parsed_events if t == "content_block_delta" and d["delta"].get("type") == "input_json_delta")
+    assert "Berlin" in delta_ev["delta"]["partial_json"]
+    msg_delta = next(d for t, d in parsed_events if t == "message_delta")
+    assert msg_delta["delta"]["stop_reason"] == "tool_use"
+
+
+def test_api_served_tool_dispatch_records_no_escalation(tmp_path):
+    class FakeApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            return Completion(text="", tokens_in=50, tokens_out=20, cost_usd=0.001, local=False, tool_calls=[{"id": "c1", "type": "function", "function": {"name": "f1", "arguments": "{}"}}])
+        def stream(self, messages, tools=None, effort_flags=None, model_override=None):
+            yield self.complete(messages, tools, effort_flags, model_override)
+
+    store = EscalationStore(tmp_path / "escalations")
+    app = create_app(
+        router=Router(
+            centroids={"openai": np.array([1.0, 0.0]), "local": np.array([0.0, 1.0])},
+            capability_order=["local", "openai"],
+        ),
+        embed=lambda text: np.array([1.0, 0.0]),
+        backends={"openai": FakeApiBackend(), "local": FakeBackend("local", True)},
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=store,
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "run tool"}], "tools": [{"type": "function", "function": {"name": "f1"}}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["kultivait"]["fallback_reason"] is None
+    assert len(store.list()) == 0  # No escalation recorded!
+
+
+def test_human_toll_pick_failover_across_capable_ranking(tmp_path):
+    import threading
+
+    class BrokenApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            raise RuntimeError("Anthropic 503 Service Unavailable")
+
+    class BackupApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            return Completion(text="Backup answered successfully", tokens_in=60, tokens_out=15, cost_usd=0.002, local=False)
+
+    store = EscalationStore(tmp_path / "escalations")
+    sample_res = {
+        "analysis": {"task_type": "architecture", "complexity": 8, "signals": [], "subtask_candidates": ["plan"]},
+        "rewrite": "Rewritten prompt",
+        "judge": {"local_sufficient": False, "confidence": 0.50, "targets": [{"target": "anthropic", "fit": 0.80, "effort": "medium"}]},
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    app = create_app(
+        router=Router(
+            centroids={"anthropic": np.array([0.5, 0.5]), "openai": np.array([0.5, 0.5]), "local": np.array([0.5, 0.5])},
+            capability_order=["local", "openai", "anthropic"],
+        ),
+        embed=lambda text: np.array([0.5, 0.5]),
+        backends={
+            "anthropic": BrokenApiBackend(),
+            "openai": BackupApiBackend(),
+            "local": FakeBackend("local", True),
+        },
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=store,
+        tollbooth=tollbooth,
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        toll_enabled=True,
+    )
+    client = TestClient(app)
+
+    def answer_worker():
+        for _ in range(50):
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "human:frontier:anthropic")
+                break
+            time.sleep(0.02)
+
+    t = threading.Thread(target=answer_worker)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "contested prompt"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Failed on anthropic, failed over to openai (the next capable frontier backend in ranking)
+    assert data["model"] == "openai"
+    assert "Backup answered" in data["choices"][0]["message"]["content"]
+
+
+
+
+
+

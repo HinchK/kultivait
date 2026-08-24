@@ -1,0 +1,73 @@
+{
+  "slug": "h04-middleware-arch",
+  "label": "frontier",
+  "label_rationale": "Deep architectural analysis of HTTP request lifecycle, holding semantics, and headless client tradeoffs",
+  "prompt": "Evaluate whether kultivait's trolltoll hold should move from the FastAPI request handler into middleware so headless clients get consistent behavior; recommend with tradeoffs.",
+  "latency_s": 18.23,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.75,
+    "task_type": "architecture",
+    "complexity": 6
+  },
+  "targets": [
+    {
+      "target": "agy",
+      "fit": 0.85,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.65,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "architecture",
+      "complexity": 6,
+      "signals": [
+        "Evaluate architecture change",
+        "Recommend with tradeoffs",
+        "Consistency for headless clients"
+      ]
+    },
+    "rewrite": "Evaluate whether kultivait's trolltoll hold should be moved from the FastAPI request handler into middleware to ensure consistent behavior for headless clients; provide a recommendation with tradeoffs.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.75,
+      "targets": [
+        {
+          "target": "agy",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.65,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

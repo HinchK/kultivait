@@ -1,0 +1,73 @@
+{
+  "slug": "03-architecture",
+  "label": "frontier",
+  "label_rationale": "Cross-file design judgment comparing server lifecycle and archiving architectures",
+  "prompt": "Should the pending-tolls queue live inside the FastAPI server process or a separate worker? Compare against how escalations are archived today.",
+  "latency_s": 5.11,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.85,
+    "task_type": "architecture",
+    "complexity": 6
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.9,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.85,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.75,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "architecture",
+      "complexity": 6,
+      "signals": [
+        "pending-tolls queue placement",
+        "FastAPI server process vs separate worker",
+        "comparison against escalation archival mechanism"
+      ]
+    },
+    "rewrite": "Design the architecture for a 'pending-tolls' queue system. Should it run as an internal task queue within the FastAPI application process, or as a separate background worker service? Justify your recommendation by comparing this approach to the current implementation of the 'escalations' archival feature.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.85,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.9,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.85,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.75,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

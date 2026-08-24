@@ -9,6 +9,7 @@ backend to serve them.
 
 import re
 import tomllib
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,11 +24,57 @@ RUNTIME_URLS = {
 # Known embedding models (never generation candidates), preferred first.
 EMBED_MODELS = ["nomic-embed-text", "bge-m3", "all-minilm", "mxbai-embed"]
 
-KNOWN_CLIS = {"claude": "architect", "agy": "docs", "gemini": "docs"}
+KNOWN_CLIS = {
+    "claude": "architect",
+    "codex": "architect",
+    "opencode": "architect",
+    "agy": "docs",
+    "gemini": "docs",
+}
 CLI_PRICING = {  # USD per million tokens, rough frontier-tier defaults
     "claude": (3.0, 15.0),
+    "codex": (1.25, 10.0),
+    # opencode is multi-provider so price varies by selected provider/model; conservative default:
+    "opencode": (3.0, 15.0),
     "agy": (1.25, 10.0),
     "gemini": (1.25, 10.0),
+}
+
+DEFAULT_API_PRICE_IN = 3.0
+DEFAULT_API_PRICE_OUT = 15.0
+
+
+@dataclass(frozen=True)
+class ProviderDefaults:
+    model: str            # pinned exact id
+    price_in: float       # USD/MTok
+    price_out: float
+    max_output_tokens: int
+    token_field: str      # "max_tokens" | "max_completion_tokens"
+
+
+PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
+    "anthropic": ProviderDefaults(
+        model="claude-3-7-sonnet-20250219",
+        price_in=3.0,
+        price_out=15.0,
+        max_output_tokens=8192,
+        token_field="max_tokens",
+    ),
+    "openai": ProviderDefaults(
+        model="gpt-4o",
+        price_in=2.5,
+        price_out=10.0,
+        max_output_tokens=16384,
+        token_field="max_completion_tokens",
+    ),
+    "openrouter": ProviderDefaults(
+        model="anthropic/claude-3.7-sonnet",
+        price_in=3.0,
+        price_out=15.0,
+        max_output_tokens=8192,
+        token_field="max_tokens",
+    ),
 }
 
 
@@ -35,11 +82,22 @@ CLI_PRICING = {  # USD per million tokens, rough frontier-tier defaults
 class TierSpec:
     name: str
     role: str
-    kind: str  # "ollama" | "llamacpp" | "cli" | "virtual"
+    kind: str  # "ollama" | "llamacpp" | "cli" | "virtual" | "api"
     model: "str | None" = None
     command: "list[str] | None" = None
     price_in: float = 0.0
     price_out: float = 0.0
+
+
+@dataclass(frozen=True)
+class DistillConfig:
+    """The distillation pipeline's serving seat (ADR 0017): the live preprocess
+    model, resolved per-call so a config edit swaps models with no restart."""
+
+    model: str = "qwen3.5:4b"
+    shadow_model: str = ""  # gate-passing distillate name; empty = none
+    shadow_mode: str = "off"  # "off" | "on"
+    shadow_sample_rate: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +112,10 @@ class Config:
     # llama.cpp may need a dedicated embedding server (its --embedding flag
     # is server-wide); empty means "same server as chat".
     embed_base_url: str = ""
+    preprocess_timeout_s: float = 15.0
+    toll_timeout_s: float = 60.0
+    toll_enabled: bool = True
+    distill: DistillConfig = field(default_factory=DistillConfig)
 
     def capability_order(self) -> "list[str]":
         return [t.name for t in self.tiers]
@@ -155,6 +217,9 @@ def save_config(config: Config, path: Path) -> None:
         f"distill_model = {_toml_str(config.distill_model)}",
         f"num_ctx = {config.num_ctx}",
         f"port = {config.port}",
+        f"preprocess_timeout_s = {config.preprocess_timeout_s}",
+        f"toll_timeout_s = {config.toll_timeout_s}",
+        f"toll_enabled = {'true' if config.toll_enabled else 'false'}",
     ]
     for t in config.tiers:
         lines += ["", "[[tiers]]", f'name = "{t.name}"', f'role = "{t.role}"', f'kind = "{t.kind}"']
@@ -165,6 +230,15 @@ def save_config(config: Config, path: Path) -> None:
         if t.price_in or t.price_out:
             lines.append(f"price_in = {t.price_in}")
             lines.append(f"price_out = {t.price_out}")
+    d = config.distill
+    lines += [
+        "",
+        "[distill]",
+        f"model = {_toml_str(d.model)}",
+        f"shadow_model = {_toml_str(d.shadow_model)}",
+        f'shadow_mode = "{d.shadow_mode}"',
+        f"shadow_sample_rate = {d.shadow_sample_rate}",
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
 
@@ -175,18 +249,35 @@ def _toml_str(value: "str | None") -> str:
 
 def load_config(path: Path) -> Config:
     data = tomllib.loads(Path(path).read_text())
-    tiers = [
-        TierSpec(
-            name=t["name"],
-            role=t["role"],
-            kind=t["kind"],
-            model=t.get("model"),
-            command=t.get("command"),
-            price_in=t.get("price_in", 0.0),
-            price_out=t.get("price_out", 0.0),
+    tiers = []
+    for t in data.get("tiers", []):
+        kind = t["kind"]
+        price_in = float(t.get("price_in", 0.0))
+        price_out = float(t.get("price_out", 0.0))
+        if kind == "api" and price_in == 0.0 and price_out == 0.0:
+            warnings.warn(
+                f"Tier '{t['name']}' has kind='api' but no pricing configured; "
+                f"defaulting to conservative ${DEFAULT_API_PRICE_IN}/${DEFAULT_API_PRICE_OUT} per MTok",
+                UserWarning,
+                stacklevel=2,
+            )
+            price_in = DEFAULT_API_PRICE_IN
+            price_out = DEFAULT_API_PRICE_OUT
+        tiers.append(
+            TierSpec(
+                name=t["name"],
+                role=t["role"],
+                kind=kind,
+                model=t.get("model"),
+                command=t.get("command"),
+                price_in=price_in,
+                price_out=price_out,
+            )
         )
-        for t in data.get("tiers", [])
-    ]
+    dd = data.get("distill") or {}
+    shadow_mode = dd.get("shadow_mode") or "off"
+    if shadow_mode not in ("off", "on"):
+        raise ValueError(f"distill.shadow_mode must be 'off' or 'on', got {shadow_mode!r}")
     return Config(
         tiers=tiers,
         embed_model=data.get("embed_model") or None,
@@ -196,4 +287,11 @@ def load_config(path: Path) -> Config:
         runtime=data.get("runtime") or "ollama",
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
+        preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
+        distill=DistillConfig(
+            model=dd.get("model") or "qwen3.5:4b",
+            shadow_model=dd.get("shadow_model") or "",
+            shadow_mode=shadow_mode,
+            shadow_sample_rate=float(dd.get("shadow_sample_rate", 1.0)),
+        ),
     )

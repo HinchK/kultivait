@@ -1,0 +1,23 @@
+# Distillation eval protocol: five gates with a powered headline, two-sided band discipline, pass-first bake-off, retry→augment→reject
+
+A distilled model proves itself on the **permanent real held-out set** (#46's anchor-set complement, n≈24 today, growing with the flywheel) against five **pass/fail gates**: (1) **zero dangerous misroutes** — gold-frontier cases served local — at zero tolerance (verdict_eval discipline); (2) **100% JSON parse** through the serving extraction path; (3) **latency p50 ≤ 8s AND max ≤ 15s** on the simple tier; (4) **verdict agreement with gold labels ≥ the incumbent's** on the same set; (5) **two-sided band discipline** — the anti-gaming guard: a **floor** (≥ 50% of gold-contested cases must land in the contested fit band [0.65, 0.85) — dodging the band to fake a lower toll rate fails) and a **ceiling** (overall band population ≤ 25% on the full eval set — flooding the band fails; the pre-existing ceiling), with verdict_eval's threshold sweep re-run to verify the band isn't merely displaced. The **toll-rate-reduction headline** (#45's success metric) is reported as a delta vs the incumbent but **gates deployment only once statistical power allows (n ≥ 50 real held-out cases); until then it is telemetry, not a gate** — small-n honesty: the five gates are exact on small sets, rate deltas are not. The **bake-off winner rule** (qwen3.5:4b vs llama-3.2-3b-instruct, identical corpus, recipe, gates, and held-out data, same generation): winner = the candidate that **passes all gates**; if both pass, better verdict agreement wins, tie-broken by latency p50, then parse margin; **if neither passes, no winner is picked** — the failure ladder runs and both retrain next generation; the deployed name carries base + generation so the ledger records the race. The failure ladder is **three rungs, each costing one training generation**: **retry** (retrain with tuned hyperparameters — the search #48 deferred activates here: rank 8/32, iters adjusted, learning rate halved/doubled), **augment** (same gate still failing indicts the corpus: +500 synthetic pairs targeted at the failing behavior — e.g. more gold-contested examples when the band floor fails — then retrain), **reject** (third failure rejects that base for this behavior; the incumbent stands; the failure and evidence archive to the map for a future season's retry). Every rung's results are recorded per base per generation — no silent retries.
+
+## Considered Options
+
+- **All hard gates now** (toll-rate reduction binding at n≈24): rejected — one noisy case flips deploy/no-deploy; rate metrics need power the held-out set won't have for seasons.
+- **Invariants only** (dangerous/parse/latency; everything else telemetry): rejected — proves safety but not improvement; the flywheel's point is better.
+- **Calibration-divergence guard** (KL/curve vs teacher fits): rejected as the gate — principled but opaque at small n; a divergence number doesn't tell the herd what failed. Kept parts: the threshold-sweep displacement check carries the same spirit mechanically.
+- **Review-only anti-gaming**: rejected — the protocol should make gaming fail a gate, not rely on review discipline.
+- **Headline-first bake-off ranking** (best toll-rate reduction among passers): rejected — puts the gameable metric atop the ranking; agreement is the honest ranker, the band gates defuse the dodge.
+- **Defer the bake-off to shadow rollout**: rejected — doubles the shadow surface and muddies attribution; offline gates are cheap, shadow (#51) is the winner's confirmation, not the race.
+- **Single-shot reject on gate failure**: rejected — throws away training-noise information; one bad seed would kill a good base.
+- **Unlimited iteration**: rejected — no rejection pressure burns M4 Pro hours on an unlearnable behavior.
+
+## Consequences
+
+- The eval harness extends verdict_eval: same held-out/a-priori-label/zero-tolerance methodology, plus band-floor/ceiling computation, agreement comparison, and per-base-per-generation result records (the probe #52 inherits the harness at toy scale).
+- Gate 4 makes the incumbent's own run on the same held-out set a required artifact each generation — baselines are recomputed, never assumed.
+- The n ≥ 50 power threshold converts the headline from telemetry to a sixth gate automatically as the flywheel grows the held-out set; the transition is recorded in the eval report, not re-decided.
+- Rung 2 (augment) writes corpus deltas that version with the dataset (the versioning fog item inherits the format).
+- #51's shadow rollout receives only gate-passing winners; rejection never reaches serving.
+- Term canonized in CONTEXT.md: **Band discipline**.

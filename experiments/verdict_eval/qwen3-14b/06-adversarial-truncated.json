@@ -1,0 +1,73 @@
+{
+  "slug": "06-adversarial-truncated",
+  "label": "borderline",
+  "label_rationale": "Adversarially truncated context where missing information creates genuine ambiguity",
+  "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+  "latency_s": 12.76,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.8,
+  "derived_verdict": "contested",
+  "outcome": {
+    "agree": true,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.6,
+    "task_type": "debugging",
+    "complexity": 5
+  },
+  "targets": [
+    {
+      "target": "codex",
+      "fit": 0.8,
+      "effort": "medium"
+    },
+    {
+      "target": "agy",
+      "fit": 0.7,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.6,
+      "effort": "medium"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 5,
+      "signals": [
+        "function returns None sometimes",
+        "incomplete code snippet",
+        "conditional logic involving tier.kind and tools"
+      ]
+    },
+    "rewrite": "Identify the bug in the provided function `resolve_tier(tier, tools)` that causes it to return `None` in some cases. The function is incomplete and contains a syntax error in the list comprehension `[t for t in tiers if t.kind == 'l`.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.6,
+      "targets": [
+        {
+          "target": "codex",
+          "fit": 0.8,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.6,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "slug": "h06-small-feature",
+  "label": "borderline",
+  "label_rationale": "Multi-step feature spanning CLI argument parsing, serialization, and documentation",
+  "prompt": "Add a --json flag to kultivait route that prints the Decision object, then note the flag in the README route section.",
+  "latency_s": 7.42,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "simple_edit",
+    "complexity": 2
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "low"
+    },
+    {
+      "target": "codex",
+      "fit": 0.9,
+      "effort": "low"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.7,
+      "effort": "medium"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 2,
+      "signals": [
+        "Add --json flag",
+        "print Decision object",
+        "update README"
+      ]
+    },
+    "rewrite": "Implement a command-line flag '--json' for the 'route' command in kultivait. When this flag is present, the output must include the full JSON representation of the 'Decision' object. Additionally, update the documentation (README) to explicitly list and describe this new flag.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.7,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

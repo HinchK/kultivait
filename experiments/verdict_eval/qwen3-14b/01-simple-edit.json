@@ -1,0 +1,92 @@
+{
+  "slug": "01-simple-edit",
+  "label": "local",
+  "label_rationale": "Mechanical rename across a single config file and its imports",
+  "prompt": "Rename the variable cfg to settings everywhere in src/kultivait/config.py and fix the imports.",
+  "latency_s": 17.67,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": true,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.9,
+    "task_type": "simple_edit",
+    "complexity": 3
+  },
+  "targets": [
+    {
+      "target": "codex",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "low"
+    },
+    {
+      "target": "claude",
+      "fit": 0.7,
+      "effort": "low"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.65,
+      "effort": "low"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.6,
+      "effort": "low"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 3,
+      "signals": [
+        "rename variable",
+        "fix imports"
+      ]
+    },
+    "rewrite": "Rename the variable 'cfg' to 'settings' throughout the file 'src/kultivait/config.py' and update any import statements that reference 'cfg' to use 'settings' instead.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.9,
+      "targets": [
+        {
+          "target": "codex",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "low"
+        },
+        {
+          "target": "claude",
+          "fit": 0.7,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.65,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.6,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}

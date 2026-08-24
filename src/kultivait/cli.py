@@ -8,15 +8,20 @@ editable.
 
 import argparse
 import json
+import random
 import os
 import shutil
 import sys
+import threading
+import time
 from pathlib import Path
 
 import httpx
 import numpy as np
 
+from kultivait.api_backends import AnthropicBackend, OpenAIBackend, OpenRouterBackend
 from kultivait.backends import CLIBackend, LlamaCppBackend, OllamaBackend
+from kultivait.credentials import resolve_provider_key
 from kultivait.config import (
     KNOWN_CLIS,
     RUNTIME_URLS,
@@ -47,6 +52,9 @@ CONFIG_PATH = KULTIVAIT_HOME / "config.toml"
 LEDGER_PATH = KULTIVAIT_HOME / "ledger.jsonl"
 COMPOST_DIR = KULTIVAIT_HOME / "compost"
 ESCALATIONS_DIR = KULTIVAIT_HOME / "escalations"
+PENDING_TOLLS_PATH = KULTIVAIT_HOME / "pending_tolls.jsonl"
+PRESENCE_PATH = KULTIVAIT_HOME / "presence.json"
+TOLL_ANSWERS_DIR = KULTIVAIT_HOME / "toll_answers"
 
 
 def _survey_ollama() -> "tuple[list[str], dict[str, int]]":
@@ -224,6 +232,25 @@ def build_router(config: Config) -> Router:
     return Router(centroids=centroids, capability_order=config.capability_order())
 
 
+def _provider_for_tier(name: str, model: str | None) -> str:
+    name_lower = name.lower()
+    if "openrouter" in name_lower:
+        return "openrouter"
+    if "anthropic" in name_lower or "claude" in name_lower:
+        return "anthropic"
+    if "openai" in name_lower or "gpt" in name_lower or "o3" in name_lower:
+        return "openai"
+    if model:
+        model_lower = model.lower()
+        if "/" in model_lower:
+            return "openrouter"
+        if "claude" in model_lower:
+            return "anthropic"
+        if "gpt" in model_lower or "o1" in model_lower or "o3" in model_lower:
+            return "openai"
+    return name_lower
+
+
 def build_backends(config: Config) -> dict:
     backends = {}
     for tier in config.tiers:
@@ -237,6 +264,31 @@ def build_backends(config: Config) -> dict:
             backends[tier.name] = CLIBackend(
                 tier.command, price_in=tier.price_in, price_out=tier.price_out
             )
+        elif tier.kind == "api":
+            prov = _provider_for_tier(tier.name, tier.model)
+            key = resolve_provider_key(prov)
+            if key:
+                if prov == "openrouter":
+                    backends[tier.name] = OpenRouterBackend(
+                        model=tier.model or "anthropic/claude-3.7-sonnet",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
+                elif prov == "anthropic":
+                    backends[tier.name] = AnthropicBackend(
+                        model=tier.model or "claude-3-7-sonnet-20250219",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
+                elif prov == "openai":
+                    backends[tier.name] = OpenAIBackend(
+                        model=tier.model or "gpt-4o",
+                        api_key=key,
+                        price_in=tier.price_in,
+                        price_out=tier.price_out,
+                    )
         # "virtual" tiers get no backend: classified, never served — the
         # escalation path fires instead.
     return backends
@@ -327,20 +379,257 @@ def cmd_init(args: argparse.Namespace) -> None:
     _survey_and_save(forced or _detect_runtime())
 
 
+def _render_route_menu(ticket: "Any") -> str:
+    if hasattr(ticket, "ticket_id"):
+        tid = ticket.ticket_id
+        orig_prompt = ticket.original_prompt
+        options = ticket.options
+        created_at = ticket.created_at
+        timeout_s = ticket.timeout_s
+    else:
+        tid = ticket.get("ticket_id", "")
+        orig_prompt = ticket.get("original_prompt", "")
+        options = ticket.get("options", [])
+        created_at = ticket.get("created_at", time.time())
+        timeout_s = ticket.get("timeout_s", 60.0)
+
+    remaining = max(0, int(timeout_s - (time.time() - created_at)))
+    lines = [
+        f"Route Menu — Contested Request [ticket: {tid}] ({remaining}s remaining)",
+    ]
+    if orig_prompt:
+        snippet = orig_prompt[:80] + ("..." if len(orig_prompt) > 80 else "")
+        lines.append(f"Prompt: {snippet}")
+    lines.append("")
+
+    for i, opt in enumerate(options, 1):
+        if hasattr(opt, "target"):
+            target = opt.target
+            display_name = opt.display_name
+            fit = opt.fit
+            cost = opt.estimated_cost_usd
+            canonical = opt.effort.canonical
+            cli_flags = " ".join(opt.effort.cli_flags)
+        else:
+            target = opt.get("target", "")
+            display_name = opt.get("display_name", target)
+            fit = opt.get("fit", 0.0)
+            cost = opt.get("estimated_cost_usd", 0.0)
+            canonical = opt.get("effort", "balanced")
+            cli_flags = " ".join(opt.get("cli_flags", []))
+
+        fit_str = f"{fit:.2f}" if fit > 0 else "—"
+        cost_str = f"${cost:.4f}" if cost > 0 else "$0.00"
+        effort_str = f"{canonical} ({cli_flags})" if cli_flags else canonical
+        if target == "local":
+            lines.append(f"  [{i}] {display_name:<20} keep-it-local (original prompt, $0.00)")
+        else:
+            lines.append(
+                f"  [{i}] {display_name:<20} fit: {fit_str:<5} cost: {cost_str:<8} effort: {effort_str}"
+            )
+
+    lines.append("")
+    lines.append(f"Controls: [1-{len(options)}] select, [e] override effort, [q] quit")
+    return "\n".join(lines)
+
+
+def _prompt_choice(options_count: int, input_fn=input) -> "tuple[int, str | None] | None":
+    while True:
+        try:
+            raw = input_fn(f"selection [1-{options_count}, e, q]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+        if raw in ("q", "quit", "exit"):
+            return None
+
+        if raw == "e":
+            opt_idx = 0
+            if options_count > 1:
+                try:
+                    opt_raw = input_fn(f"option to override [1-{options_count}]: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    return None
+                if not opt_raw.isdigit() or not (1 <= int(opt_raw) <= options_count):
+                    print(f"invalid option: {opt_raw}")
+                    continue
+                opt_idx = int(opt_raw) - 1
+
+            try:
+                eff_raw = input_fn("effort level [1: fast, 2: balanced, 3: deep]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return None
+
+            eff_map = {
+                "1": "fast", "f": "fast", "fast": "fast",
+                "2": "balanced", "b": "balanced", "balanced": "balanced",
+                "3": "deep", "d": "deep", "deep": "deep",
+            }
+            if eff_raw in eff_map:
+                return (opt_idx, eff_map[eff_raw])
+            else:
+                print(f"invalid effort level: {eff_raw}")
+                continue
+
+        if raw.isdigit() and 1 <= int(raw) <= options_count:
+            return (int(raw) - 1, None)
+
+        print(f"invalid selection: {raw}")
+
+
+_INPUT_LOCK = threading.Lock()
+
+
+def _start_tty_watcher(
+    tollbooth: "Any",
+    poll_interval: float = 0.2,
+    input_fn=input,
+) -> threading.Thread:
+    handled_tickets = set()
+
+    def _watcher_loop():
+        while True:
+            time.sleep(poll_interval)
+            if not tollbooth.enabled:
+                continue
+            pending = list(tollbooth._pending.values())
+            for ticket in pending:
+                if ticket.ticket_id in handled_tickets:
+                    continue
+                handled_tickets.add(ticket.ticket_id)
+                if ticket.ticket_id not in tollbooth._pending:
+                    continue
+                with _INPUT_LOCK:
+                    if ticket.ticket_id not in tollbooth._pending:
+                        continue
+                    tui.console.print(_render_route_menu(ticket))
+                    try:
+                        res = _prompt_choice(len(ticket.options), input_fn=input_fn)
+                        if res is not None:
+                            opt_idx, effort_override = res
+                            chosen_opt = ticket.options[opt_idx]
+                            tollbooth.answer_ticket(
+                                ticket.ticket_id,
+                                chosen_opt.target,
+                                effort_canonical=effort_override,
+                            )
+                            tui.console.print(f"toll answered: {chosen_opt.target}")
+                    except (EOFError, KeyboardInterrupt):
+                        pass
+                    except Exception:
+                        pass
+
+    t = threading.Thread(target=_watcher_loop, daemon=True, name="tollbooth-tty-watcher")
+    t.start()
+    return t
+
+
+def cmd_choose(
+    args: argparse.Namespace | None = None,
+    queue_path: Path | None = None,
+    answers_dir: Path | None = None,
+    presence_path: Path | None = None,
+    input_fn=input,
+) -> None:
+    q_path = queue_path or getattr(args, "queue_path", None) or PENDING_TOLLS_PATH
+    ans_dir = answers_dir or getattr(args, "answers_dir", None) or TOLL_ANSWERS_DIR
+    pres_path = presence_path or getattr(args, "presence_path", None) or PRESENCE_PATH
+
+    try:
+        pres_path.parent.mkdir(parents=True, exist_ok=True)
+        pres_path.write_text(json.dumps({"ts": time.time(), "surface": "choose"}))
+    except Exception:
+        pass
+
+    if not q_path.exists():
+        tui.console.print("[dim]no pending tolls[/dim]")
+        return
+
+    while True:
+        if not q_path.exists():
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+        lines = [l.strip() for l in q_path.read_text().splitlines() if l.strip()]
+        if not lines:
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+
+        ticket_data = json.loads(lines[0])
+        ticket_id = ticket_data.get("ticket_id")
+        options = ticket_data.get("options", [])
+        if not options:
+            tui.console.print("[dim]no pending tolls[/dim]")
+            return
+
+        tui.console.print(_render_route_menu(ticket_data))
+        res = _prompt_choice(len(options), input_fn=input_fn)
+        if res is None:
+            break
+
+        opt_idx, effort_override = res
+        chosen_opt = options[opt_idx]
+        target = chosen_opt.get("target") if isinstance(chosen_opt, dict) else chosen_opt.target
+        choice_str = "human:local" if target == "local" else f"human:frontier:{target}"
+
+        ans_dir.mkdir(parents=True, exist_ok=True)
+        ans_file = ans_dir / f"{ticket_id}.json"
+        ans_file.write_text(
+            json.dumps(
+                {
+                    "choice": choice_str,
+                    "effort_canonical": effort_override,
+                    "ts": time.time(),
+                }
+            )
+        )
+        tui.console.print(f"toll answered: {choice_str}")
+        try:
+            pres_path.write_text(json.dumps({"ts": time.time(), "surface": "choose"}))
+        except Exception:
+            pass
+
+        time.sleep(0.15)
+        new_lines = [l.strip() for l in q_path.read_text().splitlines() if l.strip()]
+        if len(new_lines) <= 1 and (not new_lines or json.loads(new_lines[0]).get("ticket_id") == ticket_id):
+            break
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
+    from kultivait.distill.shadow import DistillSeat
     from kultivait.server import create_app
+    from kultivait.tollbooth import TollboothQueue
 
     config = get_config()
     print("cultivating centroids from seed prompts...", file=sys.stderr)
+    escalations = EscalationStore(ESCALATIONS_DIR)
+    ledger = Ledger(LEDGER_PATH)
+    tollbooth = TollboothQueue(
+        queue_path=PENDING_TOLLS_PATH,
+        presence_path=PRESENCE_PATH,
+        answers_dir=TOLL_ANSWERS_DIR,
+        default_timeout_s=config.toll_timeout_s,
+        enabled=config.toll_enabled,
+        escalations=escalations,
+        ledger=ledger,
+    )
+    if _stdin_is_tty():
+        tollbooth.register_presence("tty")
+        _start_tty_watcher(tollbooth)
+
     app = create_app(
         router=build_router(config),
         embed=lambda text: _embed_batch(config, [text])[0],
         backends=build_backends(config),
-        ledger=Ledger(LEDGER_PATH),
+        ledger=ledger,
         gate=build_gate(config),
-        escalations=EscalationStore(ESCALATIONS_DIR),
+        escalations=escalations,
+        preprocess_timeout_s=config.preprocess_timeout_s,
+        tollbooth=tollbooth,
+        toll_timeout_s=config.toll_timeout_s,
+        toll_enabled=config.toll_enabled,
+        distill_seat=DistillSeat.from_config(config),
     )
     port = args.port or config.port
     print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
@@ -407,6 +696,8 @@ def format_harvest(stats: dict) -> str:
             "  start the proxy (kultivait serve) and route some work through it."
         )
     local_pct = round(100 * stats["local_prompts"] / stats["prompts"])
+    notional_spent = stats.get("notional_spent_usd", stats.get("spent_usd", 0.0))
+    metered_spent = stats.get("metered_spent_usd", 0.0)
     lines = [
         "the harvest — season to date",
         "",
@@ -414,8 +705,38 @@ def format_harvest(stats: dict) -> str:
         f"  local tokens       {stats['tokens_local']:,}",
         f"  spent              ${stats['spent_usd']:.2f}",
         f"  frontier baseline  ${stats['baseline_usd']:.2f}",
+        f"  notional spent     ${notional_spent:.2f}",
+        f"  metered cash out   ${metered_spent:.2f}",
         f"  kept in pocket     ${stats['saved_usd']:.2f}",
     ]
+    toll = stats.get("toll_activity")
+    if toll and (
+        toll.get("fired", 0) > 0
+        or toll.get("answered", 0) > 0
+        or toll.get("expired", 0) > 0
+        or toll.get("skipped", 0) > 0
+        or any(toll.get("preprocess_marks", {}).values())
+        or bool(toll.get("route_choices"))
+    ):
+        toll_rate_pct = round(100 * toll.get("toll_rate", 0.0))
+        lines += [
+            "",
+            "  toll activity",
+            f"    tolls fired        {toll.get('fired', 0)}  ({toll_rate_pct}% toll rate)",
+            f"    answered {toll.get('answered', 0)}, expired {toll.get('expired', 0)}, skipped {toll.get('skipped', 0)}",
+        ]
+        rcs = toll.get("route_choices", {})
+        if rcs:
+            lines.append("    route choices:")
+            for choice, count in rcs.items():
+                if count > 0:
+                    lines.append(f"      {choice:<22} {count}")
+        marks = toll.get("preprocess_marks", {})
+        if marks and any(marks.values()):
+            lines.append(
+                f"    preprocessor marks  ok: {marks.get('ok', 0)}, skipped: {marks.get('skipped', 0)}, timeout: {marks.get('timeout', 0)}, fail: {marks.get('fail', 0)}"
+            )
+
     esc = stats.get("escalations", {"count": 0, "recent": []})
     if esc["count"]:
         lines += ["", f"  {esc['count']} cloud-worthy prompt(s) served locally:"]
@@ -433,6 +754,191 @@ def cmd_harvest(args: argparse.Namespace) -> None:
         print(json.dumps(stats, indent=2))
     else:
         print(format_harvest(stats))
+
+
+def cmd_distill_corpus(args: argparse.Namespace) -> None:
+    """D1 demo surface: materialize the anchor set + held-out roster from a
+    harvest directory (default: the live ~/.kultivait)."""
+    from kultivait.distill import dry_run_report
+
+    report = dry_run_report(Path(args.harvest_dir))
+    print(json.dumps(report, indent=2))
+
+
+def cmd_distill_generate(args: argparse.Namespace) -> None:
+    """D2: run the dual-teacher generator. --live dispatches real CLI teachers
+    (subscription; ledger-tagged); without it the command refuses — synthetic
+    training data comes from teachers, never silently from a stub."""
+    from kultivait.distill.corpus import load_harvest, split_heldout, write_corpus
+    from kultivait.distill.generator import generate_corpus, real_teacher_fns
+
+    if not args.live:
+        print("refusing to generate without --live: teacher dispatches are real "
+              "(subscription CLIs, ledger-tagged). Re-run with --live.")
+        return
+    entries, escalations = load_harvest(Path(args.harvest_dir))
+    from kultivait.distill.corpus import extract_anchors
+    seeds, heldout = split_heldout(extract_anchors(entries, escalations, []))
+    if not seeds:
+        print("no seed anchors in the harvest (escalation pool empty)")
+        return
+    fns = real_teacher_fns(judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli)
+    rng = random.Random(args.seed)
+
+    def ledger_tag(**entry):
+        ledger = Ledger(LEDGER_PATH)
+        ledger.record(**entry)
+
+    report = generate_corpus(
+        seeds, vary_fn=fns["vary_fn"], label_fn=fns["label_fn"],
+        rewrite_fn=fns["rewrite_fn"], target_pairs=args.target_pairs, rng=rng,
+        ledger_record=ledger_tag,
+    )
+    out = Path(args.out_dir)
+    write_corpus(report.pairs, [], out, heldout=heldout)
+    print(json.dumps({"out_dir": str(out), "pairs": len(report.pairs),
+                      "stats": report.stats}, indent=2))
+
+
+def cmd_distill_train(args: argparse.Namespace) -> None:
+    """D3: train a QLoRA adapter on a corpus under the resource ladder."""
+    from kultivait.distill.trainer import BASES, train
+
+    if args.base not in BASES:
+        print(f"unknown base {args.base!r}; known: {sorted(BASES)}")
+        return
+    adapter = Path(args.adapter_path) if args.adapter_path else (
+        KULTIVAIT_HOME / "distill-adapters" / args.base.replace(":", "-"))
+    report = train(args.base, Path(args.corpus_dir), iters=args.iters, epochs=args.epochs,
+                   adapter_path=adapter, resume=args.resume)
+    print(report.to_json())
+    if report.status != "ok":
+        raise SystemExit(1)
+
+
+def cmd_distill_export(args: argparse.Namespace) -> None:
+    """D4: fuse a trained adapter and register the distillate with Ollama."""
+    from kultivait.distill.export import export_distillate
+
+    report = export_distillate(args.base, Path(args.adapter_path),
+                               out_root=Path(args.out_root), generation=args.generation,
+                               quantize=None if args.no_quantize else "q4_K_M")
+    print(report.to_json())
+    if report.status != "ok" or not report.registered:
+        raise SystemExit(1)
+
+
+def cmd_cutover(args: argparse.Namespace) -> None:
+    """D7: the human flip — rewrite [distill] model after gate-passing shadow
+    evidence. Never automatic; confirmation required; rollback printed."""
+    from dataclasses import replace as _replace
+
+    from kultivait.distill.shadow import shadow_summary
+
+    config_path = Path(args.config) if args.config else CONFIG_PATH
+    config = load_config(config_path) if config_path.exists() else Config()
+    current = config.distill.model
+    if args.model == current:
+        print(f"[distill] model is already {current!r}; nothing to do.")
+        return
+
+    summary = shadow_summary()
+    if not summary["cutover_ready"]:
+        print(json.dumps(summary, indent=2))
+        print(f"\nWARNING: cutover criteria not met "
+              f"({'; '.join(summary['reasons'])}). "
+              "The shadow evidence is thin — flip anyway only with judgment.")
+    else:
+        print(json.dumps(summary, indent=2))
+        print("\ncutover criteria MET.")
+
+    if not args.yes:
+        answer = input(
+            f"\nFlip the live preprocessor from {current!r} to {args.model!r}? [y/N] "
+        )
+        if answer.strip().lower() != "y":
+            print("aborted — no changes written.")
+            return
+
+    new_config = _replace(config, distill=_replace(
+        config.distill, model=args.model))
+    save_config(new_config, config_path)
+    print(f"\ncutover complete: [distill] model = {args.model!r}")
+    print(f"rollback: kultivait cutover --model {current} --config {config_path}")
+    print("rollback is instant — the seat resolves per call; "
+          "the next request serves the reverted model.")
+
+
+def cmd_shadow(args: argparse.Namespace) -> None:
+    """D6: summarize the shadow log + cutover-readiness (ADR 0017)."""
+    from kultivait.distill.shadow import shadow_summary
+
+    print(json.dumps(shadow_summary(Path(args.log) if args.log else None), indent=2))
+
+
+def cmd_distill_eval(args: argparse.Namespace) -> None:
+    """D5: run the held-out gate eval on a model through the production
+    generate path (probe #52's discovery: raw-chat framing lies)."""
+    from kultivait.distill.eval import run_gates
+    from kultivait.server import _default_preprocess_generate_for
+
+    heldout_path = Path(args.heldout)
+    cases = [json.loads(line) for line in heldout_path.read_text().splitlines() if line.strip()]
+    if not cases:
+        print(f"no held-out cases in {heldout_path}")
+        raise SystemExit(1)
+    # prompts live in the roster's `prompt` field when exported with them, else
+    # the D1 roster carries ids only — the eval needs prompt+label pairs
+    if not all(c.get("prompt") and (c.get("label") or c.get("tier")) for c in cases):
+        print("held-out file must carry prompt + label/tier per case")
+        raise SystemExit(1)
+
+    generate = _default_preprocess_generate_for()
+    incumbent = None
+    if args.incumbent:
+        from kultivait.distill.eval import run_gates as _rg
+        incumbent = _rg(cases, generate, model=args.incumbent_model)
+    report = run_gates(
+        cases, generate, model=args.model,
+        incumbent_agreement=(incumbent.gates["agreement"] if incumbent else None),
+        incumbent_latency_p50_s=(incumbent.gates["latency_p50_s"] if incumbent else None),
+    )
+    print(report.to_json())
+    if not report.passed:
+        raise SystemExit(1)
+
+
+def cmd_eval(args: argparse.Namespace) -> None:
+    from kultivait.capability_eval import (
+        format_eval_summary,
+        load_corpus,
+        run_capability_eval,
+    )
+
+    config = get_config()
+    backends = build_backends(config)
+    if not backends:
+        print("no backends configured for capability eval.", file=sys.stderr)
+        return
+
+    targets = [args.target] if getattr(args, "target", None) else None
+    efforts = [args.effort] if getattr(args, "effort", None) else None
+    corpus_path = Path(args.corpus) if getattr(args, "corpus", None) else None
+    artifacts_dir = Path(args.artifacts_dir) if getattr(args, "artifacts_dir", None) else Path(".kultivait/eval_artifacts")
+    ledger = Ledger(LEDGER_PATH)
+
+    summary = run_capability_eval(
+        backends=backends,
+        targets=targets,
+        efforts=efforts,
+        corpus=load_corpus(corpus_path) if corpus_path else None,
+        artifacts_dir=artifacts_dir,
+        ledger=ledger,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2))
+    else:
+        print(format_eval_summary(summary))
 
 
 def main() -> None:
@@ -475,8 +981,87 @@ def main() -> None:
     harvest.add_argument("--json", action="store_true", help="machine-readable output")
     harvest.set_defaults(func=cmd_harvest)
 
+    distill = sub.add_parser("distill", help="distillation pipeline operations")
+    distill_sub = distill.add_subparsers(dest="distill_cmd")
+    corpus_cmd = distill_sub.add_parser("corpus", help="assemble the corpus from the harvest")
+    corpus_cmd.add_argument("--dry-run", action="store_true",
+                            help="print anchors, strata, and the held-out roster")
+    corpus_cmd.add_argument("--harvest-dir", default=str(KULTIVAIT_HOME),
+                            help="harvest directory (default ~/.kultivait)")
+    corpus_cmd.set_defaults(func=cmd_distill_corpus)
+    gen_cmd = distill_sub.add_parser("generate", help="run the dual-teacher synthetic generator")
+    gen_cmd.add_argument("--live", action="store_true",
+                         help="dispatch real CLI teachers (subscription; ledger-tagged)")
+    gen_cmd.add_argument("--target-pairs", type=int, default=1500,
+                         help="target corpus size (strata-exact quotas)")
+    gen_cmd.add_argument("--out-dir", default=str(KULTIVAIT_HOME / "distill-corpus"),
+                         help="output directory for train/valid JSONL + sidecars")
+    gen_cmd.add_argument("--harvest-dir", default=str(KULTIVAIT_HOME),
+                         help="harvest directory for seed anchors")
+    gen_cmd.add_argument("--judge-cli", default="opencode", help="judge teacher CLI (neutral family)")
+    gen_cmd.add_argument("--rewriter-cli", default="claude", help="rewriter teacher CLI")
+    gen_cmd.add_argument("--seed", type=int, default=42, help="rng seed")
+    gen_cmd.set_defaults(func=cmd_distill_generate)
+    train_cmd = distill_sub.add_parser("train", help="train a QLoRA adapter (resource ladder enforced)")
+    train_cmd.add_argument("--base", required=True,
+                           help="base key (qwen3.5:4b | llama-3.2-3b-instruct)")
+    train_cmd.add_argument("--corpus-dir", required=True, help="corpus directory (train.jsonl)")
+    train_cmd.add_argument("--iters", type=int, default=120)
+    train_cmd.add_argument("--epochs", type=int, default=1)
+    train_cmd.add_argument("--adapter-path", default=None, help="adapter output directory")
+    train_cmd.add_argument("--resume", action="store_true", help="resume from the adapter checkpoint")
+    train_cmd.set_defaults(func=cmd_distill_train)
+    export_cmd = distill_sub.add_parser("export", help="fuse an adapter & register with Ollama")
+    export_cmd.add_argument("--base", required=True, help="base key the adapter was trained on")
+    export_cmd.add_argument("--adapter-path", required=True, help="trained adapter directory")
+    export_cmd.add_argument("--out-root", default=str(KULTIVAIT_HOME / "distillates"),
+                            help="distillate output root (fused model + Modelfile + registry)")
+    export_cmd.add_argument("--generation", type=int, default=None,
+                            help="explicit generation (default: monotonic registry + 1)")
+    export_cmd.add_argument("--no-quantize", action="store_true",
+                            help="skip quantize-at-import (default q4_K_M)")
+    export_cmd.set_defaults(func=cmd_distill_export)
+    eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
+    eval_d.add_argument("--model", required=True, help="model name under evaluation")
+    eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
+    eval_d.add_argument("--incumbent", action="store_true",
+                        help="recompute the incumbent baseline first (same path)")
+    eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
+    eval_d.set_defaults(func=cmd_distill_eval)
+    shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
+    shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
+    shadow_cmd.set_defaults(func=cmd_shadow)
+    cutover_cmd = sub.add_parser(
+        "cutover", help="flip the live preprocessor model (human confirmation; prints rollback)")
+    cutover_cmd.add_argument("--model", required=True, help="the distillate to flip to")
+    cutover_cmd.add_argument("--yes", action="store_true",
+                             help="skip the interactive prompt (explicit confirmation)")
+    cutover_cmd.add_argument("--config", default=None,
+                             help="config path (default ~/.kultivait/config.toml)")
+    cutover_cmd.set_defaults(func=cmd_cutover)
+
+    choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
+    choose.set_defaults(func=cmd_choose)
+
+    eval_cmd = sub.add_parser("eval", help="run direct-to-backend capability evaluation")
+    eval_cmd.add_argument("--target", help="specific target backend to evaluate")
+    eval_cmd.add_argument("--effort", choices=["fast", "balanced", "deep"], help="specific effort level")
+    eval_cmd.add_argument("--corpus", help="path to custom corpus JSON file")
+    eval_cmd.add_argument("--artifacts-dir", help="directory to write per-case artifact JSONs")
+    eval_cmd.add_argument("--json", action="store_true", help="machine-readable summary output")
+    eval_cmd.set_defaults(func=cmd_eval)
+
+    bench_cmd = sub.add_parser("benchmark", help="alias for eval")
+    bench_cmd.add_argument("--target", help="specific target backend to evaluate")
+    bench_cmd.add_argument("--effort", choices=["fast", "balanced", "deep"], help="specific effort level")
+    bench_cmd.add_argument("--corpus", help="path to custom corpus JSON file")
+    bench_cmd.add_argument("--artifacts-dir", help="directory to write per-case artifact JSONs")
+    bench_cmd.add_argument("--json", action="store_true", help="machine-readable summary output")
+    bench_cmd.set_defaults(func=cmd_eval)
+
     args = parser.parse_args()
     args.func(args)
+
 
 
 if __name__ == "__main__":

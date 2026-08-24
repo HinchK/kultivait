@@ -6,8 +6,25 @@ final usage, so callers can tally the ledger after the stream ends.
 """
 
 import json
+import os
 from dataclasses import dataclass
-from typing import Iterator, Protocol
+from typing import Iterator, Protocol, runtime_checkable
+
+DISPATCH_TEMPLATES: dict[str, list[str]] = {
+    "claude": ["claude", "-p"],
+    "agy": ["agy", "-p"],
+    "gemini": ["gemini", "-p"],
+    "codex": ["codex", "exec"],
+    "opencode": ["opencode", "run"],
+}
+
+PROXY_ENV_STRIP: list[str] = [
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_URL",
+    "OPENAI_BASE_URL",
+    "OPENAI_API_BASE",
+    "OPENAI_PROXY_URL",
+]
 
 
 @dataclass(frozen=True)
@@ -28,13 +45,25 @@ def is_truncated(prompt_eval_count: int, num_ctx: int) -> bool:
     return prompt_eval_count >= num_ctx - 1
 
 
+@runtime_checkable
 class Backend(Protocol):
     supports_tools: bool
+    local: bool
 
-    def complete(self, messages: list[dict], tools: "list[dict] | None" = None) -> Completion: ...
+    def complete(
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+    ) -> Completion: ...
 
     def stream(
-        self, messages: list[dict], tools: "list[dict] | None" = None
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
     ) -> Iterator["str | Completion"]: ...
 
 
@@ -82,6 +111,7 @@ class OllamaBackend:
     """Local model via the ollama chat API. Free by definition."""
 
     supports_tools = True
+    local = True
 
     def __init__(
         self, model: str, base_url: str = "http://localhost:11434", num_ctx: int = 32768
@@ -104,7 +134,14 @@ class OllamaBackend:
             payload["tools"] = tools
         return payload
 
-    def complete(self, messages: list[dict], tools: "list[dict] | None" = None) -> Completion:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
+    ) -> Completion:
         import httpx
 
         r = httpx.post(
@@ -127,7 +164,12 @@ class OllamaBackend:
         )
 
     def stream(
-        self, messages: list[dict], tools: "list[dict] | None" = None
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
     ) -> Iterator["str | Completion"]:
         import httpx
 
@@ -192,6 +234,7 @@ class LlamaCppBackend:
     """
 
     supports_tools = True
+    local = True
 
     def __init__(self, model: str, base_url: str = "http://localhost:8080"):
         self.model = model
@@ -217,7 +260,14 @@ class LlamaCppBackend:
             truncated=False,
         )
 
-    def complete(self, messages: list[dict], tools: "list[dict] | None" = None) -> Completion:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
+    ) -> Completion:
         import httpx
 
         r = httpx.post(
@@ -229,7 +279,12 @@ class LlamaCppBackend:
         return self._parse(r.json())
 
     def stream(
-        self, messages: list[dict], tools: "list[dict] | None" = None
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
     ) -> Iterator["str | Completion"]:
         import httpx
 
@@ -264,49 +319,198 @@ class LlamaCppBackend:
                 if text:
                     parts.append(text)
                     yield text
-        tool_calls = [calls[i] for i in sorted(calls)] or None
-        yield Completion(
-            text="".join(parts),
-            tokens_in=usage.get("prompt_tokens", 0),
-            tokens_out=usage.get("completion_tokens", 0),
-            cost_usd=0.0,
-            local=True,
-            tool_calls=tool_calls,
-            truncated=False,
-        )
+            tool_calls = [calls[i] for i in sorted(calls)] or None
+            yield Completion(
+                text="".join(parts),
+                tokens_in=usage.get("prompt_tokens", 0),
+                tokens_out=usage.get("completion_tokens", 0),
+                cost_usd=0.0,
+                local=True,
+                tool_calls=tool_calls,
+                truncated=False,
+            )
+
+
+def _parse_claude_json(
+    stdout: str, prompt: str, price_in: float, price_out: float
+) -> tuple[str, int, int, float] | None:
+    try:
+        data = json.loads(stdout.strip())
+        if not isinstance(data, dict):
+            return None
+        if data.get("is_error"):
+            err_msg = data.get("result") or data.get("error") or "claude reported error"
+            raise RuntimeError(f"claude error: {err_msg}")
+        text = str(data.get("result", ""))
+        usage = data.get("usage", {})
+        tokens_in = int(usage.get("input_tokens", max(1, len(prompt) // 4)))
+        tokens_out = int(usage.get("output_tokens", max(1, len(text) // 4)))
+        total_cost = data.get("total_cost_usd")
+        if total_cost is not None and float(total_cost) > 0:
+            cost_usd = float(total_cost)
+        else:
+            cost_usd = (tokens_in * price_in + tokens_out * price_out) / 1e6
+        return text, tokens_in, tokens_out, cost_usd
+    except RuntimeError:
+        raise
+    except Exception:
+        return None
+
+
+def _parse_codex_jsonl(
+    stdout: str, prompt: str, price_in: float, price_out: float
+) -> tuple[str, int, int, float] | None:
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    if not lines:
+        return None
+    assistant_texts: list[str] = []
+    tokens_in = None
+    tokens_out = None
+
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(event, dict):
+            continue
+
+        if event.get("type") == "error":
+            err = event.get("message") or event.get("error") or "codex error"
+            raise RuntimeError(f"codex error: {err}")
+
+        item = event.get("item") or event
+        if isinstance(item, dict):
+            role = item.get("role")
+            content = item.get("content")
+            if role == "assistant" and content:
+                if isinstance(content, str):
+                    assistant_texts.append(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get("text"):
+                            assistant_texts.append(part["text"])
+                        elif isinstance(part, str):
+                            assistant_texts.append(part)
+            elif item.get("type") == "agent_message" and item.get("text"):
+                assistant_texts.append(item["text"])
+            elif item.get("type") == "message" and role == "assistant":
+                if item.get("text"):
+                    assistant_texts.append(item["text"])
+
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            inp = usage.get("input", usage.get("input_tokens", 0))
+            cached = usage.get("cached", usage.get("cached_tokens", 0))
+            out = usage.get("output", usage.get("output_tokens", 0))
+            tokens_in = int(inp) + int(cached)
+            tokens_out = int(out)
+
+    if tokens_in is None and not assistant_texts:
+        return None
+
+    text = "\n".join(assistant_texts).strip() if assistant_texts else stdout.strip()
+    if tokens_in is None:
+        tokens_in = max(1, len(prompt) // 4)
+    if tokens_out is None:
+        tokens_out = max(1, len(text) // 4)
+    cost_usd = (tokens_in * price_in + tokens_out * price_out) / 1e6
+    return text, tokens_in, tokens_out, cost_usd
 
 
 class CLIBackend:
-    """Cloud model behind a print-mode CLI (`claude -p`, `agy -p`).
+    """Cloud model behind a print-mode CLI (`claude -p`, `agy -p`, `codex exec`, `opencode run`).
 
-    CLIs don't report token usage, so tokens are estimated at ~4 chars/token
-    and cost from the configured per-million pricing. They run their own
-    agent loops, so client-side tool calls are unsupported.
+    CLIs don't report token usage unless supported (--output-format json or --json),
+    otherwise tokens are estimated at ~4 chars/token and cost from the configured
+    per-million pricing. They run their own agent loops, so client-side tool calls
+    are unsupported.
     """
 
     supports_tools = False
+    local = False
 
     def __init__(self, command: list[str], price_in: float, price_out: float):
         self.command = command
         self.price_in = price_in
         self.price_out = price_out
 
-    def complete(self, messages: list[dict], tools: "list[dict] | None" = None) -> Completion:
+    def _build_argv(
+        self,
+        prompt: str,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+    ) -> list[str]:
+        cli = self.command[0] if self.command else ""
+        template = list(DISPATCH_TEMPLATES.get(cli, [*self.command, "-p"]))
+        flags: list[str] = list(effort_flags or [])
+        if model_override:
+            flags.extend(["-m", model_override])
+
+        if cli == "claude":
+            flags.extend(["--output-format", "json"])
+        elif cli == "codex":
+            flags.append("--json")
+
+        if cli in ("codex", "opencode"):
+            return [*template, *flags, prompt]
+        else:
+            return [*template, prompt, *flags]
+
+    def complete(
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
+    ) -> Completion:
         import subprocess
 
+        cli = self.command[0] if self.command else ""
         prompt = "\n\n".join(
             f"[{m.get('role', 'user')}] {m.get('content', '')}" for m in messages
         )
+        argv = self._build_argv(prompt, effort_flags=effort_flags, model_override=model_override)
+        env = {k: v for k, v in os.environ.items() if k not in PROXY_ENV_STRIP}
+
         result = subprocess.run(
-            [*self.command, "-p", prompt],
+            argv,
             capture_output=True,
             text=True,
             timeout=600,
+            env=env,
         )
+
+        if cli == "claude" and result.stdout:
+            parsed = _parse_claude_json(result.stdout, prompt, self.price_in, self.price_out)
+            if parsed is not None:
+                text, tokens_in, tokens_out, cost_usd = parsed
+                return Completion(
+                    text=text,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_usd=cost_usd,
+                    local=False,
+                )
+
         if result.returncode != 0:
             raise RuntimeError(
-                f"{self.command[0]} exited {result.returncode}: {result.stderr.strip()[:500]}"
+                f"{cli} exited {result.returncode}: {result.stderr.strip()[:500]}"
             )
+
+        if cli == "codex" and result.stdout:
+            parsed = _parse_codex_jsonl(result.stdout, prompt, self.price_in, self.price_out)
+            if parsed is not None:
+                text, tokens_in, tokens_out, cost_usd = parsed
+                return Completion(
+                    text=text,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_usd=cost_usd,
+                    local=False,
+                )
+
         text = result.stdout.strip()
         tokens_in = max(1, len(prompt) // 4)
         tokens_out = max(1, len(text) // 4)
@@ -320,10 +524,35 @@ class CLIBackend:
         )
 
     def stream(
-        self, messages: list[dict], tools: "list[dict] | None" = None
+        self,
+        messages: list[dict],
+        tools: "list[dict] | None" = None,
+        effort_flags: "list[str] | None" = None,
+        model_override: "str | None" = None,
+        **kwargs,
     ) -> Iterator["str | Completion"]:
-        # A print-mode CLI produces output only on exit, so this "stream"
-        # is a single delta — correct for clients, just not incremental.
-        completion = self.complete(messages)
+        completion = self.complete(
+            messages,
+            tools=tools,
+            effort_flags=effort_flags,
+            model_override=model_override,
+        )
         yield completion.text
         yield completion
+
+
+def __getattr__(name: str):
+    if name in (
+        "AnthropicBackend",
+        "OpenAIBackend",
+        "OpenRouterBackend",
+        "anthropic_messages_to_openai",
+        "anthropic_tools_to_openai",
+        "cc_messages_to_anthropic",
+        "cc_tools_to_anthropic",
+    ):
+        import kultivait.api_backends as ab
+        return getattr(ab, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+

@@ -1,0 +1,92 @@
+{
+  "slug": "h02-inrepo-lookup",
+  "label": "local",
+  "label_rationale": "Static code extraction and lookup within a single repository file",
+  "prompt": "List the tier names ROLES defines in config.py and explain the order detect() sorts tiers by.",
+  "latency_s": 6.81,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.9,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": true,
+    "miss": false
+  },
+  "diagnostics": {
+    "local_sufficient": true,
+    "confidence": 0.95,
+    "task_type": "docs_lookup",
+    "complexity": 3
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.8,
+      "effort": "low"
+    },
+    {
+      "target": "codex",
+      "fit": 0.9,
+      "effort": "low"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.7,
+      "effort": "medium"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "docs_lookup",
+      "complexity": 3,
+      "signals": [
+        "mentions specific module 'config.py'",
+        "references specific function 'ROLES' and 'detect()'"
+      ]
+    },
+    "rewrite": "In the 'cultivait' codebase, locate the file 'config.py'. First, list all tier names defined within the 'ROLES' object. Second, explain the logic used by the 'detect()' function to determine the sorting order of these tiers.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.7,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

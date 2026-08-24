@@ -1,0 +1,17 @@
+# Benchmark harness redefined as a direct-to-backend capability eval: tool loops only, model-as-judge, accuracy-only
+
+Chart D's original premise — "continuous evaluation of coding accuracy vs savings through the proxy" — is redistributed rather than built as charted. The harness is **not** a router benchmark: it dispatches identical corpus tasks **directly to backends** (local tiers and registered-and-served API targets, effort projected per docs/adr/0008-api-effort-projection.md), bypassing routing entirely, and measures **accuracy only** — per-target pass rates on identical tasks. The corpus is **tool-loop tasks only**: multi-turn agentic exercises with real tool definitions (the traffic shape the map exists to unlock, and the axis where dogfooding observed local weakness — 20k+ token agent loops). Ground truth is **model-as-judge**, with an anti-circularity rule: the judge must be a different provider family than the target under test (e.g. OpenAI judges Anthropic targets and local tiers; Anthropic judges OpenAI), the judge model and rubric are versioned with each corpus release so scores stay comparable, and the full transcript is archived per case (verdict_eval's artifact discipline). Dollars and local-ratio are **not harness metrics** — continuous savings telemetry already lives in the harvest's two-lens accounting (docs/adr/0005-cost-model-duality.md); the harness never duplicates it. The harness's purpose crystallizes as **capability-gap evidence**: quantifying what local-first capability-aware auto-policy (docs/adr/0006-mixed-route-menu.md) trades away when it keeps tool traffic local, per target, per effort level.
+
+## Considered Options
+
+- **On-demand `kultivait benchmark` through the live proxy with the metric triad (pass rate / metered cash / local ratio)**: rejected as the harness's shape — the router already reports the cost lane continuously via the harvest, so a proxy-driven harness would duplicate #28's numbers while making accuracy non-comparable (routing choices vary per run). Kept parts: runs are on-demand and ledger-tagged so any spend they cause is separable.
+- **Plain-prompt corpus sections**: rejected — ordinary prompts are the harvest's home turf (volume + savings); the harness concentrates on tool loops, the surface nothing else measures repeatably.
+- **Programmatic checkers as ground truth** (verdict_eval's a-priori label discipline): rejected — checker-authored tasks constrain the corpus to mechanically verifiable edits, starving agentic tool work; the cross-family judge with archived transcripts is the accepted substitute.
+- **Composite accuracy-per-dollar score**: rejected — collapsing the trade-off hides exactly what the numbers should expose separately (capability in the harness, dollars in the harvest).
+
+## Consequences
+
+- The harness compares backends, not routes: identical tasks × {local tiers, API targets} × effort levels, judge-scored, artifacts archived per case.
+- Cross-family judging constrains corpus design: a full comparison set needs at least two provider families registered; single-provider machines still run local-vs-that-provider comparisons.
+- Router-side accuracy on tool traffic (do the [0.65, 0.85) verdicts route tool work well?) remains **unvalidated by conscious decision** — docs/adr/0007-preprocessor-tool-treatment.md finalized thresholds without tool-traffic eval, and this harness does not close that gap; noted, not charted.
+- Term canonized in CONTEXT.md: **Capability eval**.

@@ -1,0 +1,54 @@
+{
+  "case": "05-compound",
+  "prompt": "Add a kultivait choose subcommand that drains pending tolls: queue file, TTY chooser, heartbeat POST endpoint, and tests. Then update the README section about the tollbooth.",
+  "latency_s": 11.06,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 5,
+      "signals": [
+        "add subcommand",
+        "drain pending tolls",
+        "queue file",
+        "TTY chooser",
+        "heartbeat POST endpoint",
+        "tests",
+        "update README"
+      ]
+    },
+    "rewrite": "Add a 'kultivait choose' subcommand that drains pending tolls, including implementation for a queue file, TTY chooser, heartbeat POST endpoint, and corresponding tests. Update the README section about the tollbooth to reflect these changes.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.85,
+      "targets": [
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "medium"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "claude",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.5,
+          "effort": "medium"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.4,
+          "effort": "medium"
+        }
+      ]
+    }
+  }
+}

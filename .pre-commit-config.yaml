@@ -1,0 +1,14 @@
+# Run the test suite before every commit. The suite is hermetic (no network,
+# see tests/conftest.py) and fast (~0.3s), so gating on it costs a coffee-less
+# blink and keeps main green — the same gate CI runs, moved one step earlier.
+#
+# Activate once per clone:  uv run pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true

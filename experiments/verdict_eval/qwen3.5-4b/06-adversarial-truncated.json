@@ -1,0 +1,95 @@
+{
+  "slug": "06-adversarial-truncated",
+  "label": "borderline",
+  "label_rationale": "Adversarially truncated context where missing information creates genuine ambiguity",
+  "prompt": "Find the bug in this function, it returns None sometimes:\n\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n# (file continues, truncated by context limit)",
+  "latency_s": 7.06,
+  "parse_ok": true,
+  "parse_error": null,
+  "max_fit": 0.85,
+  "derived_verdict": "frontier",
+  "outcome": {
+    "agree": false,
+    "dangerous": false,
+    "wasteful": false,
+    "miss": true
+  },
+  "diagnostics": {
+    "local_sufficient": false,
+    "confidence": 0.65,
+    "task_type": "debugging",
+    "complexity": 4
+  },
+  "targets": [
+    {
+      "target": "claude",
+      "fit": 0.85,
+      "effort": "low"
+    },
+    {
+      "target": "agy",
+      "fit": 0.75,
+      "effort": "medium"
+    },
+    {
+      "target": "gemini",
+      "fit": 0.7,
+      "effort": "medium"
+    },
+    {
+      "target": "codex",
+      "fit": 0.6,
+      "effort": "high"
+    },
+    {
+      "target": "opencode",
+      "fit": 0.55,
+      "effort": "high"
+    }
+  ],
+  "raw_output": {
+    "analysis": {
+      "task_type": "debugging",
+      "complexity": 4,
+      "signals": [
+        "Find the bug",
+        "returns None sometimes",
+        "def resolve_tier",
+        "truncated code",
+        "context limit"
+      ]
+    },
+    "rewrite": "Analyze the following Python function to identify why it returns None. The code is truncated and incomplete.\n\nFunction:\ndef resolve_tier(tier, tools):\n    if tier.kind == 'cli' and tools:\n        local = [t for t in tiers if t.kind == 'l\n\nTask: Determine the logical error causing a None return based on visible syntax (e.g., undefined variable 'tiers', incomplete list comprehension) and explain how to fix it.",
+    "judge": {
+      "local_sufficient": false,
+      "confidence": 0.65,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.85,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.75,
+          "effort": "medium"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.7,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.6,
+          "effort": "high"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.55,
+          "effort": "high"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,217 @@
+[
+  {
+    "id": "file_search_and_edit",
+    "name": "File Search and Bug Fix",
+    "description": "Locate a broken function in the repository and apply the correct patch.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Find the function `calculate_tax` in the codebase, check why it throws ZeroDivisionError on empty tax rates, and fix it using the apply_patch tool."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_code",
+          "description": "Search for code patterns or symbol definitions across files.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "The symbol or string pattern to search for."
+              }
+            },
+            "required": ["query"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "description": "Read the complete contents of a file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Relative file path to read."
+              }
+            },
+            "required": ["path"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "apply_patch",
+          "description": "Apply a unified diff or code replacement to a file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path to patch."
+              },
+              "replacement": {
+                "type": "string",
+                "description": "The new replacement code."
+              }
+            },
+            "required": ["path", "replacement"]
+          }
+        }
+      }
+    ],
+    "mock_responses": {
+      "search_code": "src/billing/tax.py:14: def calculate_tax(amount: float, rates: list[float]) -> float:",
+      "read_file": "def calculate_tax(amount: float, rates: list[float]) -> float:\n    total_rate = sum(rates) / len(rates)\n    return amount * total_rate\n",
+      "apply_patch": "Patch applied successfully to src/billing/tax.py"
+    },
+    "max_turns": 4,
+    "rubric": {
+      "version": "v1",
+      "criteria": [
+        "Invoked search_code or read_file to inspect calculate_tax",
+        "Identified len(rates) zero division bug on empty list",
+        "Invoked apply_patch with safe handling for empty rates (e.g. if not rates: return 0.0)"
+      ],
+      "expected_tools": ["search_code", "apply_patch"],
+      "passing_score": 0.8
+    }
+  },
+  {
+    "id": "schema_migration_tool",
+    "name": "Database Schema Migration",
+    "description": "Inspect existing database table columns and generate migration statement.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Check the current schema of table 'users' and call add_column to add a nullable string column 'avatar_url'."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_table_schema",
+          "description": "Retrieve schema columns and types for a given table name.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "table_name": {
+                "type": "string",
+                "description": "Name of table."
+              }
+            },
+            "required": ["table_name"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "add_column",
+          "description": "Execute DDL migration to add a column to a table.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "table_name": {
+                "type": "string"
+              },
+              "column_name": {
+                "type": "string"
+              },
+              "column_type": {
+                "type": "string"
+              },
+              "nullable": {
+                "type": "boolean"
+              }
+            },
+            "required": ["table_name", "column_name", "column_type"]
+          }
+        }
+      }
+    ],
+    "mock_responses": {
+      "get_table_schema": "table users (id integer primary key, email varchar(255) not null, created_at timestamp)",
+      "add_column": "Column avatar_url added to table users"
+    },
+    "max_turns": 3,
+    "rubric": {
+      "version": "v1",
+      "criteria": [
+        "Checked table schema before modifying",
+        "Called add_column with table_name='users', column_name='avatar_url', column_type='varchar/string/text', nullable=True"
+      ],
+      "expected_tools": ["get_table_schema", "add_column"],
+      "passing_score": 0.8
+    }
+  },
+  {
+    "id": "log_diagnostic_pipeline",
+    "name": "Log Diagnostic Pipeline",
+    "description": "Query server logs to isolate high error rates and restart failing worker.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Query recent error logs to find which worker service is crashing, and restart that specific service."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "query_logs",
+          "description": "Query recent logs filtered by level or service.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": ["INFO", "WARN", "ERROR", "FATAL"]
+              }
+            },
+            "required": ["level"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "restart_service",
+          "description": "Restart a specific background worker service.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "service_name": {
+                "type": "string",
+                "description": "Service name to restart."
+              }
+            },
+            "required": ["service_name"]
+          }
+        }
+      }
+    ],
+    "mock_responses": {
+      "query_logs": "2026-08-23 20:00:01 [ERROR] worker-indexer OOM killed (exit code 137)\n2026-08-23 20:00:05 [ERROR] worker-indexer failed to reconnect",
+      "restart_service": "Service worker-indexer restarted successfully"
+    },
+    "max_turns": 3,
+    "rubric": {
+      "version": "v1",
+      "criteria": [
+        "Queried logs with level ERROR",
+        "Identified worker-indexer as the crashing service",
+        "Invoked restart_service with service_name='worker-indexer'"
+      ],
+      "expected_tools": ["query_logs", "restart_service"],
+      "passing_score": 0.8
+    }
+  }
+]

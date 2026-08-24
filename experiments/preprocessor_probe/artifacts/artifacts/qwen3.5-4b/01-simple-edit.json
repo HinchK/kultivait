@@ -1,0 +1,50 @@
+{
+  "case": "01-simple-edit",
+  "prompt": "Rename the variable cfg to settings everywhere in src/kultivait/config.py and fix the imports.",
+  "latency_s": 9.16,
+  "parse_ok": true,
+  "parse_error": null,
+  "output": {
+    "analysis": {
+      "task_type": "simple_edit",
+      "complexity": 2,
+      "signals": [
+        "rename variable",
+        "fix imports",
+        "specific file path"
+      ]
+    },
+    "rewrite": "In the file src/kultivait/config.py, rename all occurrences of the variable 'cfg' to 'settings'. Additionally, review and correct any import statements that reference the old variable name or are broken as a result of this change.",
+    "judge": {
+      "local_sufficient": true,
+      "confidence": 0.95,
+      "targets": [
+        {
+          "target": "claude",
+          "fit": 0.8,
+          "effort": "low"
+        },
+        {
+          "target": "agy",
+          "fit": 0.7,
+          "effort": "low"
+        },
+        {
+          "target": "gemini",
+          "fit": 0.6,
+          "effort": "medium"
+        },
+        {
+          "target": "codex",
+          "fit": 0.9,
+          "effort": "low"
+        },
+        {
+          "target": "opencode",
+          "fit": 0.85,
+          "effort": "low"
+        }
+      ]
+    }
+  }
+}
