@@ -336,3 +336,103 @@ def test_queue_file_stateless_cleanup(tmp_path):
     # Initializing queue unlinks stale file
     queue = TollboothQueue(queue_path=q_file)
     assert not q_file.exists()
+
+
+def test_mixed_menu_capability_filter_and_cash_annotations():
+    target_fits = [
+        TargetFit(target="claude", fit=0.90, effort="high"),
+        TargetFit(target="openai", fit=0.0, effort="high"),
+    ]
+    candidate_targets = ["claude", "codex", "openai", "anthropic"]
+    target_kinds = {
+        "claude": "cli",
+        "codex": "cli",
+        "openai": "api",
+        "anthropic": "api",
+    }
+    pricing = {
+        "claude": (3.0, 15.0),
+        "codex": (1.25, 10.0),
+        "openai": (2.5, 10.0),
+        "anthropic": (3.0, 15.0),
+    }
+
+    # Case 1: Non-tool request -> includes CLIs and APIs
+    menu_no_tools = build_route_menu(
+        target_fits=target_fits,
+        candidate_targets=candidate_targets,
+        target_kinds=target_kinds,
+        has_tools=False,
+        pricing=pricing,
+        rewrite="Rewrite",
+        original_prompt="Orig",
+    )
+    targets_no_tools = [opt.target for opt in menu_no_tools]
+    assert "claude" in targets_no_tools
+    assert "openai" in targets_no_tools
+    claude_opt = next(opt for opt in menu_no_tools if opt.target == "claude")
+    assert claude_opt.cash_annotation == "subscription: $0"
+    assert claude_opt.kind == "cli"
+
+    openai_opt = next(opt for opt in menu_no_tools if opt.target == "openai")
+    assert "metered:" in openai_opt.cash_annotation
+    assert openai_opt.kind == "api"
+
+    # Case 2: Tool-bearing request -> capability filter drops CLIs
+    menu_tools = build_route_menu(
+        target_fits=target_fits,
+        candidate_targets=candidate_targets,
+        target_kinds=target_kinds,
+        has_tools=True,
+        pricing=pricing,
+        rewrite="Rewrite",
+        original_prompt="Orig",
+    )
+    targets_tools = [opt.target for opt in menu_tools]
+    assert "claude" not in targets_tools
+    assert "codex" not in targets_tools
+    assert "openai" in targets_tools
+    assert "anthropic" in targets_tools
+    assert "local" in targets_tools
+
+
+def test_presence_probe_filtering_in_menu():
+    candidate_targets = ["openai", "anthropic", "openrouter"]
+    target_kinds = {t: "api" for t in candidate_targets}
+    probed_status = {
+        "openai": True,
+        "anthropic": False,  # failed probe
+        "openrouter": True,
+    }
+
+    menu = build_route_menu(
+        target_fits=[],
+        candidate_targets=candidate_targets,
+        target_kinds=target_kinds,
+        probed_status=probed_status,
+        rewrite="Rewrite",
+        original_prompt="Orig",
+    )
+    targets = [opt.target for opt in menu]
+    assert "anthropic" not in targets
+    assert "openai" in targets
+    assert "openrouter" in targets
+    assert "local" in targets
+
+
+def test_resolve_auto_policy_fail_fast_when_nothing_capable():
+    # Only local in options, but local is not serving capable
+    options = [
+        RouteOption(
+            target="local",
+            display_name="Local",
+            fit=0.0,
+            effort=resolve_effort(5, "code", "local"),
+            estimated_cost_usd=0.0,
+            prompt_to_send="orig",
+            kind="local",
+        )
+    ]
+    with pytest.raises(RuntimeError, match="no capable backend"):
+        resolve_auto_policy(options, local_serving_capable=False)
+

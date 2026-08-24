@@ -133,3 +133,89 @@ def mask_key(key: str | None) -> str:
     if len(key) <= 8:
         return "****"
     return f"{key[:4]}...{key[-4:]}"
+
+
+def probe_provider(
+    provider: str,
+    key: str | None = None,
+    timeout_s: float = 3.0,
+    client: "Any" = None,
+) -> bool:
+    """Run live presence probe for provider (Anthropic, OpenAI, OpenRouter).
+    Returns True if probe succeeds, False otherwise."""
+    import httpx
+
+    resolved_key = key or resolve_provider_key(provider)
+    if not resolved_key:
+        return False
+
+    prov_lower = provider.lower()
+    http_client = client or httpx.Client(timeout=timeout_s)
+    should_close = client is None
+
+    try:
+        if "anthropic" in prov_lower or "claude" in prov_lower:
+            r = http_client.get(
+                "https://api.anthropic.com/v1/models",
+                headers={"x-api-key": resolved_key, "anthropic-version": "2023-06-01"},
+            )
+            return r.status_code in (200, 201)
+        elif "openai" in prov_lower or "gpt" in prov_lower:
+            r = http_client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {resolved_key}"},
+            )
+            return r.status_code == 200
+        elif "openrouter" in prov_lower:
+            r = http_client.get(
+                "https://openrouter.ai/api/v1/key",
+                headers={"Authorization": f"Bearer {resolved_key}"},
+            )
+            return r.status_code == 200
+        return True
+    except Exception:
+        return False
+    finally:
+        if should_close:
+            try:
+                http_client.close()
+            except Exception:
+                pass
+
+
+def probe_candidate_targets(
+    targets: list[str],
+    target_kinds: dict[str, str] | None = None,
+    timeout_s: float = 3.0,
+    client: "Any" = None,
+) -> dict[str, bool]:
+    """Concurrently probe all API targets in candidates. CLI and local targets return True."""
+    import concurrent.futures
+
+    target_kinds = target_kinds or {}
+    results: dict[str, bool] = {}
+    api_targets = []
+
+    for t in targets:
+        kind = target_kinds.get(t, "api" if t in ("openrouter", "openai", "anthropic") else "cli")
+        if kind == "api":
+            api_targets.append(t)
+        else:
+            results[t] = True
+
+    if not api_targets:
+        return results
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(api_targets))) as executor:
+        future_to_target = {
+            executor.submit(probe_provider, t, timeout_s=timeout_s, client=client): t
+            for t in api_targets
+        }
+        for future in concurrent.futures.as_completed(future_to_target):
+            t = future_to_target[future]
+            try:
+                results[t] = future.result()
+            except Exception:
+                results[t] = False
+
+    return results

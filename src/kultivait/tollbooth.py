@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kultivait.config import CLI_PRICING, KNOWN_CLIS
+from kultivait.config import CLI_PRICING, KNOWN_CLIS, PROVIDER_DEFAULTS
 from kultivait.effort import EffortPlan, resolve_effort
 from kultivait.escalations import EscalationStore
 from kultivait.ledger import Ledger
@@ -18,12 +18,14 @@ from kultivait.preprocessor import AnalysisResult, TargetFit
 
 @dataclass(frozen=True)
 class RouteOption:
-    target: str            # "claude" | "agy" | "codex" | "opencode" | "gemini" | "local"
+    target: str            # "claude" | "agy" | "codex" | "opencode" | "gemini" | "openrouter" | "openai" | "anthropic" | "local"
     display_name: str
     fit: float
     effort: EffortPlan
     estimated_cost_usd: float
     prompt_to_send: str    # rewritten prompt for frontier, original for local
+    cash_annotation: str = "$0"
+    kind: str = "cli"      # "api" | "cli" | "local"
 
 
 @dataclass(frozen=True)
@@ -41,66 +43,95 @@ class TollTicket:
 
 def build_route_menu(
     target_fits: list[TargetFit],
-    installed_clis: list[str],
-    analysis: AnalysisResult,
-    rewrite: str,
-    original_prompt: str,
+    installed_clis: list[str] | None = None,
+    analysis: AnalysisResult | None = None,
+    rewrite: str = "",
+    original_prompt: str = "",
     local_tier_name: str = "qwen3.5:4b",
     pricing: dict[str, tuple[float, float]] | None = None,
     effort_overrides: dict | None = None,
+    candidate_targets: list[str] | None = None,
+    target_kinds: dict[str, str] | None = None,
+    has_tools: bool = False,
+    probed_status: dict[str, bool] | None = None,
 ) -> list[RouteOption]:
     """Constructs route menu offering top 3 installed frontier targets ranked by
     total order (fit desc -> task_type capability match -> price asc) + local anchor."""
-    prices = pricing or CLI_PRICING
-    fit_map = {tf.target: tf.fit for tf in target_fits}
+    prices = dict(pricing or CLI_PRICING)
+    for p_name, p_def in PROVIDER_DEFAULTS.items():
+        if p_name not in prices:
+            prices[p_name] = (p_def.price_in, p_def.price_out)
 
-    candidates = [cli for cli in installed_clis if cli in KNOWN_CLIS or cli in prices]
+    fit_map = {tf.target: tf.fit for tf in (target_fits or [])}
+    raw_targets = list(candidate_targets if candidate_targets is not None else (installed_clis or []))
+    kinds_map = target_kinds or {}
 
-    def rank_key(cli: str):
-        fit = fit_map.get(cli, 0.0)
-        role = KNOWN_CLIS.get(cli, "architect")
-        if analysis.task_type in ("architecture", "debugging", "compound"):
+    surviving = []
+    for t in raw_targets:
+        # If probed and failed, drop from menu
+        if probed_status is not None and probed_status.get(t) is False:
+            continue
+        t_kind = kinds_map.get(t, "api" if t in ("openrouter", "openai", "anthropic") else "cli")
+        # Capability filter: drop CLI targets when request bears tools
+        if has_tools and t_kind == "cli":
+            continue
+        surviving.append(t)
+
+    def rank_key(target: str):
+        fit = fit_map.get(target, 0.0)
+        role = KNOWN_CLIS.get(target, "architect")
+        if analysis and analysis.task_type in ("architecture", "debugging", "compound"):
             cap_score = 0 if role == "architect" else 1
-        elif analysis.task_type in ("docs_lookup", "simple_edit"):
+        elif analysis and analysis.task_type in ("docs_lookup", "simple_edit"):
             cap_score = 0 if role == "docs" else 1
         else:
             cap_score = 0
 
-        p_in, p_out = prices.get(cli, (3.0, 15.0))
+        p_in, p_out = prices.get(target, (3.0, 15.0))
         price_sum = p_in + p_out
-        return (-fit, cap_score, price_sum, cli)
+        return (-fit, cap_score, price_sum, target)
 
-    ranked_clis = sorted(candidates, key=rank_key)[:3]
+    ranked_targets = sorted(surviving, key=rank_key)[:3]
 
     options: list[RouteOption] = []
     tokens_in_est = max(1, len(rewrite) // 4)
     tokens_out_est = max(1, len(rewrite) // 8)
 
-    for cli in ranked_clis:
-        fit = fit_map.get(cli, 0.0)
+    for target in ranked_targets:
+        fit = fit_map.get(target, 0.0)
         effort = resolve_effort(
-            complexity=analysis.complexity,
-            task_type=analysis.task_type,
-            target_cli=cli,
+            complexity=analysis.complexity if analysis else 5,
+            task_type=analysis.task_type if analysis else "code",
+            target_cli=target,
             overrides=effort_overrides,
         )
-        p_in, p_out = prices.get(cli, (3.0, 15.0))
+        p_in, p_out = prices.get(target, (3.0, 15.0))
         cost = (tokens_in_est * p_in + tokens_out_est * p_out) / 1e6
+        t_kind = kinds_map.get(target, "api" if target in ("openrouter", "openai", "anthropic") else "cli")
+        if t_kind == "api":
+            cash_annot = f"metered: ~${cost:.4f}"
+        elif t_kind == "cli":
+            cash_annot = "subscription: $0"
+        else:
+            cash_annot = "$0"
+
         options.append(
             RouteOption(
-                target=cli,
-                display_name=cli.capitalize(),
+                target=target,
+                display_name=target.capitalize(),
                 fit=fit,
                 effort=effort,
                 estimated_cost_usd=cost,
                 prompt_to_send=rewrite,
+                cash_annotation=cash_annot,
+                kind=t_kind,
             )
         )
 
     # 4th option: keep-it-local anchor
     local_effort = resolve_effort(
-        complexity=analysis.complexity,
-        task_type=analysis.task_type,
+        complexity=analysis.complexity if analysis else 5,
+        task_type=analysis.task_type if analysis else "code",
         target_cli="local",
         overrides=effort_overrides,
     )
@@ -112,6 +143,8 @@ def build_route_menu(
             effort=local_effort,
             estimated_cost_usd=0.0,
             prompt_to_send=original_prompt,
+            cash_annotation="$0",
+            kind="local",
         )
     )
 
@@ -129,7 +162,7 @@ def resolve_auto_policy(
     frontier_opts = [opt for opt in options if opt.target != "local"]
     if frontier_opts:
         return f"auto:frontier:{frontier_opts[0].target}"
-    return "auto:local"
+    raise RuntimeError("no capable backend configured to serve request")
 
 
 class TollboothQueue:

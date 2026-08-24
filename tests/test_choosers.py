@@ -63,21 +63,35 @@ def test_render_route_menu():
         effort=EffortPlan(canonical="deep", cli_flags=["--effort", "high"]),
         estimated_cost_usd=0.015,
         prompt_to_send="rewrite prompt",
+        cash_annotation="subscription: $0",
+        kind="cli",
     )
     opt2 = RouteOption(
+        target="openai",
+        display_name="OpenAI",
+        fit=0.0,
+        effort=EffortPlan(canonical="balanced", cli_flags=[]),
+        estimated_cost_usd=0.005,
+        prompt_to_send="rewrite prompt",
+        cash_annotation="metered: ~$0.0050",
+        kind="api",
+    )
+    opt3 = RouteOption(
         target="local",
         display_name="Local (qwen3.5:4b)",
         fit=0.0,
         effort=EffortPlan(canonical="balanced", cli_flags=[]),
         estimated_cost_usd=0.0,
         prompt_to_send="orig prompt",
+        cash_annotation="$0",
+        kind="local",
     )
     ticket = TollTicket(
         ticket_id="toll-xyz",
         fingerprint="fp-123",
         created_at=time.time(),
         timeout_s=60.0,
-        options=[opt1, opt2],
+        options=[opt1, opt2, opt3],
         default_auto_choice="auto:local",
         original_prompt="How do I refactor the compiler backend?",
         task_type="architecture",
@@ -89,6 +103,7 @@ def test_render_route_menu():
     assert "0.85" in rendered
     assert "deep" in rendered
     assert "--effort high" in rendered
+    assert "OpenAI" in rendered
     assert "Local (qwen3.5:4b)" in rendered
     assert "keep-it-local" in rendered
     assert "How do I refactor the compiler backend?" in rendered

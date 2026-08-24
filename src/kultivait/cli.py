@@ -693,6 +693,8 @@ def format_harvest(stats: dict) -> str:
             "  start the proxy (kultivait serve) and route some work through it."
         )
     local_pct = round(100 * stats["local_prompts"] / stats["prompts"])
+    notional_spent = stats.get("notional_spent_usd", stats.get("spent_usd", 0.0))
+    metered_spent = stats.get("metered_spent_usd", 0.0)
     lines = [
         "the harvest — season to date",
         "",
@@ -700,6 +702,8 @@ def format_harvest(stats: dict) -> str:
         f"  local tokens       {stats['tokens_local']:,}",
         f"  spent              ${stats['spent_usd']:.2f}",
         f"  frontier baseline  ${stats['baseline_usd']:.2f}",
+        f"  notional spent     ${notional_spent:.2f}",
+        f"  metered cash out   ${metered_spent:.2f}",
         f"  kept in pocket     ${stats['saved_usd']:.2f}",
     ]
     toll = stats.get("toll_activity")
