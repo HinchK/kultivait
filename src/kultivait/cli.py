@@ -753,6 +753,39 @@ def cmd_harvest(args: argparse.Namespace) -> None:
         print(format_harvest(stats))
 
 
+def cmd_eval(args: argparse.Namespace) -> None:
+    from kultivait.capability_eval import (
+        format_eval_summary,
+        load_corpus,
+        run_capability_eval,
+    )
+
+    config = get_config()
+    backends = build_backends(config)
+    if not backends:
+        print("no backends configured for capability eval.", file=sys.stderr)
+        return
+
+    targets = [args.target] if getattr(args, "target", None) else None
+    efforts = [args.effort] if getattr(args, "effort", None) else None
+    corpus_path = Path(args.corpus) if getattr(args, "corpus", None) else None
+    artifacts_dir = Path(args.artifacts_dir) if getattr(args, "artifacts_dir", None) else Path(".kultivait/eval_artifacts")
+    ledger = Ledger(LEDGER_PATH)
+
+    summary = run_capability_eval(
+        backends=backends,
+        targets=targets,
+        efforts=efforts,
+        corpus=load_corpus(corpus_path) if corpus_path else None,
+        artifacts_dir=artifacts_dir,
+        ledger=ledger,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2))
+    else:
+        print(format_eval_summary(summary))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="kultivait")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -796,8 +829,25 @@ def main() -> None:
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
 
+    eval_cmd = sub.add_parser("eval", help="run direct-to-backend capability evaluation")
+    eval_cmd.add_argument("--target", help="specific target backend to evaluate")
+    eval_cmd.add_argument("--effort", choices=["fast", "balanced", "deep"], help="specific effort level")
+    eval_cmd.add_argument("--corpus", help="path to custom corpus JSON file")
+    eval_cmd.add_argument("--artifacts-dir", help="directory to write per-case artifact JSONs")
+    eval_cmd.add_argument("--json", action="store_true", help="machine-readable summary output")
+    eval_cmd.set_defaults(func=cmd_eval)
+
+    bench_cmd = sub.add_parser("benchmark", help="alias for eval")
+    bench_cmd.add_argument("--target", help="specific target backend to evaluate")
+    bench_cmd.add_argument("--effort", choices=["fast", "balanced", "deep"], help="specific effort level")
+    bench_cmd.add_argument("--corpus", help="path to custom corpus JSON file")
+    bench_cmd.add_argument("--artifacts-dir", help="directory to write per-case artifact JSONs")
+    bench_cmd.add_argument("--json", action="store_true", help="machine-readable summary output")
+    bench_cmd.set_defaults(func=cmd_eval)
+
     args = parser.parse_args()
     args.func(args)
+
 
 
 if __name__ == "__main__":
