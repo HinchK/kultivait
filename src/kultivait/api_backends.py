@@ -153,14 +153,30 @@ def cc_messages_to_anthropic(messages: list[dict]) -> tuple[list[dict], str]:
 
 
 def anthropic_messages_to_openai(messages: list[dict], system: str = "") -> list[dict]:
-    """Convert Anthropic-formatted messages to OpenAI messages."""
+    """Convert Anthropic-formatted messages to OpenAI messages.
+
+    Rows already in OpenAI/chat-completions shape (assistant tool_calls,
+    role:"tool" results with tool_call_id) pass through verbatim — the
+    proxy's chat-completions endpoint hands CC-dialect history to API
+    backends and the tool plumbing must survive (live dogfooding #64:
+    Google 400'd a tool result whose tool_call_id was dropped).
+    """
     out: list[dict] = []
     if system:
         out.append({"role": "system", "content": system})
     for m in messages:
         role = m.get("role", "user")
         content = m.get("content")
-        if role == "assistant" and isinstance(content, list):
+        if role == "tool" and m.get("tool_call_id"):
+            res = content if isinstance(content, str) else json.dumps(content or "")
+            out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": res})
+        elif role == "assistant" and m.get("tool_calls"):
+            msg: dict = {"role": "assistant", "content": content or None,
+                         "tool_calls": m["tool_calls"]}
+            if m.get("name"):
+                msg["name"] = m["name"]
+            out.append(msg)
+        elif role == "assistant" and isinstance(content, list):
             text = ""
             calls = []
             for b in content:
@@ -266,6 +282,22 @@ def extract_canonical_effort(
     if "balanced" in flags_str or "medium" in flags_str:
         return "balanced"
     return "balanced"
+
+
+# Models known to accept reasoning-effort params (ADR 0008 per-model subsets).
+# Everything else (llama-3.3-70b, etc.) must NOT receive reasoning fields —
+# providers 400 on them (live dogfooding #64: Google Vertex rejected the
+# `thinking` translation for llama-3.3-70b-instruct).
+_REASONING_MODEL_PATTERNS = (
+    "gpt-5", "gpt-4.1", "o1", "o3", "o4",          # OpenAI reasoning families
+    "claude-",                                       # Anthropic (output_config/reasoning)
+    "deepseek-r", "qwen3", "glm-", "grok-",         # hybrid-thinking families
+)
+
+
+def model_supports_reasoning(model: str) -> bool:
+    m = (model or "").lower()
+    return any(p in m for p in _REASONING_MODEL_PATTERNS)
 
 
 def resolve_max_tokens(
@@ -990,7 +1022,8 @@ class OpenRouterBackend:
         if o_tools:
             body["tools"] = o_tools
         if prov_eff:
-            body["reasoning_effort"] = prov_eff
+            if model_supports_reasoning(model_override or self.model):
+                body["reasoning_effort"] = prov_eff
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -1056,7 +1089,8 @@ class OpenRouterBackend:
         if o_tools:
             body["tools"] = o_tools
         if prov_eff:
-            body["reasoning_effort"] = prov_eff
+            if model_supports_reasoning(model_override or self.model):
+                body["reasoning_effort"] = prov_eff
 
         headers = {
             "Authorization": f"Bearer {api_key}",
