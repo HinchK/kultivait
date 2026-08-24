@@ -122,6 +122,75 @@ loops and can't return client-side tool calls. The response's `kultivait`
 metadata reports `tool_fallback: true` when this happens. Anthropic-endpoint
 tool support is not yet implemented.
 
+### Direct REST frontier providers & API tier registration
+
+In addition to local runtimes and CLI backends, kultivait supports direct REST API frontier providers (`anthropic`, `openai`, `openrouter`).
+
+#### 1. Configure an API tier
+
+Add an `api`-kind tier to `~/.kultivait/config.toml`:
+
+```toml
+[[tiers]]
+name = "anthropic"
+role = "architect"
+kind = "api"
+model = "claude-3-7-sonnet-20250219"
+price_in = 3.0
+price_out = 15.0
+
+[[tiers]]
+name = "openai"
+role = "architect"
+kind = "api"
+model = "gpt-4o"
+price_in = 2.5
+price_out = 10.0
+
+[[tiers]]
+name = "openrouter"
+role = "architect"
+kind = "api"
+model = "anthropic/claude-3.7-sonnet"
+price_in = 3.0
+price_out = 15.0
+```
+
+Unpriced API tiers load a conservative default ($3.00 in / $15.00 out per MTok) with a warning to ensure accurate ledger accounting.
+
+#### 2. Configure credentials
+
+API keys resolve from three sources with fixed precedence:
+
+1. **Environment variables** (highest precedence):
+   ```bash
+   export ANTHROPIC_API_KEY="sk-ant-..."
+   export OPENAI_API_KEY="sk-..."
+   export OPENROUTER_API_KEY="sk-or-..."
+   ```
+
+2. **OS Keychain** (macOS `security`):
+   ```bash
+   # Add key to Keychain (service: kultivait, account: <provider>)
+   security add-generic-password -s kultivait -a anthropic -w "sk-ant-..."
+   security add-generic-password -s kultivait -a openai -w "sk-..."
+   security add-generic-password -s kultivait -a openrouter -w "sk-or-..."
+   ```
+
+3. **Credentials file** (`~/.kultivait/credentials.toml`, `0600` permissions):
+   ```toml
+   [anthropic]
+   api_key = "sk-ant-..."
+
+   [openai]
+   api_key = "sk-..."
+
+   [openrouter]
+   api_key = "sk-or-..."
+   ```
+
+> **Security note**: API keys never live in `config.toml` and are never logged or exposed.
+
 ### Escalations: when the garden isn't enough
 
 Every tool-fallback is also archived as an *escalation* — the full

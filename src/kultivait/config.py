@@ -9,6 +9,7 @@ backend to serve them.
 
 import re
 import tomllib
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,12 +40,49 @@ CLI_PRICING = {  # USD per million tokens, rough frontier-tier defaults
     "gemini": (1.25, 10.0),
 }
 
+DEFAULT_API_PRICE_IN = 3.0
+DEFAULT_API_PRICE_OUT = 15.0
+
+
+@dataclass(frozen=True)
+class ProviderDefaults:
+    model: str            # pinned exact id
+    price_in: float       # USD/MTok
+    price_out: float
+    max_output_tokens: int
+    token_field: str      # "max_tokens" | "max_completion_tokens"
+
+
+PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
+    "anthropic": ProviderDefaults(
+        model="claude-3-7-sonnet-20250219",
+        price_in=3.0,
+        price_out=15.0,
+        max_output_tokens=8192,
+        token_field="max_tokens",
+    ),
+    "openai": ProviderDefaults(
+        model="gpt-4o",
+        price_in=2.5,
+        price_out=10.0,
+        max_output_tokens=16384,
+        token_field="max_completion_tokens",
+    ),
+    "openrouter": ProviderDefaults(
+        model="anthropic/claude-3.7-sonnet",
+        price_in=3.0,
+        price_out=15.0,
+        max_output_tokens=8192,
+        token_field="max_tokens",
+    ),
+}
+
 
 @dataclass(frozen=True)
 class TierSpec:
     name: str
     role: str
-    kind: str  # "ollama" | "llamacpp" | "cli" | "virtual"
+    kind: str  # "ollama" | "llamacpp" | "cli" | "virtual" | "api"
     model: "str | None" = None
     command: "list[str] | None" = None
     price_in: float = 0.0
@@ -168,6 +206,8 @@ def save_config(config: Config, path: Path) -> None:
         f"num_ctx = {config.num_ctx}",
         f"port = {config.port}",
         f"preprocess_timeout_s = {config.preprocess_timeout_s}",
+        f"toll_timeout_s = {config.toll_timeout_s}",
+        f"toll_enabled = {'true' if config.toll_enabled else 'false'}",
     ]
     for t in config.tiers:
         lines += ["", "[[tiers]]", f'name = "{t.name}"', f'role = "{t.role}"', f'kind = "{t.kind}"']
@@ -188,18 +228,31 @@ def _toml_str(value: "str | None") -> str:
 
 def load_config(path: Path) -> Config:
     data = tomllib.loads(Path(path).read_text())
-    tiers = [
-        TierSpec(
-            name=t["name"],
-            role=t["role"],
-            kind=t["kind"],
-            model=t.get("model"),
-            command=t.get("command"),
-            price_in=t.get("price_in", 0.0),
-            price_out=t.get("price_out", 0.0),
+    tiers = []
+    for t in data.get("tiers", []):
+        kind = t["kind"]
+        price_in = float(t.get("price_in", 0.0))
+        price_out = float(t.get("price_out", 0.0))
+        if kind == "api" and price_in == 0.0 and price_out == 0.0:
+            warnings.warn(
+                f"Tier '{t['name']}' has kind='api' but no pricing configured; "
+                f"defaulting to conservative ${DEFAULT_API_PRICE_IN}/${DEFAULT_API_PRICE_OUT} per MTok",
+                UserWarning,
+                stacklevel=2,
+            )
+            price_in = DEFAULT_API_PRICE_IN
+            price_out = DEFAULT_API_PRICE_OUT
+        tiers.append(
+            TierSpec(
+                name=t["name"],
+                role=t["role"],
+                kind=kind,
+                model=t.get("model"),
+                command=t.get("command"),
+                price_in=price_in,
+                price_out=price_out,
+            )
         )
-        for t in data.get("tiers", [])
-    ]
     return Config(
         tiers=tiers,
         embed_model=data.get("embed_model") or None,
@@ -210,4 +263,6 @@ def load_config(path: Path) -> Config:
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
         preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
+        toll_timeout_s=float(data.get("toll_timeout_s", 60.0)),
+        toll_enabled=bool(data.get("toll_enabled", True)),
     )
