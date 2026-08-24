@@ -8,7 +8,7 @@ final usage, so callers can tally the ledger after the stream ends.
 import json
 import os
 from dataclasses import dataclass
-from typing import Iterator, Protocol
+from typing import Iterator, Protocol, runtime_checkable
 
 DISPATCH_TEMPLATES: dict[str, list[str]] = {
     "claude": ["claude", "-p"],
@@ -45,6 +45,7 @@ def is_truncated(prompt_eval_count: int, num_ctx: int) -> bool:
     return prompt_eval_count >= num_ctx - 1
 
 
+@runtime_checkable
 class Backend(Protocol):
     supports_tools: bool
     local: bool
@@ -538,3 +539,20 @@ class CLIBackend:
         )
         yield completion.text
         yield completion
+
+
+def __getattr__(name: str):
+    if name in (
+        "AnthropicBackend",
+        "OpenAIBackend",
+        "OpenRouterBackend",
+        "anthropic_messages_to_openai",
+        "anthropic_tools_to_openai",
+        "cc_messages_to_anthropic",
+        "cc_tools_to_anthropic",
+    ):
+        import kultivait.api_backends as ab
+        return getattr(ab, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
