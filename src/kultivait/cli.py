@@ -814,6 +814,18 @@ def cmd_distill_train(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_distill_export(args: argparse.Namespace) -> None:
+    """D4: fuse a trained adapter and register the distillate with Ollama."""
+    from kultivait.distill.export import export_distillate
+
+    report = export_distillate(args.base, Path(args.adapter_path),
+                               out_root=Path(args.out_root), generation=args.generation,
+                               quantize=None if args.no_quantize else "q4_K_M")
+    print(report.to_json())
+    if report.status != "ok" or not report.registered:
+        raise SystemExit(1)
+
+
 def cmd_eval(args: argparse.Namespace) -> None:
     from kultivait.capability_eval import (
         format_eval_summary,
@@ -917,6 +929,16 @@ def main() -> None:
     train_cmd.add_argument("--adapter-path", default=None, help="adapter output directory")
     train_cmd.add_argument("--resume", action="store_true", help="resume from the adapter checkpoint")
     train_cmd.set_defaults(func=cmd_distill_train)
+    export_cmd = distill_sub.add_parser("export", help="fuse an adapter & register with Ollama")
+    export_cmd.add_argument("--base", required=True, help="base key the adapter was trained on")
+    export_cmd.add_argument("--adapter-path", required=True, help="trained adapter directory")
+    export_cmd.add_argument("--out-root", default=str(KULTIVAIT_HOME / "distillates"),
+                            help="distillate output root (fused model + Modelfile + registry)")
+    export_cmd.add_argument("--generation", type=int, default=None,
+                            help="explicit generation (default: monotonic registry + 1)")
+    export_cmd.add_argument("--no-quantize", action="store_true",
+                            help="skip quantize-at-import (default q4_K_M)")
+    export_cmd.set_defaults(func=cmd_distill_export)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
