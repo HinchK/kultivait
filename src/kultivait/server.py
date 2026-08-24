@@ -30,6 +30,7 @@ from kultivait.preprocessor import (
     MARK_TIMEOUT,
     run as run_preprocessor,
 )
+from kultivait.credentials import probe_candidate_targets
 from kultivait.router import Decision, Router
 from kultivait.tollbooth import (
     RouteOption,
@@ -246,17 +247,18 @@ def create_app(
                 return name, reason
         raise RuntimeError("no serving-capable backend configured")
 
-    @app.post("/v1/chat/completions")
-    def chat_completions(body: dict, request: Request):
-        messages = _normalize(body.get("messages", []))
-        tools = body.get("tools")
-        decision = _classify(messages)
-        fingerprint = _conversation_fingerprint(messages)
+    def _resolve_route(
+        messages: list[dict],
+        tools: list[dict] | None,
+        decision: Decision,
+        fingerprint: str,
+    ) -> dict:
+        has_tools = bool(tools)
+        is_contested = decision.escalated or decision.margin < router._margin
         target_fits_dict = None
         route_choice = None
         toll_mark = "skipped"
-
-        is_contested = decision.escalated or decision.margin < router._margin
+        escalation_id = None
 
         if not is_contested:
             preprocess_mark = MARK_SKIPPED
@@ -278,7 +280,8 @@ def create_app(
             )
             preprocess_mark = prep_result.mark
             max_fit = prep_result.max_fit
-            subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
+            # Suppress subtask_candidates on tool-bearing requests per ADR 0007
+            subtask_candidates_count = 0 if has_tools else len(prep_result.analysis.subtask_candidates)
             target_fits_dict = {tf.target: tf.fit for tf in prep_result.target_fits}
 
             if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
@@ -325,331 +328,47 @@ def create_app(
                     local_tier = router.capability_order[0]
                     local_backend = backends.get(local_tier)
                     local_serving_capable = bool(local_backend and (not tools or local_backend.supports_tools))
-                    installed_clis = [name for name, b in backends.items() if not b.local]
+                    candidate_targets = [name for name, b in backends.items() if not b.local]
+                    target_kinds = {
+                        name: ("api" if getattr(b, "supports_tools", False) and not b.local else "cli")
+                        for name, b in backends.items()
+                    }
+                    probed_status = probe_candidate_targets(candidate_targets, target_kinds)
 
                     options = build_route_menu(
                         target_fits=prep_result.target_fits,
-                        installed_clis=installed_clis,
+                        candidate_targets=candidate_targets,
                         analysis=prep_result.analysis,
                         rewrite=prep_result.rewrite,
                         original_prompt=user_text,
                         local_tier_name=local_tier,
                         pricing=None,
                         effort_overrides=effort_overrides,
+                        target_kinds=target_kinds,
+                        has_tools=has_tools,
+                        probed_status=probed_status,
                     )
-                    default_auto = resolve_auto_policy(options, local_serving_capable=local_serving_capable)
-                    ticket = TollTicket(
-                        ticket_id=f"toll-{uuid.uuid4().hex[:8]}",
-                        fingerprint=fingerprint,
-                        created_at=time.time(),
-                        timeout_s=tollbooth.default_timeout_s,
-                        options=options,
-                        default_auto_choice=default_auto,
-                        original_prompt=user_text,
-                        task_type=prep_result.analysis.task_type,
-                        complexity=prep_result.analysis.complexity,
-                    )
-                    route_choice, toll_mark, effort_override = tollbooth.hold_ticket(ticket)
 
-                    if "local" in route_choice:
-                        verdict = "local"
-                        target_tier = local_tier
-                        tier, fallback_reason = _resolve_tier(target_tier, tools)
-                        dispatch_messages = messages
-                        canonical_effort = "balanced"
-                        cli_effort_flags = []
-                        effort_flags = None
-                        model_override = None
-                        if route_choice.startswith("human:local") or route_choice == "human:local":
-                            escalations.save(messages, requested_tier="local")
+                    frontier_opts = [o for o in options if o.target != "local"]
+                    # If request has tools and no capable frontier target remains, no toll fires
+                    if has_tools and not frontier_opts:
+                        route_choice = "auto:local"
+                        toll_mark = "skipped"
+                        effort_override = None
                     else:
-                        target_cli = route_choice.split(":")[-1]
-                        target_tier = target_cli
-                        tier, fallback_reason = _resolve_tier(target_tier, tools)
-                        verdict = "frontier"
-                        backend = backends.get(tier)
-                        if backend and not backend.local:
-                            dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
-                        else:
-                            dispatch_messages = messages
-
-                        if effort_override:
-                            eff_overrides = {**(effort_overrides or {}), target_cli: effort_override}
-                            effort_plan = resolve_effort(
-                                complexity=prep_result.analysis.complexity,
-                                task_type=prep_result.analysis.task_type,
-                                target_cli=tier,
-                                overrides=eff_overrides,
-                            )
-                        else:
-                            selected_opt = next((o for o in options if o.target == target_cli), None)
-                            if selected_opt:
-                                effort_plan = selected_opt.effort
-                            else:
-                                effort_plan = resolve_effort(
-                                    complexity=prep_result.analysis.complexity,
-                                    task_type=prep_result.analysis.task_type,
-                                    target_cli=tier,
-                                    overrides=effort_overrides,
-                                )
-                        canonical_effort = effort_plan.canonical
-                        cli_effort_flags = effort_plan.cli_flags
-                        effort_flags = effort_plan.cli_flags
-                        model_override = effort_plan.model_override
-            else:
-                tier, fallback_reason = _resolve_tier(decision.tier, tools)
-                verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
-                dispatch_messages = messages
-                canonical_effort = "balanced"
-                cli_effort_flags = []
-                effort_flags = None
-                model_override = None
-
-        # A silent downgrade must leave a recoverable trail: archive the full
-        # conversation so a paste-ready brief can be distilled on demand.
-        escalation_id = (
-            escalations.save(messages, requested_tier=decision.tier)
-            if fallback_reason
-            else None
-        )
-        meta = _decision_meta(decision, fallback_reason, messages)
-        meta.update(
-            {
-                "escalation_id": escalation_id,
-                "fingerprint": fingerprint,
-                "preprocess_mark": preprocess_mark,
-                "verdict": verdict,
-                "max_fit": max_fit,
-                "canonical_effort": canonical_effort,
-                "cli_effort_flags": cli_effort_flags,
-                "toll": toll_mark,
-                "route_choice": route_choice,
-                "subtask_candidates": subtask_candidates_count,
-                "target_fits": target_fits_dict,
-            }
-        )
-
-        def kultivait_meta(local: bool) -> dict:
-            return {
-                "tier": tier,
-                "margin": decision.margin,
-                "escalated": decision.escalated,
-                "fallback_reason": fallback_reason,
-                "escalation_id": escalation_id,
-                "local": local,
-                "verdict": verdict,
-                "max_fit": max_fit,
-                "preprocess_mark": preprocess_mark,
-                "subtask_candidates": subtask_candidates_count,
-                "canonical_effort": canonical_effort,
-                "cli_effort_flags": cli_effort_flags,
-                "fingerprint": fingerprint,
-                "toll": toll_mark,
-                "route_choice": route_choice,
-            }
-
-        if body.get("stream"):
-            chunk_id = f"kult-{uuid.uuid4().hex[:12]}"
-            created = int(time.time())
-
-            def chunk(delta: dict, finish: str | None = None) -> str:
-                payload = {
-                    "id": chunk_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": tier,
-                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-                }
-                return f"data: {json.dumps(payload)}\n\n"
-
-            def sse():
-                yield chunk({"role": "assistant"})
-                for item in backends[tier].stream(
-                    dispatch_messages,
-                    tools=tools,
-                    effort_flags=effort_flags,
-                    model_override=model_override,
-                ):
-                    if isinstance(item, Completion):
-                        _record(tier, item, **meta)
-                        _capture(
-                            "chat_completion_completed",
-                            request,
-                            {
-                                "tier": tier,
-                                "local": item.local,
-                                "streaming": True,
-                                "fallback_reason": fallback_reason,
-                                "has_tool_calls": bool(item.tool_calls),
-                            },
+                        default_auto = resolve_auto_policy(options, local_serving_capable=local_serving_capable)
+                        ticket = TollTicket(
+                            ticket_id=f"toll-{uuid.uuid4().hex[:8]}",
+                            fingerprint=fingerprint,
+                            created_at=time.time(),
+                            timeout_s=tollbooth.default_timeout_s,
+                            options=options,
+                            default_auto_choice=default_auto,
+                            original_prompt=user_text,
+                            task_type=prep_result.analysis.task_type,
+                            complexity=prep_result.analysis.complexity,
                         )
-                        if item.tool_calls:
-                            yield chunk(
-                                {
-                                    "tool_calls": [
-                                        {**tc, "index": i}
-                                        for i, tc in enumerate(item.tool_calls)
-                                    ]
-                                }
-                            )
-                            yield chunk({}, finish="tool_calls")
-                        else:
-                            yield chunk({}, finish="stop")
-                    else:
-                        yield chunk({"content": item})
-                yield "data: [DONE]\n\n"
-
-            return StreamingResponse(sse(), media_type="text/event-stream")
-
-        completion = backends[tier].complete(
-            dispatch_messages,
-            tools=tools,
-            effort_flags=effort_flags,
-            model_override=model_override,
-        )
-        _record(tier, completion, **meta)
-        _capture(
-            "chat_completion_completed",
-            request,
-            {
-                "tier": tier,
-                "local": completion.local,
-                "streaming": False,
-                "fallback_reason": fallback_reason,
-                "has_tool_calls": bool(completion.tool_calls),
-            },
-        )
-        message: dict = {"role": "assistant", "content": completion.text or None}
-        if completion.tool_calls:
-            message["tool_calls"] = completion.tool_calls
-        return {
-            "id": f"kult-{uuid.uuid4().hex[:12]}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": tier,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": message,
-                    "finish_reason": "tool_calls" if completion.tool_calls else "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": completion.tokens_in,
-                "completion_tokens": completion.tokens_out,
-                "total_tokens": completion.tokens_in + completion.tokens_out,
-            },
-            "kultivait": kultivait_meta(completion.local),
-        }
-
-    @app.post("/v1/messages")
-    def anthropic_messages(body: dict, request: Request):
-        messages = _normalize(body.get("messages", []))
-        tools = body.get("tools")
-        system = body.get("system")
-        if system:
-            messages = [{"role": "system", "content": _text_of(system)}, *messages]
-        decision = _classify(messages)
-        fingerprint = _conversation_fingerprint(messages)
-        target_fits_dict = None
-        route_choice = None
-        toll_mark = "skipped"
-        escalation_id = None
-
-        is_contested = decision.escalated or decision.margin < router._margin
-
-        if not is_contested:
-            preprocess_mark = MARK_SKIPPED
-            target_tier = decision.tier
-            tier, fallback_reason = _resolve_tier(target_tier, tools)
-            verdict = "frontier" if (backends.get(tier) and not backends[tier].local) else "local"
-            max_fit = 0.0
-            subtask_candidates_count = 0
-            canonical_effort = "balanced"
-            cli_effort_flags = []
-            effort_flags = None
-            model_override = None
-            dispatch_messages = messages
-        else:
-            prep_result = run_preprocessor(
-                messages,
-                generate=preprocess_generate,
-                timeout_s=preprocess_timeout_s,
-            )
-            preprocess_mark = prep_result.mark
-            max_fit = prep_result.max_fit
-            subtask_candidates_count = len(prep_result.analysis.subtask_candidates)
-            target_fits_dict = {tf.target: tf.fit for tf in prep_result.target_fits}
-
-            if prep_result.mark == MARK_OK and prep_result.derived_verdict is not None:
-                derived_verdict = prep_result.derived_verdict
-                if derived_verdict == "local":
-                    verdict = "local"
-                    target_tier = router.capability_order[0]
-                    tier, fallback_reason = _resolve_tier(target_tier, tools)
-                    dispatch_messages = messages
-                    effort_plan = resolve_effort(
-                        complexity=prep_result.analysis.complexity,
-                        task_type=prep_result.analysis.task_type,
-                        target_cli=tier,
-                        overrides=effort_overrides,
-                    )
-                    canonical_effort = effort_plan.canonical
-                    cli_effort_flags = effort_plan.cli_flags
-                    effort_flags = None
-                    model_override = None
-                elif derived_verdict == "frontier":
-                    verdict = "frontier"
-                    target_tier = router.capability_order[-1]
-                    tier, fallback_reason = _resolve_tier(target_tier, tools)
-                    backend = backends.get(tier)
-                    if backend and not backend.local:
-                        dispatch_messages = _apply_rewrite(messages, prep_result.rewrite)
-                    else:
-                        dispatch_messages = messages
-                    effort_plan = resolve_effort(
-                        complexity=prep_result.analysis.complexity,
-                        task_type=prep_result.analysis.task_type,
-                        target_cli=tier,
-                        overrides=effort_overrides,
-                    )
-                    canonical_effort = effort_plan.canonical
-                    cli_effort_flags = effort_plan.cli_flags
-                    effort_flags = effort_plan.cli_flags
-                    model_override = effort_plan.model_override
-                else:  # contested
-                    user_text = next(
-                        (_text_of(m["content"]) for m in reversed(messages) if m.get("role") == "user"),
-                        "",
-                    )
-                    local_tier = router.capability_order[0]
-                    local_backend = backends.get(local_tier)
-                    local_serving_capable = bool(local_backend and local_backend.supports_tools)
-                    installed_clis = [name for name, b in backends.items() if not b.local]
-
-                    options = build_route_menu(
-                        target_fits=prep_result.target_fits,
-                        installed_clis=installed_clis,
-                        analysis=prep_result.analysis,
-                        rewrite=prep_result.rewrite,
-                        original_prompt=user_text,
-                        local_tier_name=local_tier,
-                        pricing=None,
-                        effort_overrides=effort_overrides,
-                    )
-                    default_auto = resolve_auto_policy(options, local_serving_capable=local_serving_capable)
-                    ticket = TollTicket(
-                        ticket_id=f"toll-{uuid.uuid4().hex[:8]}",
-                        fingerprint=fingerprint,
-                        created_at=time.time(),
-                        timeout_s=tollbooth.default_timeout_s,
-                        options=options,
-                        default_auto_choice=default_auto,
-                        original_prompt=user_text,
-                        task_type=prep_result.analysis.task_type,
-                        complexity=prep_result.analysis.complexity,
-                    )
-                    route_choice, toll_mark, effort_override = tollbooth.hold_ticket(ticket)
+                        route_choice, toll_mark, effort_override = tollbooth.hold_ticket(ticket)
 
                     if "local" in route_choice:
                         verdict = "local"
@@ -724,6 +443,230 @@ def create_app(
                 "target_fits": target_fits_dict,
             }
         )
+
+        def kultivait_meta(local: bool) -> dict:
+            return {
+                "tier": tier,
+                "margin": decision.margin,
+                "escalated": decision.escalated,
+                "fallback_reason": fallback_reason,
+                "escalation_id": escalation_id,
+                "local": local,
+                "verdict": verdict,
+                "max_fit": max_fit,
+                "preprocess_mark": preprocess_mark,
+                "subtask_candidates": subtask_candidates_count,
+                "canonical_effort": canonical_effort,
+                "cli_effort_flags": cli_effort_flags,
+                "fingerprint": fingerprint,
+                "toll": toll_mark,
+                "route_choice": route_choice,
+            }
+
+        return {
+            "tier": tier,
+            "fallback_reason": fallback_reason,
+            "verdict": verdict,
+            "dispatch_messages": dispatch_messages,
+            "effort_flags": effort_flags,
+            "model_override": model_override,
+            "canonical_effort": canonical_effort,
+            "cli_effort_flags": cli_effort_flags,
+            "route_choice": route_choice,
+            "toll_mark": toll_mark,
+            "target_fits_dict": target_fits_dict,
+            "max_fit": max_fit,
+            "subtask_candidates_count": subtask_candidates_count,
+            "escalation_id": escalation_id,
+            "meta": meta,
+            "kultivait_meta": kultivait_meta,
+            "decision": decision,
+        }
+
+    def _dispatch_complete(route_info: dict, tools: list[dict] | None) -> tuple[str, Completion]:
+        tier = route_info["tier"]
+        route_choice = route_info.get("route_choice") or ""
+        is_human_pick = route_choice.startswith("human:frontier:")
+
+        if not is_human_pick:
+            return tier, backends[tier].complete(
+                route_info["dispatch_messages"],
+                tools=tools,
+                effort_flags=route_info["effort_flags"],
+                model_override=route_info["model_override"],
+            )
+
+        # Human toll pick: unbounded failover across capable ranking
+        ranking = [tier]
+        for name in reversed(router.capability_order):
+            b = backends.get(name)
+            if b and name not in ranking and (not tools or b.supports_tools):
+                ranking.append(name)
+
+        last_exc = None
+        for candidate in ranking:
+            try:
+                comp = backends[candidate].complete(
+                    route_info["dispatch_messages"],
+                    tools=tools,
+                    effort_flags=route_info["effort_flags"],
+                    model_override=route_info["model_override"],
+                )
+                if candidate != tier:
+                    route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"
+                return candidate, comp
+            except Exception as e:
+                last_exc = e
+                continue
+        raise last_exc
+
+    def _dispatch_stream(route_info: dict, tools: list[dict] | None):
+        tier = route_info["tier"]
+        route_choice = route_info.get("route_choice") or ""
+        is_human_pick = route_choice.startswith("human:frontier:")
+
+        if not is_human_pick:
+            return tier, backends[tier].stream(
+                route_info["dispatch_messages"],
+                tools=tools,
+                effort_flags=route_info["effort_flags"],
+                model_override=route_info["model_override"],
+            )
+
+        ranking = [tier]
+        for name in reversed(router.capability_order):
+            b = backends.get(name)
+            if b and name not in ranking and (not tools or b.supports_tools):
+                ranking.append(name)
+
+        last_exc = None
+        for candidate in ranking:
+            try:
+                stream_iter = backends[candidate].stream(
+                    route_info["dispatch_messages"],
+                    tools=tools,
+                    effort_flags=route_info["effort_flags"],
+                    model_override=route_info["model_override"],
+                )
+                if candidate != tier:
+                    route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"
+                return candidate, stream_iter
+            except Exception as e:
+                last_exc = e
+                continue
+        raise last_exc
+
+    @app.post("/v1/chat/completions")
+    def chat_completions(body: dict, request: Request):
+        messages = _normalize(body.get("messages", []))
+        tools = body.get("tools")
+        decision = _classify(messages)
+        fingerprint = _conversation_fingerprint(messages)
+
+        route = _resolve_route(messages, tools, decision, fingerprint)
+        tier = route["tier"]
+        fallback_reason = route["fallback_reason"]
+        meta = route["meta"]
+        kultivait_meta = route["kultivait_meta"]
+
+        if body.get("stream"):
+            chunk_id = f"kult-{uuid.uuid4().hex[:12]}"
+            created = int(time.time())
+
+            def chunk(delta: dict, finish: str | None = None) -> str:
+                payload = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": tier,
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                }
+                return f"data: {json.dumps(payload)}\n\n"
+
+            def sse():
+                yield chunk({"role": "assistant"})
+                actual_tier, stream_iter = _dispatch_stream(route, tools)
+                for item in stream_iter:
+                    if isinstance(item, Completion):
+                        _record(actual_tier, item, **meta)
+                        _capture(
+                            "chat_completion_completed",
+                            request,
+                            {
+                                "tier": actual_tier,
+                                "local": item.local,
+                                "streaming": True,
+                                "fallback_reason": fallback_reason,
+                                "has_tool_calls": bool(item.tool_calls),
+                            },
+                        )
+                        if item.tool_calls:
+                            yield chunk(
+                                {
+                                    "tool_calls": [
+                                        {**tc, "index": i}
+                                        for i, tc in enumerate(item.tool_calls)
+                                    ]
+                                }
+                            )
+                            yield chunk({}, finish="tool_calls")
+                        else:
+                            yield chunk({}, finish="stop")
+                    else:
+                        yield chunk({"content": item})
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(sse(), media_type="text/event-stream")
+
+        actual_tier, completion = _dispatch_complete(route, tools)
+        _record(actual_tier, completion, **meta)
+        _capture(
+            "chat_completion_completed",
+            request,
+            {
+                "tier": actual_tier,
+                "local": completion.local,
+                "streaming": False,
+                "fallback_reason": fallback_reason,
+                "has_tool_calls": bool(completion.tool_calls),
+            },
+        )
+        message: dict = {"role": "assistant", "content": completion.text or None}
+        if completion.tool_calls:
+            message["tool_calls"] = completion.tool_calls
+        return {
+            "id": f"kult-{uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": actual_tier,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": "tool_calls" if completion.tool_calls else "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": completion.tokens_in,
+                "completion_tokens": completion.tokens_out,
+                "total_tokens": completion.tokens_in + completion.tokens_out,
+            },
+            "kultivait": kultivait_meta(completion.local),
+        }
+
+    @app.post("/v1/messages")
+    def anthropic_messages(body: dict, request: Request):
+        messages = _normalize(body.get("messages", []))
+        tools = body.get("tools")
+        system = body.get("system")
+        if system:
+            messages = [{"role": "system", "content": _text_of(system)}, *messages]
+        decision = _classify(messages)
+        fingerprint = _conversation_fingerprint(messages)
+
+        route = _resolve_route(messages, tools, decision, fingerprint)
+        tier = route["tier"]
+        meta = route["meta"]
         msg_id = f"kult-{uuid.uuid4().hex[:12]}"
 
         if body.get("stream"):
@@ -732,8 +675,7 @@ def create_app(
                 return f"event: {etype}\ndata: {json.dumps({'type': etype, **payload})}\n\n"
 
             def sse():
-                # input token count isn't known until the backend finishes;
-                # real usage arrives in message_delta, per-field zeros here.
+                actual_tier, stream_iter = _dispatch_stream(route, tools)
                 yield event(
                     "message_start",
                     {
@@ -741,7 +683,7 @@ def create_app(
                             "id": msg_id,
                             "type": "message",
                             "role": "assistant",
-                            "model": tier,
+                            "model": actual_tier,
                             "content": [],
                             "usage": {"input_tokens": 0, "output_tokens": 0},
                         }
@@ -749,19 +691,14 @@ def create_app(
                 )
                 block_idx = 0
                 started_text_block = False
-                for item in backends[tier].stream(
-                    dispatch_messages,
-                    tools=tools,
-                    effort_flags=effort_flags,
-                    model_override=model_override,
-                ):
+                for item in stream_iter:
                     if isinstance(item, Completion):
-                        _record(tier, item, **meta)
+                        _record(actual_tier, item, **meta)
                         _capture(
                             "message_completion_completed",
                             request,
                             {
-                                "tier": tier,
+                                "tier": actual_tier,
                                 "local": item.local,
                                 "streaming": True,
                                 "has_tool_calls": bool(item.tool_calls),
@@ -830,18 +767,13 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
-        completion = backends[tier].complete(
-            dispatch_messages,
-            tools=tools,
-            effort_flags=effort_flags,
-            model_override=model_override,
-        )
-        _record(tier, completion, **meta)
+        actual_tier, completion = _dispatch_complete(route, tools)
+        _record(actual_tier, completion, **meta)
         _capture(
             "message_completion_completed",
             request,
             {
-                "tier": tier,
+                "tier": actual_tier,
                 "local": completion.local,
                 "streaming": False,
                 "has_tool_calls": bool(completion.tool_calls),
@@ -874,7 +806,7 @@ def create_app(
             "id": msg_id,
             "type": "message",
             "role": "assistant",
-            "model": tier,
+            "model": actual_tier,
             "content": content_blocks,
             "stop_reason": "tool_use" if completion.tool_calls else "end_turn",
             "stop_sequence": None,

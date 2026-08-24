@@ -10,6 +10,7 @@ from kultivait.gates import Gate
 from kultivait.ledger import Ledger
 from kultivait.router import Router
 from kultivait.server import create_app
+from kultivait.tollbooth import TollboothQueue
 
 CENTROIDS = {
     "llama3.1:8b": np.array([1.0, 0.0]),
@@ -638,7 +639,7 @@ def test_tool_bearing_contested_request_preprocessed_with_tool_fallback(tmp_path
     assert resp.status_code == 200
     km = resp.json()["kultivait"]
     assert km["preprocess_mark"] == "ok"
-    assert km["subtask_candidates"] == 2
+    assert km["subtask_candidates"] == 0  # Suppressed on tool-bearing requests per ADR 0007
     # Frontier requested by preprocessor, but claude does not support tools -> falls back to llama
     assert km["fallback_reason"] == "tools_unsupported"
     assert resp.json()["model"] == "llama3.1:8b"
@@ -1092,6 +1093,111 @@ def test_api_backend_tool_bearing_anthropic_messages_no_fallback(tmp_path):
     assert "Berlin" in delta_ev["delta"]["partial_json"]
     msg_delta = next(d for t, d in parsed_events if t == "message_delta")
     assert msg_delta["delta"]["stop_reason"] == "tool_use"
+
+
+def test_api_served_tool_dispatch_records_no_escalation(tmp_path):
+    class FakeApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            return Completion(text="", tokens_in=50, tokens_out=20, cost_usd=0.001, local=False, tool_calls=[{"id": "c1", "type": "function", "function": {"name": "f1", "arguments": "{}"}}])
+        def stream(self, messages, tools=None, effort_flags=None, model_override=None):
+            yield self.complete(messages, tools, effort_flags, model_override)
+
+    store = EscalationStore(tmp_path / "escalations")
+    app = create_app(
+        router=Router(
+            centroids={"openai": np.array([1.0, 0.0]), "local": np.array([0.0, 1.0])},
+            capability_order=["local", "openai"],
+        ),
+        embed=lambda text: np.array([1.0, 0.0]),
+        backends={"openai": FakeApiBackend(), "local": FakeBackend("local", True)},
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=store,
+        toll_enabled=False,
+    )
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "run tool"}], "tools": [{"type": "function", "function": {"name": "f1"}}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["kultivait"]["fallback_reason"] is None
+    assert len(store.list()) == 0  # No escalation recorded!
+
+
+def test_human_toll_pick_failover_across_capable_ranking(tmp_path):
+    import threading
+
+    class BrokenApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            raise RuntimeError("Anthropic 503 Service Unavailable")
+
+    class BackupApiBackend:
+        supports_tools = True
+        local = False
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+            return Completion(text="Backup answered successfully", tokens_in=60, tokens_out=15, cost_usd=0.002, local=False)
+
+    store = EscalationStore(tmp_path / "escalations")
+    sample_res = {
+        "analysis": {"task_type": "architecture", "complexity": 8, "signals": [], "subtask_candidates": ["plan"]},
+        "rewrite": "Rewritten prompt",
+        "judge": {"local_sufficient": False, "confidence": 0.50, "targets": [{"target": "anthropic", "fit": 0.80, "effort": "medium"}]},
+    }
+
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl",
+        enabled=True,
+    )
+    tollbooth.register_presence("tty")
+
+    app = create_app(
+        router=Router(
+            centroids={"anthropic": np.array([0.5, 0.5]), "openai": np.array([0.5, 0.5]), "local": np.array([0.5, 0.5])},
+            capability_order=["local", "openai", "anthropic"],
+        ),
+        embed=lambda text: np.array([0.5, 0.5]),
+        backends={
+            "anthropic": BrokenApiBackend(),
+            "openai": BackupApiBackend(),
+            "local": FakeBackend("local", True),
+        },
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "distilled", compost_dir=tmp_path / "compost"),
+        escalations=store,
+        tollbooth=tollbooth,
+        preprocess_generate=lambda m, p: (json.dumps(sample_res), 0.05),
+        toll_enabled=True,
+    )
+    client = TestClient(app)
+
+    def answer_worker():
+        for _ in range(50):
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "human:frontier:anthropic")
+                break
+            time.sleep(0.02)
+
+    t = threading.Thread(target=answer_worker)
+    t.start()
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "contested prompt"}]},
+    )
+    t.join()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Failed on anthropic, failed over to openai (the next capable frontier backend in ranking)
+    assert data["model"] == "openai"
+    assert "Backup answered" in data["choices"][0]["message"]["content"]
+
 
 
 
