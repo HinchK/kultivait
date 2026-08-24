@@ -798,6 +798,22 @@ def cmd_distill_generate(args: argparse.Namespace) -> None:
                       "stats": report.stats}, indent=2))
 
 
+def cmd_distill_train(args: argparse.Namespace) -> None:
+    """D3: train a QLoRA adapter on a corpus under the resource ladder."""
+    from kultivait.distill.trainer import BASES, train
+
+    if args.base not in BASES:
+        print(f"unknown base {args.base!r}; known: {sorted(BASES)}")
+        return
+    adapter = Path(args.adapter_path) if args.adapter_path else (
+        KULTIVAIT_HOME / "distill-adapters" / args.base.replace(":", "-"))
+    report = train(args.base, Path(args.corpus_dir), iters=args.iters, epochs=args.epochs,
+                   adapter_path=adapter, resume=args.resume)
+    print(report.to_json())
+    if report.status != "ok":
+        raise SystemExit(1)
+
+
 def cmd_eval(args: argparse.Namespace) -> None:
     from kultivait.capability_eval import (
         format_eval_summary,
@@ -892,6 +908,15 @@ def main() -> None:
     gen_cmd.add_argument("--rewriter-cli", default="claude", help="rewriter teacher CLI")
     gen_cmd.add_argument("--seed", type=int, default=42, help="rng seed")
     gen_cmd.set_defaults(func=cmd_distill_generate)
+    train_cmd = distill_sub.add_parser("train", help="train a QLoRA adapter (resource ladder enforced)")
+    train_cmd.add_argument("--base", required=True,
+                           help="base key (qwen3.5:4b | llama-3.2-3b-instruct)")
+    train_cmd.add_argument("--corpus-dir", required=True, help="corpus directory (train.jsonl)")
+    train_cmd.add_argument("--iters", type=int, default=120)
+    train_cmd.add_argument("--epochs", type=int, default=1)
+    train_cmd.add_argument("--adapter-path", default=None, help="adapter output directory")
+    train_cmd.add_argument("--resume", action="store_true", help="resume from the adapter checkpoint")
+    train_cmd.set_defaults(func=cmd_distill_train)
 
     choose = sub.add_parser("choose", help="answer pending tolls out-of-band")
     choose.set_defaults(func=cmd_choose)
