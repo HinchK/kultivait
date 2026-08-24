@@ -503,6 +503,7 @@ class AnthropicBackend:
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-25",
             "content-type": "application/json",
         }
 
@@ -575,6 +576,7 @@ class AnthropicBackend:
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-25",
             "content-type": "application/json",
         }
 
@@ -762,7 +764,15 @@ class OpenAIBackend:
 
         prompt_toks = int(usage.get("prompt_tokens", len(json.dumps(o_msgs)) // 4))
         comp_toks = int(usage.get("completion_tokens", len(text) // 4))
-        cost_usd = (prompt_toks * self.price_in + comp_toks * self.price_out) / 1e6
+        pt_details = usage.get("prompt_tokens_details") or {}
+        cached_toks = int(pt_details.get("cached_tokens", 0))
+        uncached_toks = max(0, prompt_toks - cached_toks)
+
+        cost_usd = (
+            uncached_toks * self.price_in
+            + cached_toks * (self.price_in * 0.5)
+            + comp_toks * self.price_out
+        ) / 1e6
 
         return Completion(
             text=text,
@@ -826,7 +836,15 @@ class OpenAIBackend:
 
         prompt_toks = int(usage.get("prompt_tokens", len(json.dumps(o_msgs)) // 4))
         comp_toks = int(usage.get("completion_tokens", len(text) // 4))
-        cost_usd = (prompt_toks * self.price_in + comp_toks * self.price_out) / 1e6
+        pt_details = usage.get("prompt_tokens_details") or {}
+        cached_toks = int(pt_details.get("cached_tokens", 0))
+        uncached_toks = max(0, prompt_toks - cached_toks)
+
+        cost_usd = (
+            uncached_toks * self.price_in
+            + cached_toks * (self.price_in * 0.5)
+            + comp_toks * self.price_out
+        ) / 1e6
 
         yield Completion(
             text=text,
