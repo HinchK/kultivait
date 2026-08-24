@@ -33,7 +33,7 @@ The per-boundary re-weighing of model + effort for the next sub-task in a conver
 _Avoid_: re-route, re-classify (that's the embedding router's output)
 
 **Sub-task candidates**:
-The decomposition a preprocessor emits for compound or tool-bearing prompts, returned in-band as structured metadata for the client's agent loop.
+The decomposition a preprocessor emits for compound non-tool prompts, returned in-band as structured metadata for the client's agent loop. Suppressed on tool-bearing requests — agent harnesses plan their own work.
 _Avoid_: plan, task list
 
 **Route menu**:
@@ -43,4 +43,44 @@ _Avoid_: model picker, target list
 **Auto-policy**:
 The verdict-default dispatch taken when a trolltoll expires unanswered — local when the local tier can serve, else the top-ranked frontier target; the missed menu archives escalation-style.
 _Avoid_: fallback (that's _resolve_tier's silent downgrade), default route
+
+**Frontier provider**:
+A pay-per-token REST source of frontier models — direct (Anthropic, OpenAI) or aggregated (OpenRouter) — registered by hand as a serving target pinned to one exact model id; registered is not served, serving also requires a resolvable key.
+_Avoid_: cloud provider, vendor, API target
+
+**Dialect**:
+The wire grammar an endpoint speaks — chat-completions or messages. Clients arrive in either dialect; a frontier provider serves one (OpenRouter serves both), so the proxy translates at the seam.
+_Avoid_: format, protocol, schema
+
+**Metered cost**:
+The cash a dispatch actually bills — real spend from a pay-per-token frontier provider; subscription and local dispatches carry none.
+_Avoid_: actual cost, real cost, spend (unqualified)
+
+**Notional cost**:
+The value a dispatch represents at its target's own pay-per-token prices — what the same tokens would have cost metered. The lens savings are measured in.
+_Avoid_: estimated cost (that's the tollbooth's pre-dispatch figure), virtual cost
+
+**Reference price**:
+The single declared per-token price the whole season's baseline is struck at — flat by default, pinnable to one exact model. The stable yardstick kept-in-pocket is measured against.
+_Avoid_: baseline price (that's the computed season total), list price
+
+**Capability filter**:
+The route-menu rule that candidacy requires being able to execute the request as sent — tool-bearing requests drop targets that cannot take tools, so the menu may shrink below three options rather than offer broken choices.
+_Avoid_: tool filter, eligibility check, tool gate
+
+**Effort projection**:
+The mapping of a canonical effort level (fast/balanced/deep) onto a target's native mechanism — CLI flags or API wire fields. Canonical is the shared currency; projection is owned by the target's backend and may diverge per provider.
+_Avoid_: effort mapping, effort flags (that's one CLI mechanism), reasoning config
+
+**Capability eval**:
+The harness that dispatches identical tool-loop tasks directly to backends — bypassing routing — and scores them by a cross-family model judge, accuracy only. Measures what each target can do; savings stay the harvest's lane.
+_Avoid_: dogfooding benchmark (that's the harvest), router benchmark, accuracy-vs-savings harness
+
+**Presence probe**:
+The live authenticated check a route menu runs per provider at build time to confirm a target's key works right now; a failed probe drops the target from the menu, not from serving.
+_Avoid_: health check, validation (no state is stored), key check
+
+**Buffered relay**:
+The dispatch posture where the proxy buffers a provider's full stream before relaying it — client streaming survives, but failures surface clean and pre-stream, never as truncated content.
+_Avoid_: passthrough streaming, store-and-forward, mid-stream errors
 
