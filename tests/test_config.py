@@ -198,3 +198,82 @@ def test_detect_first_seen_cli_wins_per_role():
     roles2 = {t.role: t for t in config_codex_first.tiers}
     assert roles2["architect"].name == "codex"
 
+
+def test_config_roundtrip_api_tier(tmp_path):
+    config = Config(
+        tiers=[
+            TierSpec(name="local", role="simple", kind="ollama", model="qwen3:14b"),
+            TierSpec(
+                name="anthropic-direct",
+                role="architect",
+                kind="api",
+                model="claude-3-7-sonnet-20250219",
+                price_in=3.0,
+                price_out=15.0,
+            ),
+            TierSpec(
+                name="openai-direct",
+                role="architect",
+                kind="api",
+                model="gpt-4o",
+                price_in=2.5,
+                price_out=10.0,
+            ),
+        ],
+    )
+    path = tmp_path / "config.toml"
+    save_config(config, path)
+    loaded = load_config(path)
+    assert loaded == config
+    assert loaded.tiers[1].kind == "api"
+    assert loaded.tiers[1].model == "claude-3-7-sonnet-20250219"
+    assert loaded.tiers[2].price_in == 2.5
+    assert loaded.tiers[2].price_out == 10.0
+
+
+def test_load_config_unpriced_api_tier_emits_warning(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+runtime = "ollama"
+chat_base_url = "http://localhost:11434"
+
+[[tiers]]
+name = "unpriced-api"
+role = "architect"
+kind = "api"
+model = "custom-model"
+"""
+    )
+    import pytest
+    with pytest.warns(UserWarning, match="Tier 'unpriced-api' has kind='api' but no pricing configured"):
+        config = load_config(path)
+
+    api_tier = config.tiers[0]
+    assert api_tier.name == "unpriced-api"
+    assert api_tier.kind == "api"
+    assert api_tier.price_in == 3.0
+    assert api_tier.price_out == 15.0
+
+
+def test_provider_defaults_table():
+    from kultivait.config import PROVIDER_DEFAULTS, ProviderDefaults
+    assert "anthropic" in PROVIDER_DEFAULTS
+    assert "openai" in PROVIDER_DEFAULTS
+    assert "openrouter" in PROVIDER_DEFAULTS
+
+    anthropic = PROVIDER_DEFAULTS["anthropic"]
+    assert anthropic.model == "claude-3-7-sonnet-20250219"
+    assert anthropic.token_field == "max_tokens"
+    assert anthropic.price_in == 3.0
+    assert anthropic.price_out == 15.0
+
+    openai = PROVIDER_DEFAULTS["openai"]
+    assert openai.token_field == "max_completion_tokens"
+    assert openai.price_in > 0
+    assert openai.price_out > 0
+
+    openrouter = PROVIDER_DEFAULTS["openrouter"]
+    assert openrouter.token_field == "max_tokens"
+
+
