@@ -782,7 +782,11 @@ def cmd_distill_generate(args: argparse.Namespace) -> None:
     if not seeds:
         print("no seed anchors in the harvest (escalation pool empty)")
         return
-    fns = real_teacher_fns(judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli)
+    fns = real_teacher_fns(
+        judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli,
+        judge_model=getattr(args, "judge_model", None) or None,
+        vary_model=getattr(args, "vary_model", None) or None,
+    )
     rng = random.Random(args.seed)
 
     def ledger_tag(**entry):
@@ -1000,6 +1004,11 @@ def main() -> None:
                          help="harvest directory for seed anchors")
     gen_cmd.add_argument("--judge-cli", default="opencode", help="judge teacher CLI (neutral family)")
     gen_cmd.add_argument("--rewriter-cli", default="claude", help="rewriter teacher CLI")
+    gen_cmd.add_argument("--judge-model", default="x-ai/grok-4.6",
+                         help="neutral-family API judge model via OpenRouter (the tier labels; "
+                              "default per the ADR 0016 amendment)")
+    gen_cmd.add_argument("--vary-model", default="qwen3:14b",
+                         help="local model drafting variations (executor work, free)")
     gen_cmd.add_argument("--seed", type=int, default=42, help="rng seed")
     gen_cmd.set_defaults(func=cmd_distill_generate)
     train_cmd = distill_sub.add_parser("train", help="train a QLoRA adapter (resource ladder enforced)")

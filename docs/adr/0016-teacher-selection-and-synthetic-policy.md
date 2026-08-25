@@ -22,3 +22,7 @@ Teachers are **two named roles on installed CLI channels** (subscription-covered
 - Stratum metadata feeds #49's per-stratum eval slices and the augment rung's targeting; dataset versioning inherits provenance + strata as first-class fields.
 - If a GLM-family target ever enters the route menu, the judge teacher's neutrality breaks — the ADR's rule requires re-selecting the judge teacher at that point.
 - Term canonized in CONTEXT.md: **Agreement filter**.
+
+## Amendment (2026-08-24): three-way teacher split on API dispatch
+
+The judge teacher is re-anchored on API dispatch. The two CLI-channel roles (GLM via opencode as judge; claude as rewriter) become a three-way split by judgment weight: **variations from a local model** (default qwen3:14b — executor work, free; local models are executors, not calibrators), **tier labels from a neutral-family API teacher** (default x-ai/grok-4.6 via OpenRouter — validated live at ~$0.003/label; deepseek and mistral are excluded by the account's privacy guardrails, recorded as a standing relaxation option), **rewrites from the claude CLI** (unchanged). The cross-family rule and the re-selection trigger carry over: if the labeler's family ever gains a fitted route target, the judge teacher re-selects. Cost basis: ~$5–8 per 1.5k-pair corpus build. The agreement filter's independence requirement now explicitly spans implementations: the two judge passes (variation intent is set by the local drafter; the label comes from the neutral API teacher) never share weights.

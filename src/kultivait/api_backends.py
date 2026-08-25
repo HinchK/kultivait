@@ -296,7 +296,18 @@ _REASONING_MODEL_PATTERNS = (
 
 
 def model_supports_reasoning(model: str) -> bool:
-    m = (model or "").lower()
+    """Curated table first (exact pinned ids, config.py), family patterns for
+    the unpinned tail (the #64 fix generalized into the provider table)."""
+    from kultivait.config import MODEL_SUPPORTS_REASONING
+
+    m = (model or "").lower().strip()
+    if m in MODEL_SUPPORTS_REASONING:
+        return MODEL_SUPPORTS_REASONING[m]
+    # basename match for provider-prefixed ids not yet curated
+    base = m.rsplit("/", 1)[-1]
+    for known, flag in MODEL_SUPPORTS_REASONING.items():
+        if known.rsplit("/", 1)[-1] == base and "/" in known:
+            return flag
     return any(p in m for p in _REASONING_MODEL_PATTERNS)
 
 

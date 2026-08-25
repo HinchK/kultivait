@@ -53,6 +53,31 @@ class ProviderDefaults:
     token_field: str      # "max_tokens" | "max_completion_tokens"
 
 
+# Curated per-model capability metadata (the #64 dogfooding fix generalized):
+# exact pinned ids -> whether the model accepts reasoning-effort params.
+# Providers 400 on reasoning fields for non-reasoning models (live evidence:
+# Google Vertex rejected the `thinking` translation for llama-3.3-70b).
+# Unknown ids fall back to the family-pattern list in api_backends.
+MODEL_SUPPORTS_REASONING: dict[str, bool] = {
+    # OpenAI
+    "gpt-4o": False, "openai/gpt-4o": False,
+    "gpt-4o-mini": False, "openai/gpt-4o-mini": False,
+    "openai/gpt-5.6-sol": True, "openai/gpt-5.6-terra": True,
+    "openai/gpt-5.6-luna": True, "openai/gpt-5.5": True,
+    # Anthropic
+    "anthropic/claude-sonnet-5": True, "claude-sonnet-5": True,
+    "anthropic/claude-haiku-4.5": True,
+    # Meta — no reasoning params
+    "meta-llama/llama-3.3-70b-instruct": False,
+    # Neutral teacher families (ADR 0016 amendment)
+    "x-ai/grok-4.6": True,
+    "deepseek/deepseek-v4-flash-0731": True,
+    "deepseek/deepseek-v4-pro-0813": True,
+    # Google
+    "google/gemini-3.7-flash": False,
+}
+
+
 PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
     "anthropic": ProviderDefaults(
         model="claude-3-7-sonnet-20250219",

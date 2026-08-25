@@ -169,6 +169,12 @@ Unpriced API tiers load a conservative default ($3.00 in / $15.00 out per MTok) 
 
 API keys resolve from three sources with fixed precedence:
 
+> **Funded balance is a separate precondition.** A key can authenticate and pass
+> the route menu's presence probe while the account holds no credits — OpenRouter
+> then answers every completion with HTTP 402 ("insufficient credits"). **Probe
+> success ≠ serve success**: the probe checks auth, not balance. Fund the account
+> before expecting dispatches to land (the REST evidence round's #62 finding).
+
 1. **Environment variables** (highest precedence):
    ```bash
    export ANTHROPIC_API_KEY="sk-ant-..."

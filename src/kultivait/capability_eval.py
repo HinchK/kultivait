@@ -89,24 +89,30 @@ def select_cross_family_judge(
     target_tier: str,
     available_backends: dict[str, Backend],
 ) -> tuple[str, Backend]:
-    """Selects a judge backend whose provider family strictly differs from target.
-    Raises ValueError if no cross-family judge is available."""
+    """Selects an API-kind judge backend whose provider family strictly differs
+    from the target. CLI judges are excluded (#65: the auto-selected CLI judge
+    timed out at 600s — judge candidates must be api-kind). Raises ValueError
+    if no cross-family API judge is available."""
     target_family = get_family(target_tier)
+
+    def is_api_kind(b: Backend) -> bool:
+        # API backends: not local AND client-tools-capable; CLI backends run
+        # their own agent loops (supports_tools=False) and time out as judges.
+        return getattr(b, "supports_tools", False) is True and not getattr(b, "local", True)
+
     cross_candidates = [
         (name, b) for name, b in available_backends.items()
-        if get_family(name) != target_family
+        if get_family(name) != target_family and is_api_kind(b)
     ]
 
     if not cross_candidates:
         raise ValueError(
-            f"No cross-family judge available for target '{target_tier}' (family: {target_family}). "
-            f"Cross-family model judging requires at least one backend from a different provider family."
+            f"No cross-family API judge available for target '{target_tier}' "
+            f"(family: {target_family}). Judge candidates must be api-kind backends "
+            f"(CLI judges are excluded — they time out under judging loads). "
+            f"Register an api tier from a different family, or pin judge_backend "
+            f"explicitly when calling run_capability_eval."
         )
-
-    # Prefer frontier API backends over local backends for judging
-    frontier_candidates = [c for c in cross_candidates if not getattr(c[1], "local", False)]
-    if frontier_candidates:
-        return frontier_candidates[0]
     return cross_candidates[0]
 
 

@@ -1,217 +1,512 @@
 [
-  {
-    "id": "file_search_and_edit",
-    "name": "File Search and Bug Fix",
-    "description": "Locate a broken function in the repository and apply the correct patch.",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Find the function `calculate_tax` in the codebase, check why it throws ZeroDivisionError on empty tax rates, and fix it using the apply_patch tool."
-      }
-    ],
-    "tools": [
-      {
-        "type": "function",
-        "function": {
-          "name": "search_code",
-          "description": "Search for code patterns or symbol definitions across files.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "query": {
-                "type": "string",
-                "description": "The symbol or string pattern to search for."
-              }
-            },
-            "required": ["query"]
-          }
-        }
+ {
+  "id": "file_search_and_edit",
+  "name": "File Search and Bug Fix",
+  "description": "Locate a broken function in the repository and apply the correct patch.",
+  "messages": [
+   {
+    "role": "user",
+    "content": "Find the function `calculate_tax` in the codebase, check why it throws ZeroDivisionError on empty tax rates, and fix it using the apply_patch tool."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search for code patterns or symbol definitions across files.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "The symbol or string pattern to search for."
+       }
       },
-      {
-        "type": "function",
-        "function": {
-          "name": "read_file",
-          "description": "Read the complete contents of a file.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "description": "Relative file path to read."
-              }
-            },
-            "required": ["path"]
-          }
-        }
-      },
-      {
-        "type": "function",
-        "function": {
-          "name": "apply_patch",
-          "description": "Apply a unified diff or code replacement to a file.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "description": "File path to patch."
-              },
-              "replacement": {
-                "type": "string",
-                "description": "The new replacement code."
-              }
-            },
-            "required": ["path", "replacement"]
-          }
-        }
-      }
-    ],
-    "mock_responses": {
-      "search_code": "src/billing/tax.py:14: def calculate_tax(amount: float, rates: list[float]) -> float:",
-      "read_file": "def calculate_tax(amount: float, rates: list[float]) -> float:\n    total_rate = sum(rates) / len(rates)\n    return amount * total_rate\n",
-      "apply_patch": "Patch applied successfully to src/billing/tax.py"
-    },
-    "max_turns": 4,
-    "rubric": {
-      "version": "v1",
-      "criteria": [
-        "Invoked search_code or read_file to inspect calculate_tax",
-        "Identified len(rates) zero division bug on empty list",
-        "Invoked apply_patch with safe handling for empty rates (e.g. if not rates: return 0.0)"
-      ],
-      "expected_tools": ["search_code", "apply_patch"],
-      "passing_score": 0.8
+      "required": [
+       "query"
+      ]
+     }
     }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read the complete contents of a file.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Relative file path to read."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a unified diff or code replacement to a file.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path to patch."
+       },
+       "replacement": {
+        "type": "string",
+        "description": "The new replacement code."
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "src/billing/tax.py:14: def calculate_tax(amount: float, rates: list[float]) -> float:",
+   "read_file": "def calculate_tax(amount: float, rates: list[float]) -> float:\n    total_rate = sum(rates) / len(rates)\n    return amount * total_rate\n",
+   "apply_patch": "Patch applied successfully to src/billing/tax.py"
   },
-  {
-    "id": "schema_migration_tool",
-    "name": "Database Schema Migration",
-    "description": "Inspect existing database table columns and generate migration statement.",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Check the current schema of table 'users' and call add_column to add a nullable string column 'avatar_url'."
-      }
-    ],
-    "tools": [
-      {
-        "type": "function",
-        "function": {
-          "name": "get_table_schema",
-          "description": "Retrieve schema columns and types for a given table name.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "table_name": {
-                "type": "string",
-                "description": "Name of table."
-              }
-            },
-            "required": ["table_name"]
-          }
-        }
-      },
-      {
-        "type": "function",
-        "function": {
-          "name": "add_column",
-          "description": "Execute DDL migration to add a column to a table.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "table_name": {
-                "type": "string"
-              },
-              "column_name": {
-                "type": "string"
-              },
-              "column_type": {
-                "type": "string"
-              },
-              "nullable": {
-                "type": "boolean"
-              }
-            },
-            "required": ["table_name", "column_name", "column_type"]
-          }
-        }
-      }
-    ],
-    "mock_responses": {
-      "get_table_schema": "table users (id integer primary key, email varchar(255) not null, created_at timestamp)",
-      "add_column": "Column avatar_url added to table users"
-    },
-    "max_turns": 3,
-    "rubric": {
-      "version": "v1",
-      "criteria": [
-        "Checked table schema before modifying",
-        "Called add_column with table_name='users', column_name='avatar_url', column_type='varchar/string/text', nullable=True"
-      ],
-      "expected_tools": ["get_table_schema", "add_column"],
-      "passing_score": 0.8
-    }
-  },
-  {
-    "id": "log_diagnostic_pipeline",
-    "name": "Log Diagnostic Pipeline",
-    "description": "Query server logs to isolate high error rates and restart failing worker.",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Query recent error logs to find which worker service is crashing, and restart that specific service."
-      }
-    ],
-    "tools": [
-      {
-        "type": "function",
-        "function": {
-          "name": "query_logs",
-          "description": "Query recent logs filtered by level or service.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "level": {
-                "type": "string",
-                "enum": ["INFO", "WARN", "ERROR", "FATAL"]
-              }
-            },
-            "required": ["level"]
-          }
-        }
-      },
-      {
-        "type": "function",
-        "function": {
-          "name": "restart_service",
-          "description": "Restart a specific background worker service.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "service_name": {
-                "type": "string",
-                "description": "Service name to restart."
-              }
-            },
-            "required": ["service_name"]
-          }
-        }
-      }
-    ],
-    "mock_responses": {
-      "query_logs": "2026-08-23 20:00:01 [ERROR] worker-indexer OOM killed (exit code 137)\n2026-08-23 20:00:05 [ERROR] worker-indexer failed to reconnect",
-      "restart_service": "Service worker-indexer restarted successfully"
-    },
-    "max_turns": 3,
-    "rubric": {
-      "version": "v1",
-      "criteria": [
-        "Queried logs with level ERROR",
-        "Identified worker-indexer as the crashing service",
-        "Invoked restart_service with service_name='worker-indexer'"
-      ],
-      "expected_tools": ["query_logs", "restart_service"],
-      "passing_score": 0.8
-    }
+  "max_turns": 4,
+  "rubric": {
+   "version": "v1",
+   "criteria": [
+    "Invoked search_code or read_file to inspect calculate_tax",
+    "Identified len(rates) zero division bug on empty list",
+    "Invoked apply_patch with safe handling for empty rates (e.g. if not rates: return 0.0)"
+   ],
+   "expected_tools": [
+    "search_code",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
   }
+ },
+ {
+  "id": "schema_migration_tool",
+  "name": "Database Schema Migration",
+  "description": "Inspect existing database table columns and generate migration statement.",
+  "messages": [
+   {
+    "role": "user",
+    "content": "Check the current schema of table 'users' and call add_column to add a nullable string column 'avatar_url'."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_table_schema",
+     "description": "Retrieve schema columns and types for a given table name.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "table_name": {
+        "type": "string",
+        "description": "Name of table."
+       }
+      },
+      "required": [
+       "table_name"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "add_column",
+     "description": "Execute DDL migration to add a column to a table.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "table_name": {
+        "type": "string"
+       },
+       "column_name": {
+        "type": "string"
+       },
+       "column_type": {
+        "type": "string"
+       },
+       "nullable": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "table_name",
+       "column_name",
+       "column_type"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "get_table_schema": "table users (id integer primary key, email varchar(255) not null, created_at timestamp)",
+   "add_column": "Column avatar_url added to table users"
+  },
+  "max_turns": 3,
+  "rubric": {
+   "version": "v1",
+   "criteria": [
+    "Checked table schema before modifying",
+    "Called add_column with table_name='users', column_name='avatar_url', column_type='varchar/string/text', nullable=True"
+   ],
+   "expected_tools": [
+    "get_table_schema",
+    "add_column"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "log_diagnostic_pipeline",
+  "name": "Log Diagnostic Pipeline",
+  "description": "Query server logs to isolate high error rates and restart failing worker.",
+  "messages": [
+   {
+    "role": "user",
+    "content": "Query recent error logs to find which worker service is crashing, and restart that specific service."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "query_logs",
+     "description": "Query recent logs filtered by level or service.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "level": {
+        "type": "string",
+        "enum": [
+         "INFO",
+         "WARN",
+         "ERROR",
+         "FATAL"
+        ]
+       }
+      },
+      "required": [
+       "level"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "restart_service",
+     "description": "Restart a specific background worker service.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "service_name": {
+        "type": "string",
+        "description": "Service name to restart."
+       }
+      },
+      "required": [
+       "service_name"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "query_logs": "2026-08-23 20:00:01 [ERROR] worker-indexer OOM killed (exit code 137)\n2026-08-23 20:00:05 [ERROR] worker-indexer failed to reconnect",
+   "restart_service": "Service worker-indexer restarted successfully"
+  },
+  "max_turns": 3,
+  "rubric": {
+   "version": "v1",
+   "criteria": [
+    "Queried logs with level ERROR",
+    "Identified worker-indexer as the crashing service",
+    "Invoked restart_service with service_name='worker-indexer'"
+   ],
+   "expected_tools": [
+    "query_logs",
+    "restart_service"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "exemplar_simple_port_lookup",
+  "name": "Config Port Lookup (simple exemplar)",
+  "description": "Simple band exemplar: well-specified single-tool lookup, no hardness features.",
+  "max_turns": 2,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Read the file config/app.toml and report the value of the `port` setting. Just the number."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file from the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "port = 4114\nruntime = \"ollama\""
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "simple",
+   "features": [],
+   "criteria": [
+    "Invoked read_file on config/app.toml",
+    "Reported port 4114"
+   ],
+   "expected_tools": [
+    "read_file"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "exemplar_contested_ambiguous_retry",
+  "name": "Ambiguous Retry Improvement (contested exemplar)",
+  "description": "Contested band exemplar: underspecified success criteria \u2014 the model must choose what 'better' means.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "The dispatch retries in src/proxy/dispatch.py feel fragile. Make them better."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "def dispatch(argv):\n    for attempt in range(3):\n        try:\n            return run(argv)\n        except Exception:\n            continue\n    raise",
+   "apply_patch": "Patch applied successfully to src/proxy/dispatch.py"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "ambiguous_spec"
+   ],
+   "criteria": [
+    "Inspected the existing retry logic before changing it",
+    "Chose a defensible interpretation of 'better' (backoff, jitter, cap, or error typing) and stated it",
+    "Applied a patch implementing that interpretation"
+   ],
+   "expected_tools": [
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "exemplar_escalatory_schema_migration_chain",
+  "name": "Chained Schema Migration (escalatory exemplar)",
+  "description": "Escalatory band exemplar: multi-step dependency chain, distractor tools, context accumulation.",
+  "max_turns": 5,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Migrate the users table to the new audit schema: discover which tables reference it, read the referencing schemas, and write ONE migration that preserves the foreign keys. Only touch what the references require."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "list_tables",
+     "description": "List tables with their referencing counts",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_schema",
+     "description": "Read a table's schema; requires the table name from a prior discovery step",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "table": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "table"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_migration",
+     "description": "Write a migration; consumes discovered references",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "sql": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "sql"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_shell",
+     "description": "Run a shell command on the host",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "cmd": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cmd"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_webhook",
+     "description": "Notify the team channel",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "list_tables": "users (referenced_by: orders.user_id, sessions.user_id, audit_log.actor_id)",
+   "read_schema": "orders: user_id FK->users.id ON DELETE CASCADE; sessions: user_id FK->users.id ON DELETE SET NULL",
+   "write_migration": "Migration written",
+   "run_shell": "(distractor \u2014 not required by the task)",
+   "send_webhook": "(distractor \u2014 not required by the task)"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "dependency_chain",
+    "distractor_tools",
+    "context_accumulation"
+   ],
+   "criteria": [
+    "Discovered references via list_tables BEFORE reading schemas",
+    "Read schemas only for referenced tables (orders, sessions) \u2014 not blind reads",
+    "Migration preserves BOTH FK behaviors distinctly (CASCADE vs SET NULL)",
+    "Never invoked the distractor tools (run_shell, send_webhook)",
+    "Completed within the turn budget without repeating a discovery step"
+   ],
+   "expected_tools": [
+    "list_tables",
+    "read_schema",
+    "write_migration"
+   ],
+   "passing_score": 0.8
+  }
+ }
 ]

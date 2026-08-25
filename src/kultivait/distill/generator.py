@@ -246,15 +246,21 @@ def real_teacher_fns(
     rewriter_cli: str = "claude",
     judge_command: "list[str] | None" = None,
     rewriter_command: "list[str] | None" = None,
+    judge_model: "str | None" = None,
+    vary_model: "str | None" = None,
 ) -> dict:
-    """Real teacher callables over the existing CLI backends (ADR 0016).
+    """Real teacher callables (ADR 0016 as amended by the #69 anchor).
 
-    The judge teacher defaults to the opencode CLI (GLM family — no fitted
-    route target); the rewriter to the claude CLI. Dispatches ride
-    CLIBackend's print-mode templates; token/cost estimates come back on the
-    Completion for ledger tagging.
+    Three-way split by judgment weight: VARIATIONS from a local model when
+    ``vary_model`` is given (executor work — creative diversity, free);
+    TIER LABELS from the neutral-family API judge when ``judge_model`` is
+    given (the judgmental act; e.g. x-ai/grok-4.6 via OpenRouter — the
+    only live-validated neutral family after the account's privacy
+    guardrails excluded deepseek/mistral); REWRITES from the rewriter CLI
+    (claude per ADR 0016). Falls back to CLI judge dispatch when no
+    judge_model is given.
     """
-    from kultivait.backends import CLIBackend
+    from kultivait.backends import CLIBackend, OllamaBackend
     from kultivait.config import CLI_PRICING
 
     def backend(cli: str, command) -> CLIBackend:
@@ -262,18 +268,60 @@ def real_teacher_fns(
         p_in, p_out = CLI_PRICING.get(cli, (3.0, 15.0))
         return CLIBackend(command=cmd, price_in=p_in, price_out=p_out)
 
-    judge = backend(judge_cli, judge_command)
     rewriter = backend(rewriter_cli, rewriter_command)
 
-    def _ask(be: CLIBackend, instruction: str) -> str:
+    def _ask(be, instruction: str) -> str:
         completion = be.complete([{"role": "user", "content": instruction}])
         return completion.text.strip()
 
-    def vary_fn(seed_prompt: str, band: str, task_type: str) -> str:
-        return _ask(judge, GENERATION_PROMPT.format(band=band, task_type=task_type, seed=seed_prompt))
+    # judge: neutral-family API dispatch when pinned, else the CLI channel
+    if judge_model:
+        from kultivait.api_backends import OpenRouterBackend
+        from kultivait.credentials import resolve_provider_key
 
-    def label_fn(prompt: str) -> str:
-        return _ask(judge, LABEL_PROMPT.format(prompt=prompt))
+        key = resolve_provider_key("openrouter")
+        if not key:
+            raise ValueError("judge_model requires an OpenRouter key (none resolved)")
+        judge_be = OpenRouterBackend(model=judge_model, api_key=key,
+                                     price_in=2.0, price_out=6.0)
+
+        def label_fn(prompt: str) -> str:
+            completion = judge_be.complete(
+                [{"role": "user", "content": LABEL_PROMPT.format(prompt=prompt)}])
+            return completion.text.strip()
+    else:
+        judge = backend(judge_cli, judge_command)
+
+        def label_fn(prompt: str) -> str:
+            return _ask(judge, LABEL_PROMPT.format(prompt=prompt))
+
+    # variations: local model when pinned (executor work), else the judge channel
+    if vary_model:
+        local = OllamaBackend(vary_model)
+
+        def vary_fn(seed_prompt: str, band: str, task_type: str) -> str:
+            completion = local.complete(
+                [{"role": "user", "content": GENERATION_PROMPT.format(
+                    band=band, task_type=task_type, seed=seed_prompt)}])
+            return completion.text.strip()
+    elif judge_model:
+        from kultivait.api_backends import OpenRouterBackend
+        from kultivait.credentials import resolve_provider_key
+        key = resolve_provider_key("openrouter")
+        judge_be = OpenRouterBackend(model=judge_model, api_key=key,
+                                     price_in=2.0, price_out=6.0)
+
+        def vary_fn(seed_prompt: str, band: str, task_type: str) -> str:
+            completion = judge_be.complete(
+                [{"role": "user", "content": GENERATION_PROMPT.format(
+                    band=band, task_type=task_type, seed=seed_prompt)}])
+            return completion.text.strip()
+    else:
+        judge = backend(judge_cli, judge_command)
+
+        def vary_fn(seed_prompt: str, band: str, task_type: str) -> str:
+            return _ask(judge, GENERATION_PROMPT.format(
+                band=band, task_type=task_type, seed=seed_prompt))
 
     def rewrite_fn(prompt: str, tier: str) -> str:
         return _ask(rewriter, REWRITE_PROMPT.format(prompt=prompt, tier=tier))
