@@ -112,4 +112,9 @@ _Avoid_: shadow mode (that's the config state), canary, A/B test (no traffic spl
 The explicit provider prompt-cache boundary injected by the proxy on the stable agent-loop prefix (tools + system prompt) at translation time before dispatch.
 _Avoid_: cache tag, prompt cache marker, cache point
 
+**Kept-via-cache**:
+The separately computed cache-savings line (full-price minus discounted input cost over cache-bearing dispatches).
+_Avoid_: cache savings (unqualified), cache discount
+
+
 
