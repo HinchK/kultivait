@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -129,7 +130,7 @@ def export_distillate(
     # so dequantize on fuse — ollama cannot convert packed-quant dtypes
     # (U32); the fp16 fused model quantizes at import instead (ADR 0014).
     fuse_argv = [
-        "python", "-m", "mlx_lm.fuse",
+        sys.executable, "-m", "mlx_lm.fuse",
         "--model", spec.hf_repo,
         "--adapter-path", str(adapter_path),
         "--save-path", str(fused_dir),

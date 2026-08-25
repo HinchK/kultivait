@@ -199,8 +199,8 @@ def test_per_epoch_checkpoint_every_iters(corpus, tmp_path):
     train("qwen3.5:4b", corpus, iters=8, epochs=2, runner=runner, adapter_path=adapter,
           sampler=lambda gb: 2.0)
     # iters split across epochs -> checkpoint interval = iters per epoch
-    assert "--save-every-iters" in runner.calls[0]["argv"]
-    i = runner.calls[0]["argv"].index("--save-every-iters")
+    assert "--save-every" in runner.calls[0]["argv"]
+    i = runner.calls[0]["argv"].index("--save-every")
     assert runner.calls[0]["argv"][i + 1] == "4"
 
 
