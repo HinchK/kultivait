@@ -108,3 +108,8 @@ _Avoid_: self-check, label verification, double-labeling
 The post-response background run of a gate-passing distillate on contested traffic — compared against the incumbent without touching the live response, logged outside the main ledger until the human cuts over.
 _Avoid_: shadow mode (that's the config state), canary, A/B test (no traffic splits)
 
+**Cache breakpoint**:
+The explicit provider prompt-cache boundary injected by the proxy on the stable agent-loop prefix (tools + system prompt) at translation time before dispatch.
+_Avoid_: cache tag, prompt cache marker, cache point
+
+
