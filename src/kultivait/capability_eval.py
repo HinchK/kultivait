@@ -29,6 +29,7 @@ class TaskCase:
     messages: list[dict]
     tools: list[dict]
     mock_responses: dict[str, str] = field(default_factory=dict)
+    context_text: str = ""  # materialized repo context (H3/#90); rides as system
     max_turns: int = 4
     rubric: dict = field(default_factory=dict)
 
@@ -130,6 +131,12 @@ def load_corpus(corpus_path: Path | None = None) -> list[TaskCase]:
     data = json.loads(path.read_text(encoding="utf-8"))
     tasks = []
     for item in data:
+        context_text = ""
+        if item.get("context_files"):
+            from kultivait.context_gen import materialize
+            context_text = materialize(
+                item["context_files"], item.get("context_seed", item["id"]),
+                far_fact=item.get("far_fact", ""))
         tasks.append(
             TaskCase(
                 id=item["id"],
@@ -138,6 +145,7 @@ def load_corpus(corpus_path: Path | None = None) -> list[TaskCase]:
                 messages=item.get("messages", []),
                 tools=item.get("tools", []),
                 mock_responses=item.get("mock_responses", {}),
+                context_text=context_text,
                 max_turns=item.get("max_turns", 4),
                 rubric=item.get("rubric", {}),
             )
@@ -197,6 +205,8 @@ def run_task(
 ) -> tuple[list[dict], list[dict], int, int, float]:
     """Dispatches a multi-turn tool-loop task directly to a backend."""
     messages = [dict(m) for m in task.messages]
+    if task.context_text:
+        messages.insert(0, {"role": "system", "content": task.context_text})
     tool_calls_made: list[dict] = []
     tot_in = 0
     tot_out = 0

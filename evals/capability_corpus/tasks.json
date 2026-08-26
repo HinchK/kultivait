@@ -377,7 +377,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=0 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "exemplar_contested_ambiguous_retry"
  },
  {
   "id": "exemplar_escalatory_schema_migration_chain",
@@ -526,7 +541,8 @@
     "Read schemas only for referenced tables (orders, sessions) \u2014 not blind reads",
     "Migration preserves BOTH FK behaviors distinctly (CASCADE vs SET NULL)",
     "Never invoked the distractor tools (run_shell, send_webhook)",
-    "Completed within the turn budget without repeating a discovery step"
+    "Completed within the turn budget without repeating a discovery step",
+    "Migration distinguishes the two FK retention behaviors exactly as the deep-context policy requires (orders CASCADE, sessions SET NULL)"
    ],
    "expected_tools": [
     "list_tables",
@@ -535,7 +551,35 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "exemplar_escalatory_schema_migration_chain",
+  "far_fact": "FK RETENTION POLICY (authoritative): orders.user_id is ON DELETE CASCADE; sessions.user_id is ON DELETE SET NULL. Any migration not preserving this distinction is rejected at review."
  },
  {
   "id": "simple_count_tests",
@@ -758,7 +802,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=0 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_ambiguous_perf"
  },
  {
   "id": "contested_chain_two_step",
@@ -834,7 +893,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_chain_two_step"
  },
  {
   "id": "contested_distractor_single",
@@ -933,7 +1007,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=1 + recovery_steps=1 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_distractor_single"
  },
  {
   "id": "contested_context_state",
@@ -1004,7 +1093,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=1 + recovery_steps=0 + slack 1 (band contested) (judgment override: conversation/ordering shape)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_context_state"
  },
  {
   "id": "contested_ambiguous_scope",
@@ -1089,7 +1193,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_ambiguous_scope"
  },
  {
   "id": "contested_chain_verify",
@@ -1194,7 +1313,22 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band contested)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    380
+   ],
+   [
+    "src/serving/dispatch.py",
+    380
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "contested_chain_verify"
  },
  {
   "id": "esc_audit_chain_distract",
@@ -1327,7 +1461,8 @@
     "Searched for the emitter before reading anything",
     "Read the discovered emitter's code (not unrelated services)",
     "Wrote one normalizer handling the string-typed field",
-    "Never invoked the distractor tools"
+    "Never invoked the distractor tools",
+    "Attributes the malformed amount_cents to the billing emitter specifically (the sole producer per the ownership record), not payments"
    ],
    "expected_tools": [
     "search_code",
@@ -1336,7 +1471,35 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_audit_chain_distract",
+  "far_fact": "EMITTER OWNERSHIP (authoritative): services/billing/emitter.py is the ONLY producer of amount_cents; the payments service was migrated off it in 2026-01."
  },
  {
   "id": "esc_ambiguous_migration",
@@ -1446,7 +1609,8 @@
     "Discovered references via list_tables BEFORE the migration",
     "Migration preserves both FK behaviors distinctly (CASCADE vs SET NULL)",
     "Named the consumer-contract preservation step explicitly",
-    "Diagnosed the schema-validation rejection and restated the migration with the FK strategy named"
+    "Diagnosed the schema-validation rejection and restated the migration with the FK strategy named",
+    "Split boundary follows the archived-by-status precedent recorded deep in the repository context (age-based splits were rejected)"
    ],
    "expected_tools": [
     "list_tables",
@@ -1455,7 +1619,35 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_ambiguous_migration",
+  "far_fact": "SPLIT BOUNDARY PRECEDENT (authoritative): the 2026-03 arch review fixed 'open vs archived by status' as the canonical events-table split; age-based splits were explicitly rejected."
  },
  {
   "id": "esc_distractor_ambiguity",
@@ -1579,7 +1771,34 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_distractor_ambiguity"
  },
  {
   "id": "esc_context_chain",
@@ -1684,7 +1903,34 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_context_chain"
  },
  {
   "id": "esc_full_stack_multi",
@@ -1833,7 +2079,34 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_full_stack_multi"
  },
  {
   "id": "esc_escalation_sourced_fanout",
@@ -1944,6 +2217,33 @@
    ],
    "passing_score": 0.8,
    "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band escalatory) (judgment override: conversation/ordering shape)"
-  }
+  },
+  "context_files": [
+   [
+    "src/core/ledger.py",
+    440
+   ],
+   [
+    "src/core/router.py",
+    420
+   ],
+   [
+    "src/serving/dispatch.py",
+    400
+   ],
+   [
+    "src/policy/budgets.py",
+    380
+   ],
+   [
+    "src/arch/constants.py",
+    200
+   ],
+   [
+    "src/ops/runbooks.py",
+    260
+   ]
+  ],
+  "context_seed": "esc_escalation_sourced_fanout"
  }
 ]
