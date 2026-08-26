@@ -1099,7 +1099,7 @@ def test_api_served_tool_dispatch_records_no_escalation(tmp_path):
     class FakeApiBackend:
         supports_tools = True
         local = False
-        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None, **kwargs):
             return Completion(text="", tokens_in=50, tokens_out=20, cost_usd=0.001, local=False, tool_calls=[{"id": "c1", "type": "function", "function": {"name": "f1", "arguments": "{}"}}])
         def stream(self, messages, tools=None, effort_flags=None, model_override=None):
             yield self.complete(messages, tools, effort_flags, model_override)
@@ -1133,13 +1133,13 @@ def test_human_toll_pick_failover_across_capable_ranking(tmp_path):
     class BrokenApiBackend:
         supports_tools = True
         local = False
-        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None, **kwargs):
             raise RuntimeError("Anthropic 503 Service Unavailable")
 
     class BackupApiBackend:
         supports_tools = True
         local = False
-        def complete(self, messages, tools=None, effort_flags=None, model_override=None):
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None, **kwargs):
             return Completion(text="Backup answered successfully", tokens_in=60, tokens_out=15, cost_usd=0.002, local=False)
 
     store = EscalationStore(tmp_path / "escalations")

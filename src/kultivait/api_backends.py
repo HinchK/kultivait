@@ -696,6 +696,9 @@ class AnthropicBackend:
             cost_usd=cost_usd,
             local=False,
             tool_calls=tool_calls,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_create,
+            cache_ttl=self.cache_ttl if (cache_read or cache_create) else "",
         )
 
     def stream(
@@ -957,6 +960,9 @@ class OpenAIBackend:
             cost_usd=cost_usd,
             local=False,
             tool_calls=tool_calls,
+            cache_read_tokens=cached_toks,
+            cache_write_tokens=cache_write_toks,
+            cache_ttl=self.cache_ttl if (cached_toks or cache_write_toks) else "",
         )
 
     def stream(
@@ -1206,14 +1212,18 @@ class OpenRouterBackend:
         prompt_toks = int(usage.get("prompt_tokens", len(json.dumps(o_msgs)) // 4))
         comp_toks = int(usage.get("completion_tokens", len(text) // 4))
 
+        pt_details = usage.get("prompt_tokens_details") or {}
+        cached_toks = int(pt_details.get("cached_tokens", 0))
+        cache_write_toks = int(pt_details.get("cache_write_tokens", 0))
+        a_read = int(usage.get("cache_read_input_tokens", 0))
+        a_write = int(usage.get("cache_creation_input_tokens", 0))
+        or_reads = max(cached_toks, a_read)
+        or_writes = max(cache_write_toks, a_write)
         if "cost" in usage and usage["cost"] is not None:
             cost_usd = float(usage["cost"])  # provider ground truth (ADR 0005)
         else:
             # cache-aware fallback (#82): dialect-normalized math when the
             # provider's cost field is absent
-            pt_details = usage.get("prompt_tokens_details") or {}
-            cached_toks = int(pt_details.get("cached_tokens", 0))
-            cache_write_toks = int(pt_details.get("cache_write_tokens", 0))
             uncached_toks = max(0, prompt_toks - cached_toks)
             cost_usd = (
                 uncached_toks * self.price_in
@@ -1229,6 +1239,9 @@ class OpenRouterBackend:
             cost_usd=cost_usd,
             local=False,
             tool_calls=tool_calls,
+            cache_read_tokens=or_reads,
+            cache_write_tokens=or_writes,
+            cache_ttl=self.cache_ttl if (or_reads or or_writes) else "",
         )
 
     def stream(
@@ -1295,6 +1308,11 @@ class OpenRouterBackend:
         prompt_toks = int(usage.get("prompt_tokens", len(json.dumps(o_msgs)) // 4))
         comp_toks = int(usage.get("completion_tokens", len(text) // 4))
 
+        pt_details = usage.get("prompt_tokens_details") or {}
+        or_cached = int(pt_details.get("cached_tokens", 0))
+        or_write = int(pt_details.get("cache_write_tokens", 0))
+        or_a_read = int(usage.get("cache_read_input_tokens", 0))
+        or_a_write = int(usage.get("cache_creation_input_tokens", 0))
         if "cost" in usage and usage["cost"] is not None:
             cost_usd = float(usage["cost"])  # provider ground truth (ADR 0005)
         else:

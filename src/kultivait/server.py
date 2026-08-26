@@ -189,6 +189,7 @@ def create_app(
 
     def _record(tier: str, completion: Completion, **decision_meta) -> None:
         backend = backends.get(tier)
+        cache_price_in = float(getattr(backend, "price_in", 0.0) or 0.0)
         # Metered cash: API backend reports real metered spend; CLI/local is 0.0
         # Notional value: value at target's own pricing
         is_api = bool(backend and not backend.local and getattr(backend, "supports_tools", False))
@@ -210,6 +211,10 @@ def create_app(
             cost_usd=metered_cash,
             notional_usd=notional,
             truncated=completion.truncated,
+            cache_read_tokens=getattr(completion, "cache_read_tokens", 0),
+            cache_write_tokens=getattr(completion, "cache_write_tokens", 0),
+            cache_ttl=getattr(completion, "cache_ttl", ""),
+            cache_price_in=cache_price_in,
             **decision_meta,
         )
 
@@ -501,6 +506,7 @@ def create_app(
             "tier": tier,
             "fallback_reason": fallback_reason,
             "verdict": verdict,
+            "fingerprint": fingerprint,
             "dispatch_messages": dispatch_messages,
             "effort_flags": effort_flags,
             "model_override": model_override,
@@ -528,6 +534,7 @@ def create_app(
                 tools=tools,
                 effort_flags=route_info["effort_flags"],
                 model_override=route_info["model_override"],
+                fingerprint=route_info.get("fingerprint"),
             )
 
         # Human toll pick: unbounded failover across capable ranking
@@ -545,6 +552,7 @@ def create_app(
                     tools=tools,
                     effort_flags=route_info["effort_flags"],
                     model_override=route_info["model_override"],
+                    fingerprint=route_info.get("fingerprint"),
                 )
                 if candidate != tier:
                     route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"

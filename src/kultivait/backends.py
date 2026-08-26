@@ -36,6 +36,10 @@ class Completion:
     local: bool
     tool_calls: "list[dict] | None" = None
     truncated: bool = False
+    # Cache telemetry (ADR 0005 amendment; api backends populate from usage)
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_ttl: str = ""
 
 
 def is_truncated(prompt_eval_count: int, num_ctx: int) -> bool:
