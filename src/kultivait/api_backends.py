@@ -311,6 +311,98 @@ def model_supports_reasoning(model: str) -> bool:
     return any(p in m for p in _REASONING_MODEL_PATTERNS)
 
 
+# ----------------------------------------------------------------------
+# Cache breakpoint injection engine (ADR 0018 / #83)
+# ----------------------------------------------------------------------
+
+# Prompts below this token estimate are not worth a breakpoint: every current
+# provider minimum is >= 512 and the common tier floor is 1,024 (#75). Below
+# it, providers silently don't cache -- so we silently don't ask.
+MIN_CACHE_PREFIX_TOKENS = 1024
+
+
+def estimate_prefix_tokens(tools: "list[dict] | None", system: "str | None") -> int:
+    """Rough token estimate of the stable agent-loop prefix (tools + system)."""
+    n = 0
+    for t in tools or []:
+        n += len(json.dumps(t)) // 4
+    if isinstance(system, str):
+        n += len(system) // 4
+    elif isinstance(system, list):
+        n += len(json.dumps(system)) // 4
+    return n
+
+
+def system_for_cache(messages: "list[dict] | None") -> "str | None":
+    """Extract the hoisted system text from OpenAI-dialect messages (the stable
+    prefix's system component for cache estimation)."""
+    for m in messages or []:
+        if m.get("role") in ("system", "developer"):
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                return c
+            if isinstance(c, list):
+                return " ".join(b.get("text", "") for b in c if isinstance(b, dict))
+    return None
+
+def strip_client_cache_control(tools: "list[dict] | None",
+                               messages: "list[dict] | None") -> "tuple[list, list]":
+    """The proxy is the sole cache-policy owner (ADR 0018): client-sent
+    cache_control markers never survive to the wire."""
+    def clean(obj):
+        if isinstance(obj, dict):
+            return {k: clean(v) for k, v in obj.items() if k != "cache_control"}
+        if isinstance(obj, list):
+            return [clean(x) for x in obj]
+        return obj
+
+    return clean(list(tools or [])), clean(list(messages or []))
+
+
+def apply_cache_policy(body: dict, *, prefix_tokens: int,
+                       session_id: "str | None" = None,
+                       cache_ttl: str = "5m") -> dict:
+    """Inject canonical Anthropic-form cache_control on the stable prefix.
+
+    Placement per #78's instability finding: explicit breakpoints at BOTH
+    levels of the prefix hierarchy -- the LAST tool (level 1; tools changes
+    invalidate everything below) and the system block (level 2) -- so history
+    growth above the system boundary cannot displace the cache anchor.
+    Below MIN_CACHE_PREFIX_TOKENS: no injection, no session_id (silently).
+    """
+    if prefix_tokens < MIN_CACHE_PREFIX_TOKENS:
+        return body
+    marker = {"type": "ephemeral"}
+    if (cache_ttl or "5m") == "1h":
+        marker["ttl"] = "1h"
+    tools = body.get("tools")
+    if isinstance(tools, list) and tools:
+        tools = [dict(t) for t in tools]
+        tools[-1]["cache_control"] = dict(marker)
+        body["tools"] = tools
+    system = body.get("system")
+    if isinstance(system, str) and system.strip():
+        body["system"] = [{"type": "text", "text": system, "cache_control": dict(marker)}]
+    elif isinstance(system, list) and system:
+        system = [dict(b) for b in system]
+        system[0]["cache_control"] = dict(marker)
+        body["system"] = system
+    else:
+        # OpenAI-dialect body: the stable system rides as a message row -- mark it
+        for m in body.get("messages", []):
+            if m.get("role") in ("system", "developer"):
+                c = m.get("content")
+                if isinstance(c, str):
+                    m["content"] = [{"type": "text", "text": c, "cache_control": dict(marker)}]
+                elif isinstance(c, list) and c:
+                    c = [dict(b) for b in c]
+                    c[0]["cache_control"] = dict(marker)
+                    m["content"] = c
+                break
+    if session_id:
+        body["session_id"] = session_id[:256]  # OpenRouter bound
+    return body
+
 # Cache write multipliers by TTL (ADR 0005 amendment / #75 findings):
 # 5m writes price at 1.25x base input; 1h writes at 2.0x.
 CACHE_WRITE_MULTIPLIER = {"5m": 1.25, "1h": 2.0}
@@ -535,6 +627,7 @@ class AnthropicBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Completion:
         if effort_flags:
@@ -548,6 +641,7 @@ class AnthropicBackend:
         a_msgs, system = cc_messages_to_anthropic(messages)
         a_tools = cc_tools_to_anthropic(tools)
 
+        a_tools, a_msgs = strip_client_cache_control(a_tools, a_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": a_msgs,
@@ -558,6 +652,11 @@ class AnthropicBackend:
             body["system"] = system
         if a_tools:
             body["tools"] = a_tools
+        if a_tools or system:
+            apply_cache_policy(body,
+                               prefix_tokens=estimate_prefix_tokens(a_tools, system),
+                               session_id=None,  # session_id is OpenRouter-only
+                               cache_ttl=self.cache_ttl)
         if prov_eff:
             body["output_config"] = {"effort": prov_eff}
 
@@ -607,6 +706,7 @@ class AnthropicBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Iterator[str | Completion]:
         if effort_flags:
@@ -620,6 +720,7 @@ class AnthropicBackend:
         a_msgs, system = cc_messages_to_anthropic(messages)
         a_tools = cc_tools_to_anthropic(tools)
 
+        a_tools, a_msgs = strip_client_cache_control(a_tools, a_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": a_msgs,
@@ -630,6 +731,11 @@ class AnthropicBackend:
             body["system"] = system
         if a_tools:
             body["tools"] = a_tools
+        if a_tools or system:
+            apply_cache_policy(body,
+                               prefix_tokens=estimate_prefix_tokens(a_tools, system),
+                               session_id=None,  # session_id is OpenRouter-only
+                               cache_ttl=self.cache_ttl)
         if prov_eff:
             body["output_config"] = {"effort": prov_eff}
 
@@ -784,6 +890,7 @@ class OpenAIBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Completion:
         if effort_flags:
@@ -797,6 +904,7 @@ class OpenAIBackend:
         o_msgs = anthropic_messages_to_openai(messages)
         o_tools = anthropic_tools_to_openai(tools)
 
+        o_tools, o_msgs = strip_client_cache_control(o_tools, o_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": o_msgs,
@@ -806,6 +914,11 @@ class OpenAIBackend:
         }
         if o_tools:
             body["tools"] = o_tools
+        # cache policy: anthropic-form canonical; OpenRouter translates upstream
+        apply_cache_policy(body,
+                           prefix_tokens=estimate_prefix_tokens(o_tools, system_for_cache(o_msgs)),
+                           session_id=fingerprint,
+                           cache_ttl=self.cache_ttl)
         if prov_eff:
             body["reasoning_effort"] = prov_eff
 
@@ -854,6 +967,7 @@ class OpenAIBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Iterator[str | Completion]:
         if effort_flags:
@@ -867,6 +981,7 @@ class OpenAIBackend:
         o_msgs = anthropic_messages_to_openai(messages)
         o_tools = anthropic_tools_to_openai(tools)
 
+        o_tools, o_msgs = strip_client_cache_control(o_tools, o_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": o_msgs,
@@ -876,6 +991,11 @@ class OpenAIBackend:
         }
         if o_tools:
             body["tools"] = o_tools
+        # cache policy: anthropic-form canonical; OpenRouter translates upstream
+        apply_cache_policy(body,
+                           prefix_tokens=estimate_prefix_tokens(o_tools, system_for_cache(o_msgs)),
+                           session_id=fingerprint,
+                           cache_ttl=self.cache_ttl)
         if prov_eff:
             body["reasoning_effort"] = prov_eff
 
@@ -1034,6 +1154,7 @@ class OpenRouterBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Completion:
         if effort_flags:
@@ -1047,6 +1168,7 @@ class OpenRouterBackend:
         o_msgs = anthropic_messages_to_openai(messages)
         o_tools = anthropic_tools_to_openai(tools)
 
+        o_tools, o_msgs = strip_client_cache_control(o_tools, o_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": o_msgs,
@@ -1056,6 +1178,11 @@ class OpenRouterBackend:
         }
         if o_tools:
             body["tools"] = o_tools
+        # cache policy: anthropic-form canonical; OpenRouter translates upstream
+        apply_cache_policy(body,
+                           prefix_tokens=estimate_prefix_tokens(o_tools, system_for_cache(o_msgs)),
+                           session_id=fingerprint,
+                           cache_ttl=self.cache_ttl)
         if prov_eff:
             if model_supports_reasoning(model_override or self.model):
                 body["reasoning_effort"] = prov_eff
@@ -1112,6 +1239,7 @@ class OpenRouterBackend:
         model_override: str | None = None,
         canonical_effort: str | None = None,
         max_tokens: int | None = None,
+        fingerprint: str | None = None,
         **kwargs,
     ) -> Iterator[str | Completion]:
         if effort_flags:
@@ -1125,6 +1253,7 @@ class OpenRouterBackend:
         o_msgs = anthropic_messages_to_openai(messages)
         o_tools = anthropic_tools_to_openai(tools)
 
+        o_tools, o_msgs = strip_client_cache_control(o_tools, o_msgs)
         body: dict = {
             "model": model_override or self.model,
             "messages": o_msgs,
@@ -1134,6 +1263,11 @@ class OpenRouterBackend:
         }
         if o_tools:
             body["tools"] = o_tools
+        # cache policy: anthropic-form canonical; OpenRouter translates upstream
+        apply_cache_policy(body,
+                           prefix_tokens=estimate_prefix_tokens(o_tools, system_for_cache(o_msgs)),
+                           session_id=fingerprint,
+                           cache_ttl=self.cache_ttl)
         if prov_eff:
             if model_supports_reasoning(model_override or self.model):
                 body["reasoning_effort"] = prov_eff
