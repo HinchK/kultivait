@@ -50,6 +50,8 @@ class EvalArtifact:
     judge_family: str
     judge_reasoning: str
     rubric_version: str
+    judges: "dict | None" = None       # H4: {"a": {name, score, passed}, "b": {...}}
+    agreement_flag: "bool | None" = None
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -67,6 +69,8 @@ class EvalArtifact:
             "judge_name": self.judge_name,
             "judge_family": self.judge_family,
             "judge_reasoning": self.judge_reasoning,
+            "judges": self.judges,
+            "agreement_flag": self.agreement_flag,
             "rubric_version": self.rubric_version,
             "ts": self.ts,
         }
@@ -376,6 +380,9 @@ def run_capability_eval(
     artifacts_dir: Path | None = None,
     judge_backend: Backend | None = None,
     judge_name: str | None = None,
+    dual_judge: bool = False,
+    judge_b_backend: "Backend | None" = None,
+    judge_b_name: "str | None" = None,
     ledger: Ledger | None = None,
 ) -> dict:
     """Runs capability evaluation across targets x effort levels, saving per-case artifacts
@@ -410,10 +417,28 @@ def run_capability_eval(
 
         j_family = get_family(j_name)
 
+        # H4 (#91): dual-judge — a second pinned judge from a distinct family,
+        # also cross-family vs the target. Guardrails raise before any dispatch.
+        jb_name = jb_b = None
+        if dual_judge:
+            if not (judge_b_backend and judge_b_name):
+                raise ValueError("dual_judge requires judge_b_backend + judge_b_name")
+            if get_family(judge_b_name) == get_family(j_name):
+                raise ValueError(
+                    f"Dual judges must come from distinct families: "
+                    f"'{j_name}' and '{judge_b_name}' are both '{j_family}'.")
+            if get_family(judge_b_name) == get_family(target):
+                raise ValueError(
+                    f"Cross-family violation: judge_b '{judge_b_name}' and target "
+                    f"'{target}' are both in family '{get_family(target)}'.")
+            jb_name, jb_b = judge_b_name, judge_b_backend
+
         for effort in effort_levels:
             passed_count = 0
             total_score = 0.0
             task_count = len(eval_corpus)
+            band_agree: dict = {}
+            band_scores: dict = {}
 
             for task in eval_corpus:
                 transcript, tool_calls, tokens_in, tokens_out, cost_usd = run_task(
@@ -430,14 +455,37 @@ def run_capability_eval(
                     rubric=task.rubric,
                     task_desc=task.description,
                 )
-
-                # H2 (#89): anti-looping efficiency — repeated identical calls
-                # cost score; blind back-to-back repeats cost double.
+                # H2 efficiency applies to judge A's verdict
                 mult, eff_notes = efficiency_penalty(tool_calls)
                 if mult < 1.0:
                     score = round(score * mult, 4)
                     reasoning = (reasoning + " | " + "; ".join(eff_notes)).strip(" |")
                     passed = passed and score >= task.rubric.get("passing_score", 0.8)
+
+                judges_field = None
+                a_score_raw = score
+                agreement_flag = None
+                if jb_b is not None:
+                    # H4 (#91): judge B scores the SAME transcript
+                    b_passed, b_score, b_reasoning = judge_transcript(
+                        judge_backend=jb_b,
+                        transcript=transcript,
+                        rubric=task.rubric,
+                        task_desc=task.description,
+                    )
+                    b_mult, _ = efficiency_penalty(tool_calls)
+                    if b_mult < 1.0:
+                        b_score = round(b_score * b_mult, 4)
+                        b_passed = b_passed and b_score >= task.rubric.get("passing_score", 0.8)
+                    agreement_flag = passed == b_passed
+                    score = round((score + b_score) / 2.0, 4)
+                    passed = passed and b_passed  # mean path: both must pass
+                    judges_field = {"a": {"name": j_name, "score": a_score_raw,
+                                          "passed": (a_score_raw >= task.rubric.get("passing_score", 0.8))},
+                                    "b": {"name": jb_name, "score": b_score, "passed": b_passed}}
+                    reasoning = f"[{j_name}] {reasoning} || [{jb_name}] {b_reasoning}"
+                    band_agree.setdefault(task.rubric.get("band", "?"), []).append(agreement_flag)
+                    band_scores.setdefault(task.rubric.get("band", "?"), []).append(score)
 
                 if passed:
                     passed_count += 1
@@ -454,10 +502,12 @@ def run_capability_eval(
                     cost_usd=cost_usd,
                     passed=passed,
                     score=score,
-                    judge_name=j_name,
-                    judge_family=j_family,
+                    judge_name=(f"{j_name}+{jb_name}" if jb_b is not None else j_name),
+                    judge_family=(f"{j_family}/{get_family(jb_name)}" if jb_b is not None else j_family),
                     judge_reasoning=reasoning,
                     rubric_version=task.rubric.get("version", "v1"),
+                    judges=judges_field,
+                    agreement_flag=agreement_flag,
                 )
                 artifacts.append(artifact)
 
@@ -467,13 +517,25 @@ def run_capability_eval(
 
             pass_rate = passed_count / task_count if task_count else 0.0
             avg_score = total_score / task_count if task_count else 0.0
-            summary_targets[target][effort] = {
+            cell = {
                 "pass_rate": pass_rate,
                 "avg_score": avg_score,
                 "passed": passed_count,
                 "total": task_count,
                 "judge_family": j_family,
             }
+            if jb_b is not None:
+                all_agree = [a for v in band_agree.values() for a in v]
+                cell["judges"] = [j_name, jb_name]
+                cell["inter_judge_agreement"] = (
+                    round(sum(all_agree) / len(all_agree), 4) if all_agree else 0.0)
+                cell["bands"] = {
+                    b: {"avg_score": round(sum(s) / len(s), 4) if s else 0.0,
+                        "agreement": (round(sum(v) / len(v), 4) if v else 0.0),
+                        "n": len(s)}
+                    for b, s, v in ((b, band_scores.get(b, []), band_agree.get(b, []))
+                                    for b in set(band_scores) | set(band_agree))}
+            summary_targets[target][effort] = cell
 
     rubric_v = eval_corpus[0].rubric.get("version", "v1") if eval_corpus else "v1"
 
