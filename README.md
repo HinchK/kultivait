@@ -204,6 +204,60 @@ API keys resolve from three sources with fixed precedence:
 
 > **Security note**: API keys never live in `config.toml` and are never logged or exposed.
 
+### Prompt caching & cache economics
+
+For pay-per-token API frontier providers, kultivait features proxy-owned **prompt caching** ([ADR 0018](docs/adr/0018-cache-breakpoints.md) & [ADR 0005](docs/adr/0005-cost-model-duality.md) amendment). Multi-turn agent loops automatically benefit from upstream prefix caching without manual prompt engineering.
+
+#### 1. Proxy-Owned Breakpoints & Client Stripping
+- **Single Deterministic Policy**: The proxy is the sole cache policy owner. Client-provided `cache_control` headers or properties (e.g. from upstream coding agents) are recursively stripped before translation.
+- **Dual-Level Placement**: For prompts exceeding `MIN_CACHE_PREFIX_TOKENS` (1,024 tokens), kultivait injects canonical cache breakpoints at two levels:
+  1. **Last Tool Definition** (`tools[-1]`): Anchors the shared tool schemas (level 1).
+  2. **System Prompt**: Anchors system instructions (level 2), preventing terminal cache collapse as message history grows across turns.
+- **Session Stickiness**: The `conversation fingerprint` (hash of system prompt and first user message) is forwarded as `session_id` on OpenRouter dispatches to ensure routing affinity to warm cache instances.
+- **Presence Probe Bypass**: Cache-bearing dispatches skip the presence probe to preserve upstream sticky routing.
+
+#### 2. Configuration & TTL Knobs
+Set `cache_ttl` on any `api`-kind tier in `~/.kultivait/config.toml`:
+
+```toml
+[[tiers]]
+name = "anthropic"
+role = "architect"
+kind = "api"
+model = "claude-3-7-sonnet-20250219"
+price_in = 3.0
+price_out = 15.0
+cache_ttl = "5m"       # "5m" (default, 1.25x write multiplier) or "1h" (2.0x write multiplier)
+```
+
+#### 3. Supported Provider Dialects
+- **Anthropic**: Explicit block-level `cache_control` (`type = "ephemeral"`, optional `ttl = "1h"`). Cache reads receive a 90% discount (0.1× input price).
+- **OpenAI**: Implicit caching on GPT-4o family; explicit write token parsing and 0.1× read multipliers on GPT-5.6+ family.
+- **OpenRouter**: Canonical Anthropic markers are translated upstream into native provider shapes; `session_id` guarantees sticky cache worker routing.
+- **Llama / Open-Weights**: Cache-blind; entries report zero cached tokens.
+
+#### 4. Cache Telemetry & The Harvest
+The harvest tracks cache savings as an **orthogonal third line** (`kept-via-cache`), keeping routing savings (`kept-in-pocket`) and metered cash out completely un-distorted:
+
+```bash
+$ kultivait harvest
+the harvest — season to date
+
+  prompts routed     14  (57% local)
+  local tokens       42,150
+  spent              $0.04
+  frontier baseline  $0.18
+  notional spent     $0.04
+  metered cash out   $0.04
+  kept in pocket     $0.14
+
+  cache economics
+    kept via cache     $0.0093
+    hit rate           40%  (6 cache-bearing dispatches)
+    reads per write    1.0
+    ttl cohorts        5m: 6 dsp $0.0093
+```
+
 ### Escalations: when the garden isn't enough
 
 Every tool-fallback is also archived as an *escalation* — the full
