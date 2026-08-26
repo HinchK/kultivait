@@ -145,6 +145,49 @@ def load_corpus(corpus_path: Path | None = None) -> list[TaskCase]:
     return tasks
 
 
+_CALL_COUNTS: dict = {}
+
+
+def _mock_response_for(task: "TaskCase", fn_name: str) -> str:
+    """Mock resolution with adversarial sequence support (#88 / H1).
+
+    mock_responses values may be:
+      - a str: the cooperative single response (simple band default);
+      - a list: call-indexed SEQUENCES — each call returns the next entry;
+        the final entry repeats. Entries may carry error markers
+        ({"__error__": {...}}) rendered as realistic tool failures
+        (HTTP 429 + retry-after, 500, 422 schema mismatch) that the loop
+        must diagnose and retry past.
+    """
+    key = (task.id, fn_name)
+    idx = _CALL_COUNTS.get(key, 0)
+    _CALL_COUNTS[key] = idx + 1
+    val = task.mock_responses.get(fn_name, f"Mock tool {fn_name} executed successfully.")
+    if isinstance(val, list):
+        if not val:
+            return f"Mock tool {fn_name} executed successfully."
+        entry = val[min(idx, len(val) - 1)]
+    else:
+        entry = val
+    if isinstance(entry, dict) and "__error__" in entry:
+        e = entry["__error__"]
+        kind = e.get("kind", "500")
+        if kind == "429":
+            return (f"HTTP 429 Too Many Requests: rate limit exceeded. "
+                    f"Retry-After: {e.get('retry_after', 2)}s. "
+                    f"Your request was not processed.")
+        if kind == "422":
+            return ("HTTP 422 Unprocessable Entity: schema mismatch — "
+                    f"{e.get('detail', 'the request payload did not match the tool schema')}. "
+                    "The call was rejected; inspect the schema and retry.")
+        return f"HTTP 500 Internal Server Error: {e.get('detail', 'transient backend failure')}. Retry may succeed."
+    return entry if isinstance(entry, str) else json.dumps(entry)
+
+
+def reset_mock_counts() -> None:
+    _CALL_COUNTS.clear()
+
+
 def run_task(
     backend: Backend,
     task: TaskCase,
@@ -199,7 +242,7 @@ def run_task(
                 tool_calls_made.append(tc)
                 fn = tc.get("function", {})
                 fn_name = fn.get("name", "")
-                resp_content = task.mock_responses.get(fn_name, f"Mock tool {fn_name} executed successfully.")
+                resp_content = _mock_response_for(task, fn_name)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.get("id", "call_1"),
