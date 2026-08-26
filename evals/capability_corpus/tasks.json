@@ -80,7 +80,9 @@
   },
   "max_turns": 4,
   "rubric": {
-   "version": "v1",
+   "version": "v2",
+   "band": "simple",
+   "features": [],
    "criteria": [
     "Invoked search_code or read_file to inspect calculate_tax",
     "Identified len(rates) zero division bug on empty list",
@@ -159,7 +161,9 @@
   },
   "max_turns": 3,
   "rubric": {
-   "version": "v1",
+   "version": "v2",
+   "band": "simple",
+   "features": [],
    "criteria": [
     "Checked table schema before modifying",
     "Called add_column with table_name='users', column_name='avatar_url', column_type='varchar/string/text', nullable=True"
@@ -232,7 +236,9 @@
   },
   "max_turns": 3,
   "rubric": {
-   "version": "v1",
+   "version": "v2",
+   "band": "simple",
+   "features": [],
    "criteria": [
     "Queried logs with level ERROR",
     "Identified worker-indexer as the crashing service",
@@ -503,6 +509,1310 @@
    ],
    "expected_tools": [
     "list_tables",
+    "read_schema",
+    "write_migration"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "simple_count_tests",
+  "name": "Count Test Files",
+  "description": "Simple: count test files, report the number.",
+  "max_turns": 2,
+  "messages": [
+   {
+    "role": "user",
+    "content": "List the tests/ directory and report how many files end in _test.py. Just the count."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "list_directory",
+     "description": "List a directory",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "list_directory": "test_config.py test_distill_corpus.py test_server.py test_ledger.py"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "simple",
+   "features": [],
+   "criteria": [
+    "Invoked list_directory on tests/",
+    "Reported 4"
+   ],
+   "expected_tools": [
+    "list_directory"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "simple_read_version",
+  "name": "Read Version Field",
+  "description": "Simple: read a version, report it.",
+  "max_turns": 2,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Read pyproject.toml and report the value of the `version` field. Just the version string."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "[project]\nname = \"kultivait\"\nversion = \"0.9.2\"\n"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "simple",
+   "features": [],
+   "criteria": [
+    "Invoked read_file on pyproject.toml",
+    "Reported version 0.9.2"
+   ],
+   "expected_tools": [
+    "read_file"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "simple_list_escalations",
+  "name": "Count Escalations",
+  "description": "Simple: count stored escalations.",
+  "max_turns": 2,
+  "messages": [
+   {
+    "role": "user",
+    "content": "List the escalations store directory and report how many JSON archives it holds. Just the count."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "list_directory",
+     "description": "List a directory",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "list_directory": "esc-00000000.json esc-00000001.json esc-00000002.json esc-00000003.json esc-00000004.json esc-00000005.json esc-00000006.json esc-00000007.json esc-00000008.json esc-00000009.json esc-0000000a.json esc-0000000b.json esc-0000000c.json esc-0000000d.json esc-0000000e.json esc-0000000f.json esc-00000010.json esc-00000011.json esc-00000012.json esc-00000013.json esc-00000014.json esc-00000015.json esc-00000016.json esc-00000017.json esc-00000018.json esc-00000019.json esc-0000001a.json esc-0000001b.json esc-0000001c.json esc-0000001d.json esc-0000001e.json esc-0000001f.json esc-00000020.json esc-00000021.json esc-00000022.json esc-00000023.json esc-00000024.json esc-00000025.json esc-00000026.json esc-00000027.json esc-00000028.json esc-00000029.json esc-0000002a.json esc-0000002b.json"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "simple",
+   "features": [],
+   "criteria": [
+    "Invoked list_directory",
+    "Reported 44 archives"
+   ],
+   "expected_tools": [
+    "list_directory"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_ambiguous_perf",
+  "name": "Ambiguous Performance Fix",
+  "description": "Contested: ambiguous_spec \u2014 'make it faster' needs an interpretation.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "The harvest summary feels slow when the ledger grows. Make it faster."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "def harvest(self):\n    entries = [json.loads(l) for l in open(self._path)]\n    # ... recomputes every stat from scratch each call",
+   "apply_patch": "Patch applied"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "ambiguous_spec"
+   ],
+   "criteria": [
+    "Inspected the current harvest implementation first",
+    "Stated a defensible interpretation of 'faster' (caching, streaming, indexing, or incremental) and named it",
+    "Applied a patch implementing that interpretation"
+   ],
+   "expected_tools": [
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_chain_two_step",
+  "name": "Two-Step Dependency",
+  "description": "Contested: dependency_chain \u2014 step two consumes step one's output.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Find which module imports the Ledger class, then read ONLY that module's usage sites and report whether any call passes a Path where a str is expected. Your final report must quote the exact line."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "src/kultivait/cli.py: import Ledger; routes: Ledger(LEDGER_PATH)",
+   "read_file": "ledger = Ledger(LEDGER_PATH)\nstats = ledger.harvest()\nexport = Ledger(str(OUT))  # <-- str passed here"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "dependency_chain"
+   ],
+   "criteria": [
+    "Searched for the import before reading anything",
+    "Read only the importing module (not the whole repo)",
+    "Quoted the exact str-passing line in the report"
+   ],
+   "expected_tools": [
+    "search_code",
+    "read_file"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_distractor_single",
+  "name": "Distractor Discipline",
+  "description": "Contested: distractor_tools \u2014 plausible tools must not be invoked.",
+  "max_turns": 3,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Read the tollbooth queue file and report how many pending tolls it contains. Use only what the report needs."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_shell",
+     "description": "Run a shell command on the host",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "cmd": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cmd"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_webhook",
+     "description": "Notify the team channel",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "[{\"ticket_id\": \"t1\"}, {\"ticket_id\": \"t2\"}, {\"ticket_id\": \"t3\"}]",
+   "run_shell": "(distractor)",
+   "send_webhook": "(distractor)"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "distractor_tools"
+   ],
+   "criteria": [
+    "Invoked read_file on the queue file",
+    "Reported 3 pending tolls",
+    "Never invoked run_shell or send_webhook"
+   ],
+   "expected_tools": [
+    "read_file"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_context_state",
+  "name": "State Across Turns",
+  "description": "Contested: context_accumulation \u2014 carry the found id across turns.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "I'll test your memory: first, find the config key that names the preprocess model. (After you report it, I'll ask you to use it \u2014 do not re-search when I do.)"
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "config.py: [distill] model = \"qwen3.5:4b\" (the preprocess seat)",
+   "read_file": "[distill]\nmodel = \"qwen3.5:4b\""
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "context_accumulation"
+   ],
+   "criteria": [
+    "Found the key (distill.model / qwen3.5:4b) on the first turn",
+    "If a follow-up references the earlier finding, used it WITHOUT re-searching",
+    "Reported the value consistently across turns"
+   ],
+   "expected_tools": [
+    "search_code"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_ambiguous_scope",
+  "name": "Ambiguous Refactor Scope",
+  "description": "Contested: ambiguous_spec \u2014 'dedupe' with no criterion given.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "The escalations store has duplicate-ish entries. Deduplicate them."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "esc-1: 'Design the migration...'\nesc-2: 'Design the complete migration...'\nesc-3: 'Explain the parser briefly.'",
+   "apply_patch": "Patch applied"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "ambiguous_spec"
+   ],
+   "criteria": [
+    "Inspected the entries before acting",
+    "Chose and stated a dedup criterion (exact / normalized / semantic) explicitly",
+    "Applied a dedup consistent with the stated criterion, preserving non-duplicates"
+   ],
+   "expected_tools": [
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "contested_chain_verify",
+  "name": "Chain with Verification",
+  "description": "Contested: dependency_chain \u2014 patch, then verify via the chained test tool.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Patch the ledger writer to record a source field, then run the test suite to verify nothing broke \u2014 the run must consume your patch, not assume it."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_tests",
+     "description": "Run the test suite",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "def record(self, *, tier):\n    entry = {'tier': tier}",
+   "apply_patch": "Patch applied",
+   "run_tests": "479 passed"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "contested",
+   "features": [
+    "dependency_chain"
+   ],
+   "criteria": [
+    "Read the writer before patching",
+    "Patched record() to include a source field",
+    "Ran the tests AFTER the patch and reported the actual result"
+   ],
+   "expected_tools": [
+    "read_file",
+    "apply_patch",
+    "run_tests"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_audit_chain_distract",
+  "name": "Chained Audit Under Distractors",
+  "description": "Escalatory: dependency_chain + distractor_tools.",
+  "max_turns": 5,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Trace the failure: discover which service emits the malformed events, read its emitter schema, then write the ONE normalizer that fixes the field. Ignore everything else the environment offers."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_shell",
+     "description": "Run a shell command on the host",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "cmd": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cmd"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_webhook",
+     "description": "Notify the team channel",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "services/billing/emitter.py emits amount_cents as string",
+   "read_file": "def emit(e): return {'amount_cents': str(e.amount)}  # bug: string",
+   "apply_patch": "Patch applied",
+   "run_shell": "(distractor)",
+   "send_webhook": "(distractor)"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "dependency_chain",
+    "distractor_tools"
+   ],
+   "criteria": [
+    "Searched for the emitter before reading anything",
+    "Read the discovered emitter's code (not unrelated services)",
+    "Wrote one normalizer handling the string-typed field",
+    "Never invoked the distractor tools"
+   ],
+   "expected_tools": [
+    "search_code",
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_ambiguous_migration",
+  "name": "Ambiguous Multi-Step Migration",
+  "description": "Escalatory: ambiguous_spec + dependency_chain.",
+  "max_turns": 5,
+  "messages": [
+   {
+    "role": "user",
+    "content": "The events table is getting unwieldy. Split it appropriately \u2014 you decide the boundary, but the migration must move referenced rows correctly and preserve consumer contracts. Discover references first."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "list_tables",
+     "description": "List tables with referencing counts",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_schema",
+     "description": "Read a table's schema (needs the table name from discovery)",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "table": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "table"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_migration",
+     "description": "Write a migration consuming discovered references",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "sql": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "sql"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "list_tables": "events (referenced_by: audit_log.event_id, alerts.event_id)",
+   "read_schema": "audit_log: event_id FK->events.id CASCADE; alerts: event_id FK->events.id SET NULL",
+   "write_migration": "Migration written"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "ambiguous_spec",
+    "dependency_chain"
+   ],
+   "criteria": [
+    "Stated a defensible split boundary (e.g., open vs archived by age/status) and named it",
+    "Discovered references via list_tables BEFORE the migration",
+    "Migration preserves both FK behaviors distinctly (CASCADE vs SET NULL)",
+    "Named the consumer-contract preservation step explicitly"
+   ],
+   "expected_tools": [
+    "list_tables",
+    "read_schema",
+    "write_migration"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_distractor_ambiguity",
+  "name": "Distractors + Judgment",
+  "description": "Escalatory: distractor_tools + ambiguous_spec.",
+  "max_turns": 4,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Improve reliability of the dispatch loop however you see fit \u2014 but the environment's notification and shell tools are off-limits for this task. Read first; say what 'reliability' means to you; then patch."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_shell",
+     "description": "Run a shell command on the host",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "cmd": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cmd"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_webhook",
+     "description": "Notify the team channel",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "read_file": "def dispatch(argv):\n    r = run(argv)\n    if r is None: return r  # silent None pass-through",
+   "apply_patch": "Patch applied",
+   "run_shell": "(off-limits)",
+   "send_webhook": "(off-limits)"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "distractor_tools",
+    "ambiguous_spec"
+   ],
+   "criteria": [
+    "Read the dispatch loop first",
+    "Stated a reliability interpretation (None-handling, retries, timeouts) explicitly",
+    "Patched consistently with the stated interpretation",
+    "Never touched run_shell or send_webhook"
+   ],
+   "expected_tools": [
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_context_chain",
+  "name": "Long-Loop Context Carry",
+  "description": "Escalatory: context_accumulation + dependency_chain.",
+  "max_turns": 5,
+  "messages": [
+   {
+    "role": "user",
+    "content": "This takes three steps in order: (1) find the fingerprint function; (2) read it and note its exact hash inputs; (3) using ONLY what you noted \u2014 no re-reading \u2014 write a variant keyed on the last user message instead. The final artifact must show the noted inputs."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "server.py: def _conversation_fingerprint(messages)",
+   "read_file": "raw = f\"{system_text}\\n---{first_user_text}\"; sha256(raw)[:16]",
+   "apply_patch": "Patch applied"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "context_accumulation",
+    "dependency_chain"
+   ],
+   "criteria": [
+    "Found and read the fingerprint function (steps 1-2 in order)",
+    "Wrote the variant WITHOUT re-reading (used the noted inputs)",
+    "The artifact shows the noted hash inputs explicitly"
+   ],
+   "expected_tools": [
+    "search_code",
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_full_stack_multi",
+  "name": "Multi-Feature Ordeal",
+  "description": "Escalatory: dependency_chain + distractor_tools + ambiguous_spec + context_accumulation.",
+  "max_turns": 6,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Ship a fix for 'the routing feels wrong sometimes': discover where verdicts derive, inspect the thresholds, decide what 'wrong' means here, and patch \u2014 carrying your findings across every step without re-discovering. The webhook/shell tools are traps."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "search_code",
+     "description": "Search the repo",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "apply_patch",
+     "description": "Apply a patch",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "replacement": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "replacement"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "run_shell",
+     "description": "Run a shell command on the host",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "cmd": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cmd"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_webhook",
+     "description": "Notify the team channel",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "search_code": "preprocessor.py: VERDICT_THRESHOLDS = (0.65, 0.85); derive_verdict(max_fit)",
+   "read_file": "def derive_verdict(max_fit):\n    low, high = VERDICT_THRESHOLDS",
+   "apply_patch": "Patch applied",
+   "run_shell": "(trap)",
+   "send_webhook": "(trap)"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "dependency_chain",
+    "distractor_tools",
+    "ambiguous_spec",
+    "context_accumulation"
+   ],
+   "criteria": [
+    "Discovered the verdict derivation before touching anything",
+    "Inspected the thresholds and named what 'wrong' means (band edges, clustering, etc.)",
+    "Patched consistently with the named diagnosis without re-discovering prior steps",
+    "Never touched the trap tools"
+   ],
+   "expected_tools": [
+    "search_code",
+    "read_file",
+    "apply_patch"
+   ],
+   "passing_score": 0.8
+  }
+ },
+ {
+  "id": "esc_escalation_sourced_fanout",
+  "name": "Escalation-Sourced: Distributed Traces",
+  "description": "Escalatory (sanitized from a real escalation): context_accumulation + dependency_chain.",
+  "max_turns": 6,
+  "messages": [
+   {
+    "role": "user",
+    "content": "[From a real ops escalation] Diagnose intermittent dispatch failures across a distributed trace: first discover which spans carry the error tag, then read the spans' linked service schema, then write the correlation fix that stitches the trace. Findings from step one must drive step three."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "query_traces",
+     "description": "Query distributed traces by service",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "service": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "service"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_schema",
+     "description": "Read a table's schema (needs the table name from discovery)",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "table": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "table"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_migration",
+     "description": "Write a migration consuming discovered references",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "db": {
+        "type": "string"
+       },
+       "sql": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "db",
+       "sql"
+      ]
+     }
+    }
+   }
+  ],
+  "mock_responses": {
+   "query_traces": "dispatch-svc: 3 spans error-tagged at retry boundary; linked: queue-svc",
+   "read_schema": "queue-svc: deliveries lack correlation_id on redelivery paths",
+   "write_migration": "Migration written"
+  },
+  "rubric": {
+   "version": "v2",
+   "band": "escalatory",
+   "features": [
+    "context_accumulation",
+    "dependency_chain"
+   ],
+   "criteria": [
+    "Queried traces by service before reading any schema",
+    "Read only the linked service's schema (queue-svc)",
+    "The correlation fix consumes the discovered redelivery gap (correlation_id) explicitly",
+    "No schema read happens after the migration is written (order respected)"
+   ],
+   "expected_tools": [
+    "query_traces",
     "read_schema",
     "write_migration"
    ],

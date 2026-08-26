@@ -119,7 +119,8 @@ def test_load_corpus():
     assert t0.id == "file_search_and_edit"
     assert len(t0.tools) >= 2
     assert "rubric" in t0.__dict__
-    assert t0.rubric.get("version") == "v1"
+    assert t0.rubric.get("version") == "v2"  # re-tagged per #79 (band/features metadata)
+    assert t0.rubric.get("band") == "simple"
 
 
 def test_get_family():
