@@ -21,6 +21,10 @@ class Ledger:
         cost_usd: float,
         notional_usd: float | None = None,
         fingerprint: str | None = None,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        cache_ttl: str = "",
+        cache_price_in: float = 0.0,
         **extra,
     ) -> None:
         """Extra keyword fields (routing decision metadata, truncation flags,
@@ -39,11 +43,52 @@ class Ledger:
         }
         if fingerprint is not None:
             entry["fingerprint"] = fingerprint
+        if cache_read_tokens or cache_write_tokens:
+            entry["cache_read_tokens"] = cache_read_tokens
+            entry["cache_write_tokens"] = cache_write_tokens
+            entry["cache_ttl"] = cache_ttl or "5m"
+            if cache_price_in:
+                entry["cache_price_in"] = cache_price_in
         entry.update(extra)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
             f.write(json.dumps(entry) + "\n")
 
+    def _cache_section(self, entries: list) -> dict:
+        """Cache economics per the ADR 0005 amendment: kept-via-cache is the
+        third line (routing / metered / caching stay orthogonal). Net savings
+        price the read discount (reads*0.9) against the write premium
+        (writes*(mult-1)); the entry's effective input price rides the record.
+        """
+        cached = [e for e in entries if e.get("cache_read_tokens") or e.get("cache_write_tokens")]
+        mult = {"5m": 1.25, "1h": 2.0}
+        cohorts: dict = {}
+        tot_reads = tot_writes = 0
+        tot_input = 0
+        kept = 0.0
+        for e in cached:
+            reads = int(e.get("cache_read_tokens", 0))
+            writes = int(e.get("cache_write_tokens", 0))
+            price = float(e.get("cache_price_in", 0.0))
+            ttl = e.get("cache_ttl", "5m")
+            m = mult.get(ttl, 1.25)
+            entry_kept = (reads * 0.9 * price - writes * (m - 1.0) * price) / 1e6
+            kept += entry_kept
+            tot_reads += reads
+            tot_writes += writes
+            tot_input += int(e.get("tokens_in", 0))
+            c = cohorts.setdefault(ttl, {"dispatches": 0, "kept_via_cache_usd": 0.0})
+            c["dispatches"] += 1
+            c["kept_via_cache_usd"] += entry_kept
+        return {
+            "dispatches": len(cached),
+            "kept_via_cache_usd": round(kept, 6),
+            "cache_hit_rate": round(tot_reads / tot_input, 4) if tot_input else 0.0,
+            "cache_reads_per_write": round(tot_reads / tot_writes, 2) if tot_writes else 0.0,
+            "cache_ttl_cohorts": {k: {"dispatches": v["dispatches"],
+                                      "kept_via_cache_usd": round(v["kept_via_cache_usd"], 6)}
+                                  for k, v in cohorts.items()},
+        }
     def harvest(self) -> dict:
         entries = []
         if self._path.exists():
@@ -93,7 +138,10 @@ class Ledger:
 
         toll_rate = (tolls_fired / len(prompt_entries)) if prompt_entries else 0.0
 
+        cache = self._cache_section(prompt_entries)
+
         return {
+            "cache": cache,
             "prompts": len(prompt_entries),
             "local_prompts": sum(1 for e in prompt_entries if e.get("local")),
             "tokens_local": sum(e["tokens_in"] + e["tokens_out"] for e in prompt_entries if e.get("local")),

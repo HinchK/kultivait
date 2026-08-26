@@ -709,6 +709,22 @@ def format_harvest(stats: dict) -> str:
         f"  metered cash out   ${metered_spent:.2f}",
         f"  kept in pocket     ${stats['saved_usd']:.2f}",
     ]
+    cache = stats.get("cache")
+    if cache and cache.get("dispatches", 0) > 0:
+        hit_pct = round(100 * cache.get("cache_hit_rate", 0.0))
+        cohorts = cache.get("cache_ttl_cohorts", {})
+        cohort_txt = ", ".join(
+            f"{k}: {v['dispatches']} dsp ${v['kept_via_cache_usd']:.4f}"
+            for k, v in sorted(cohorts.items()))
+        lines += [
+            "",
+            "  cache economics",
+            f"    kept via cache     ${cache.get('kept_via_cache_usd', 0.0):.4f}",
+            f"    hit rate           {hit_pct}%  ({cache.get('dispatches', 0)} cache-bearing dispatches)",
+            f"    reads per write    {cache.get('cache_reads_per_write', 0.0):.1f}",
+        ]
+        if cohort_txt:
+            lines.append(f"    ttl cohorts        {cohort_txt}")
     toll = stats.get("toll_activity")
     if toll and (
         toll.get("fired", 0) > 0
