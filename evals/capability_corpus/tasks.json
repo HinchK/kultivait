@@ -92,7 +92,8 @@
     "search_code",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
@@ -159,7 +160,7 @@
    "get_table_schema": "table users (id integer primary key, email varchar(255) not null, created_at timestamp)",
    "add_column": "Column avatar_url added to table users"
   },
-  "max_turns": 3,
+  "max_turns": 4,
   "rubric": {
    "version": "v2",
    "band": "simple",
@@ -172,7 +173,8 @@
     "get_table_schema",
     "add_column"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
@@ -234,7 +236,7 @@
    "query_logs": "2026-08-23 20:00:01 [ERROR] worker-indexer OOM killed (exit code 137)\n2026-08-23 20:00:05 [ERROR] worker-indexer failed to reconnect",
    "restart_service": "Service worker-indexer restarted successfully"
   },
-  "max_turns": 3,
+  "max_turns": 4,
   "rubric": {
    "version": "v2",
    "band": "simple",
@@ -248,14 +250,15 @@
     "query_logs",
     "restart_service"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
   "id": "exemplar_simple_port_lookup",
   "name": "Config Port Lookup (simple exemplar)",
   "description": "Simple band exemplar: well-specified single-tool lookup, no hardness features.",
-  "max_turns": 2,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -296,14 +299,15 @@
    "expected_tools": [
     "read_file"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
   "id": "exemplar_contested_ambiguous_retry",
   "name": "Ambiguous Retry Improvement (contested exemplar)",
   "description": "Contested band exemplar: underspecified success criteria \u2014 the model must choose what 'better' means.",
-  "max_turns": 4,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -371,14 +375,15 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=0 + slack 1 (band contested)"
   }
  },
  {
   "id": "exemplar_escalatory_schema_migration_chain",
   "name": "Chained Schema Migration (escalatory exemplar)",
   "description": "Escalatory band exemplar: multi-step dependency chain, distractor tools, context accumulation.",
-  "max_turns": 5,
+  "max_turns": 6,
   "messages": [
    {
     "role": "user",
@@ -528,14 +533,15 @@
     "read_schema",
     "write_migration"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
   }
  },
  {
   "id": "simple_count_tests",
   "name": "Count Test Files",
   "description": "Simple: count test files, report the number.",
-  "max_turns": 2,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -576,14 +582,15 @@
    "expected_tools": [
     "list_directory"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
   "id": "simple_read_version",
   "name": "Read Version Field",
   "description": "Simple: read a version, report it.",
-  "max_turns": 2,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -624,14 +631,15 @@
    "expected_tools": [
     "read_file"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
   "id": "simple_list_escalations",
   "name": "Count Escalations",
   "description": "Simple: count stored escalations.",
-  "max_turns": 2,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -672,14 +680,15 @@
    "expected_tools": [
     "list_directory"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "generous sanity budget (band simple)"
   }
  },
  {
   "id": "contested_ambiguous_perf",
   "name": "Ambiguous Performance Fix",
   "description": "Contested: ambiguous_spec \u2014 'make it faster' needs an interpretation.",
-  "max_turns": 4,
+  "max_turns": 3,
   "messages": [
    {
     "role": "user",
@@ -747,7 +756,8 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=0 + slack 1 (band contested)"
   }
  },
  {
@@ -822,7 +832,8 @@
     "search_code",
     "read_file"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band contested)"
   }
  },
  {
@@ -920,7 +931,8 @@
    "expected_tools": [
     "read_file"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=1 + recovery_steps=1 + slack 1 (band contested)"
   }
  },
  {
@@ -990,7 +1002,8 @@
    "expected_tools": [
     "search_code"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=1 + recovery_steps=0 + slack 1 (band contested) (judgment override: conversation/ordering shape)"
   }
  },
  {
@@ -1074,14 +1087,15 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band contested)"
   }
  },
  {
   "id": "contested_chain_verify",
   "name": "Chain with Verification",
   "description": "Contested: dependency_chain \u2014 patch, then verify via the chained test tool.",
-  "max_turns": 4,
+  "max_turns": 5,
   "messages": [
    {
     "role": "user",
@@ -1178,14 +1192,15 @@
     "apply_patch",
     "run_tests"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band contested)"
   }
  },
  {
   "id": "esc_audit_chain_distract",
   "name": "Chained Audit Under Distractors",
   "description": "Escalatory: dependency_chain + distractor_tools.",
-  "max_turns": 5,
+  "max_turns": 6,
   "messages": [
    {
     "role": "user",
@@ -1319,14 +1334,15 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
   }
  },
  {
   "id": "esc_ambiguous_migration",
   "name": "Ambiguous Multi-Step Migration",
   "description": "Escalatory: ambiguous_spec + dependency_chain.",
-  "max_turns": 5,
+  "max_turns": 6,
   "messages": [
    {
     "role": "user",
@@ -1437,7 +1453,8 @@
     "read_schema",
     "write_migration"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
   }
  },
  {
@@ -1560,7 +1577,8 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=2 + recovery_steps=1 + slack 1 (band escalatory)"
   }
  },
  {
@@ -1664,7 +1682,8 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band escalatory)"
   }
  },
  {
@@ -1812,7 +1831,8 @@
     "read_file",
     "apply_patch"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=2 + slack 1 (band escalatory)"
   }
  },
  {
@@ -1922,7 +1942,8 @@
     "read_schema",
     "write_migration"
    ],
-   "passing_score": 0.8
+   "passing_score": 0.8,
+   "budget_note": "max_turns derived: expected_tools=3 + recovery_steps=1 + slack 1 (band escalatory) (judgment override: conversation/ordering shape)"
   }
  }
 ]

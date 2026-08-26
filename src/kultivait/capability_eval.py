@@ -257,6 +257,40 @@ def run_task(
     return messages, tool_calls_made, tot_in, tot_out, tot_cost
 
 
+def efficiency_penalty(tool_calls: list[dict]) -> "tuple[float, list[str]]":
+    """H2 (#89): repeated identical tool calls are waste and cost score.
+
+    An identical call = same tool name AND same serialized arguments. Each
+    repeat beyond the first on a failing sequence is legitimate retry ONLY
+    when the mock changed beneath it — we cannot know that here, so repeats
+    count against efficiency at a flat rate, but pure-duplicate back-to-back
+    calls (no intervening different call) count double: that is blind
+    looping, not diagnosis. Returns (penalty_fraction, notes) where the
+    fraction multiplies the task score.
+    """
+    if not tool_calls:
+        return 1.0, []
+    seen: dict = {}
+    duplicates = 0
+    blind = 0
+    prev_key = None
+    for tc in tool_calls:
+        fn = tc.get("function", {})
+        key = (fn.get("name", ""), fn.get("arguments", ""))
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            duplicates += 1
+            if key == prev_key:
+                blind += 1
+        prev_key = key
+    if not duplicates:
+        return 1.0, []
+    penalty = max(0.25, 1.0 - 0.15 * duplicates - 0.20 * blind)
+    notes = [f"efficiency: {duplicates} repeated call(s)"
+             + (f", {blind} blind back-to-back repeat(s)" if blind else "")]
+    return penalty, notes
+
+
 def judge_transcript(
     judge_backend: Backend,
     transcript: list[dict],
@@ -386,6 +420,14 @@ def run_capability_eval(
                     rubric=task.rubric,
                     task_desc=task.description,
                 )
+
+                # H2 (#89): anti-looping efficiency — repeated identical calls
+                # cost score; blind back-to-back repeats cost double.
+                mult, eff_notes = efficiency_penalty(tool_calls)
+                if mult < 1.0:
+                    score = round(score * mult, 4)
+                    reasoning = (reasoning + " | " + "; ".join(eff_notes)).strip(" |")
+                    passed = passed and score >= task.rubric.get("passing_score", 0.8)
 
                 if passed:
                     passed_count += 1
