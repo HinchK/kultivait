@@ -114,7 +114,7 @@ def test_anthropic_headers_and_cache_cost_calculation():
     headers = req["headers"]
     assert headers["x-api-key"] == "sk-ant-testkey"
     assert headers["anthropic-version"] == "2023-06-01"
-    assert headers["anthropic-beta"] == "prompt-caching-2024-07-25"
+    assert "anthropic-beta" not in headers  # GA caching: the stale beta header is dropped (#82)
 
     # 2. Token field & Effort verification
     req_body = req["body"]
