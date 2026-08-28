@@ -815,7 +815,9 @@ def cmd_distill_generate(args: argparse.Namespace) -> None:
         ledger_record=ledger_tag,
     )
     out = Path(args.out_dir)
-    write_corpus(report.pairs, [], out, heldout=heldout)
+    n_valid = max(1, len(report.pairs) // 6) if len(report.pairs) > 1 else 0
+    split = len(report.pairs) - n_valid
+    write_corpus(report.pairs[:split], report.pairs[split:], out, heldout=heldout)
     print(json.dumps({"out_dir": str(out), "pairs": len(report.pairs),
                       "stats": report.stats}, indent=2))
 

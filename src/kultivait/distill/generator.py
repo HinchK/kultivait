@@ -42,7 +42,7 @@ GENERATION_PROMPT = (
     "prompt below, write ONE new prompt about similar work that a routing "
     "judge would rate as '{band}' difficulty (local = a small local model "
     "clearly suffices; contested = genuinely ambiguous between local and "
-    "frontier; frontier = clearly needs a frontier model), framed as a "
+    "frontier; frontier = unmistakably frontier work — cross-service or multi-region scale, schema-level design, production risk — that a small local model cannot credibly attempt), framed as a "
     "{task_type} task. Vary phrasing and specifics; do not copy the seed. "
     "Output ONLY the new prompt, nothing else.\n\nSEED PROMPT:\n{seed}"
 )
@@ -91,6 +91,11 @@ def _facts_of(prompt: str) -> list[dict]:
     """Planted facts: the prompt's distinctive terms must survive the rewrite."""
     terms = [w for w in re.findall(r"[a-zA-Z_]{4,}", prompt.lower())][:6]
     return [{"name": w, "groups": [[w]]} for w in terms] or [{"name": "prompt", "groups": [["prompt"]]}]
+
+
+class BudgetStop(Exception):
+    """Raised by a watchdog fn to stop synthesis cleanly; generate_corpus
+    returns the partial corpus (the accepted pairs survive)."""
 
 
 @dataclass(frozen=True)
@@ -172,15 +177,21 @@ def generate_corpus(
         attempts += 1
         stats["attempts"] += 1
 
-        # 1. judge teacher: band-targeted variation
-        variation = (vary_fn(seed.prompt, band, task_type) or "").strip()
+        # 1. judge teacher: band-targeted variation (BudgetStop breaks cleanly)
+        try:
+            variation = (vary_fn(seed.prompt, band, task_type) or "").strip()
+        except BudgetStop:
+            break
         tagged(f"judge:{judge_name}", seed.prompt, variation)
         if not variation or variation == "garbage output":
             stats["agreement_drops"] += 1
             continue
 
         # 2. agreement filter: independent second-pass tier label
-        label_out = (label_fn(variation) or "").strip().lower()
+        try:
+            label_out = (label_fn(variation) or "").strip().lower()
+        except BudgetStop:
+            break
         tagged(f"judge:{judge_name}", variation, label_out)
         if label_out not in ("local", "contested", "frontier") or label_out != band:
             stats["agreement_drops"] += 1
@@ -199,8 +210,13 @@ def generate_corpus(
             seen_vecs.append(vec)
         seen_hashes.add(norm)
 
-        # 4. rewriter teacher
-        rewrite = (rewrite_fn(variation, band) or "").strip()
+        # 4. rewriter teacher — a CLI hiccup drops the PAIR, not the run (#95)
+        try:
+            rewrite = (rewrite_fn(variation, band) or "").strip()
+        except Exception:  # noqa: BLE001 - one rewriter failure must not kill 20h of synthesis
+            stats["rewrite_drops"] = stats.get("rewrite_drops", 0) + 1
+            seen_hashes.discard(norm)
+            continue
         tagged(f"rewriter:{rewriter_name}", variation, rewrite)
 
         # 5. quality: planted-fact recall on the rewrite
