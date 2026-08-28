@@ -125,14 +125,15 @@ def _default_preprocess_generate_for(
                 "model": actual_model,
                 "messages": messages,
                 "stream": False,
-                "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": 700},
+                "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": 1000},  # G3: 700 truncated contract JSON
             }
             if actual_model.startswith("qwen3"):
                 payload["think"] = False
             r = httpx.post(f"{chat_base_url}/api/chat", json=payload, timeout=600)
             r.raise_for_status()
             text = r.json()["message"]["content"]
-        clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        clean_text = re.sub(r"<\|.*?\|>", "", clean_text).strip()  # G3: strip leaked special tokens (<|im_end|> etc.)
         return clean_text, time.monotonic() - t0
 
     return generate
