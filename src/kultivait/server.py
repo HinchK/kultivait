@@ -105,7 +105,15 @@ def _default_preprocess_generate_for(
 
     def generate(target_model: str, prompt: str) -> tuple[str, float]:
         actual_model = target_model or model or "qwen3.5:4b"
-        messages = [{"role": "user", "content": prompt}]
+        # G2 (#96): the train/serve framing fix — serving frames requests in
+        # the TRAINED chat shape (system contract + user query), matching the
+        # distillation corpus pairs byte-for-byte. Gen-1's single-blob framing
+        # produced 0% parse through serving; this is the fix at the serve end.
+        from kultivait.preprocessor import PREPROCESSOR_PROMPT
+        messages = [
+            {"role": "system", "content": PREPROCESSOR_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
         t0 = time.monotonic()
         if runtime == "llamacpp":
             payload = {"model": actual_model, "messages": messages, "stream": False}
