@@ -115,7 +115,7 @@ def test_shadow_command_reports_readiness(tmp_path, monkeypatch, capsys):
                     "latency_s": 0.8, "parse_ok": True, "dangerous": False},
             agree=True,
         ), log)
-    args = argparse.Namespace(log=str(log))
+    args = argparse.Namespace(log=str(log), json=True)
     cli.cmd_shadow(args)
     out = capsys.readouterr().out
     data = json.loads(out)

@@ -892,10 +892,41 @@ def cmd_cutover(args: argparse.Namespace) -> None:
 
 
 def cmd_shadow(args: argparse.Namespace) -> None:
-    """D6: summarize the shadow log + cutover-readiness (ADR 0017)."""
+    """S1 (#101): the enriched shadow read — latency deltas, parse validity,
+    the calibration-correction read, the decomposed #73 readiness."""
     from kultivait.distill.shadow import shadow_summary
 
-    print(json.dumps(shadow_summary(Path(args.log) if args.log else None), indent=2))
+    s = shadow_summary(Path(args.log) if args.log else None)
+    if getattr(args, "json", False):
+        print(json.dumps(s, indent=2))
+        return
+    lines = [
+        "shadow observatory",
+        "",
+        f"  samples             {s['n']}  (models: {', '.join(s['models']['shadow']) or 'none'})",
+        f"  agreement           {s['agreement']:.1%}  | anomalies {s['anomalies']}",
+        f"  parse validity      {s.get('parse_validity', 0):.1%}",
+        "",
+        "  latency",
+        f"    incumbent         p50 {s['latency']['incumbent_p50_s']:.1f}s  p90 {s['latency']['incumbent_p90_s']:.1f}s",
+        f"    shadow            p50 {s['latency']['shadow_p50_s']:.1f}s  p90 {s['latency']['shadow_p90_s']:.1f}s",
+        f"    delta             p50 {s['latency']['delta_p50_s']:+.1f}s  p90 {s['latency']['delta_p90_s']:+.1f}s"
+        "  (negative = shadow faster)",
+        "",
+        "  calibration",
+    ]
+    for pair, n in sorted(s["calibration"]["verdict_pairs"].items(), key=lambda kv: -kv[1]):
+        lines.append(f"    {pair:<30} {n}")
+    lines.append(f"    corrections (inc:frontier->shadow:contested): "
+                 f"{s['calibration']['calibration_corrections']} "
+                 f"({s['calibration']['correction_rate']:.1%})")
+    lines += ["", "  cutover readiness (#73 decomposed)"]
+    for arm, d in s["readiness_arms"].items():
+        mark = "PASS" if d["pass"] else "FAIL"
+        lines.append(f"    {'PASS' if d['pass'] else 'FAIL'}  {arm:<38} {d['value']} (bar: {d['bar']})")
+    ready = all(a["pass"] for a in s["readiness_arms"].values())
+    lines += ["", f"  READY: {'YES' if ready else 'NOT YET'} — {s['instruction']}", ""]
+    print("\n".join(lines))
 
 
 def cmd_distill_eval(args: argparse.Namespace) -> None:
@@ -1057,6 +1088,7 @@ def main() -> None:
     eval_d.set_defaults(func=cmd_distill_eval)
     shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
     shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
+    shadow_cmd.add_argument("--json", action="store_true", help="machine-readable output")
     shadow_cmd.set_defaults(func=cmd_shadow)
     cutover_cmd = sub.add_parser(
         "cutover", help="flip the live preprocessor model (human confirmation; prints rollback)")
