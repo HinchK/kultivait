@@ -14,11 +14,13 @@ h1{font-size:1.4rem;margin-bottom:4px;color:#58a6ff}
        padding:16px;margin-bottom:16px}
 .panel h2{font-size:.95rem;color:#e6edf3;margin-bottom:12px}
 .gauge-row{display:flex;gap:16px;flex-wrap:wrap}
-.gauge{flex:1;min-width:140px;text-align:center;padding:12px;
+.gauge{flex:1;min-width:160px;text-align:center;padding:12px;
        background:#0d1117;border-radius:6px;border:1px solid #21262d}
 .gauge .label{font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.05em}
-.gauge .value{font-size:1.6rem;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+.gauge .value{font-size:1.8rem;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+.gauge .sub-v{font-size:.7rem;color:#8b949e;margin-top:2px}
 .gauge .value.green{color:#3fb950}.gauge .value.blue{color:#58a6ff}.gauge .value.orange{color:#d29922}
+.gauge svg{margin:8px auto;display:block}
 #conn{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 #conn.on{background:#3fb950}#conn.off{background:#f85149}
 #event-log{font-family:ui-monospace,monospace;font-size:.75rem;color:#8b949e;
@@ -27,28 +29,66 @@ table{width:100%;border-collapse:collapse;font-size:.8rem}
 td,th{padding:4px 8px;border-bottom:1px solid #21262d;text-align:left}
 th{color:#8b949e;font-weight:500}
 td{font-variant-numeric:tabular-nums}
+.gen-bar{height:6px;background:#21262d;border-radius:3px;margin-top:4px;overflow:hidden}
+.gen-bar-fill{height:100%;border-radius:3px;transition:width .3s ease}
 </style>
 </head>
 <body>
 <h1><span id="conn" class="off"></span>kultivait</h1>
 <div class="sub">the harvest — live · <span id="mode">connecting…</span></div>
 
-<div class="panel">
-<h2>three lenses</h2>
+<!-- V2: the three financial lenses (ADR 0005) -->
+<div class="panel" id="financial-lenses">
+<h2>three lenses <span style="float:right;font-size:.7rem;color:#8b949e">ADR 0005</span></h2>
 <div class="gauge-row">
-  <div class="gauge"><div class="label">kept in pocket</div>
-    <div class="value green" id="kept-pocket">$0.00</div></div>
-  <div class="gauge"><div class="label">kept via cache</div>
-    <div class="value blue" id="kept-cache">$0.00</div></div>
-  <div class="gauge"><div class="label">metered cash out</div>
-    <div class="value orange" id="cash-out">$0.00</div></div>
+  <div class="gauge" id="gauge-kept-pocket">
+    <div class="label">kept in pocket</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="kept-in-pocket dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-kept-pocket" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#3fb950" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value green" id="kept-pocket">$0.00</div>
+    <div class="sub-v" id="kept-pocket-pct">0% of baseline</div>
+  </div>
+  <div class="gauge" id="gauge-kept-cache">
+    <div class="label">kept via cache</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="kept-via-cache dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-kept-cache" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#58a6ff" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value blue" id="kept-cache">$0.00</div>
+    <div class="sub-v" id="cache-hit-rate">hit rate —</div>
+  </div>
+  <div class="gauge" id="gauge-cash-out">
+    <div class="label">metered cash out</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="cash-out dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-cash-out" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#d29922" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value orange" id="cash-out">$0.00</div>
+    <div class="sub-v" id="dispatch-count">0 dispatches</div>
+  </div>
 </div>
 </div>
 
-<div class="panel">
+<!-- V2: generation breakdown -->
+<div class="panel" id="generation-panel">
 <h2>by generation</h2>
 <table id="gen-table"><thead><tr>
   <th>generation</th><th>requests</th><th>kept $</th><th>cache hit</th>
+  <th style="width:30%">share</th>
 </tr></thead><tbody></tbody></table>
 </div>
 
@@ -60,21 +100,56 @@ td{font-variant-numeric:tabular-nums}
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-let es=null;
+let es=null, dispatchN=0;
+const ARC_LEN=100.5; // half-circle path length for the dials
 
 function fmtUsd(v){return "$"+(v||0).toFixed(4)}
+function setDial(id,frac){
+  const el=$(id); if(!el)return;
+  const clamped=Math.max(0,Math.min(1,frac||0));
+  el.style.strokeDashoffset=String(ARC_LEN*(1-clamped));
+}
+function animCount(id,target){
+  const el=$(id); if(!el)return;
+  const cur=parseFloat(el.textContent.replace(/[$,]/g,""))||0;
+  const diff=target-cur;
+  if(Math.abs(diff)<0.0001){el.textContent=fmtUsd(target);return}
+  el.textContent=fmtUsd(cur+diff*0.3); // eased step; converges on subsequent frames
+  requestAnimationFrame(()=>animCount(id,target));
+}
+
+/* V2 financial contract: ADR 0005's three orthogonal lenses */
 function hydrate(s){
-  $("kept-pocket").textContent=fmtUsd(s.saved_usd);
-  $("cash-out").textContent=fmtUsd(s.metered_spent_usd||s.spent_usd);
-  const cache=s.cache||{};
-  $("kept-cache").textContent=fmtUsd(cache.kept_via_cache_usd);
+  animCount("kept-pocket",s.saved_usd||0);
+  animCount("kept-cache",(s.cache||{}).kept_via_cache_usd||0);
+  animCount("cash-out",s.metered_spent_usd||s.spent_usd||0);
+  dispatchN=s.prompts||0;
+  $("dispatch-count").textContent=dispatchN+" dispatches";
+  const base=s.baseline_usd||0;
+  $("kept-pocket-pct").textContent=base>0
+    ?Math.round(100*(s.saved_usd||0)/base)+"% of baseline":"—";
+  const c=s.cache||{};
+  $("cache-hit-rate").textContent=c.cache_hit_rate!==undefined
+    ?"hit rate "+(c.cache_hit_rate*100).toFixed(0)+"%":"hit rate —";
+  // dials: kept-in-pocket and kept-via-cache as savings ratios (cap 100%)
+  setDial("dial-kept-pocket",base>0?(s.saved_usd||0)/base:0);
+  setDial("dial-kept-cache",c.dispatches>0?Math.min(1,c.cache_hit_rate*2):0);
+  // cash-out dial: spend relative to baseline (inverse: less is better)
+  setDial("dial-cash-out",base>0?1-((s.metered_spent_usd||s.spent_usd||0)/base):0);
+  renderGen(s.by_generation||{});
+}
+function renderGen(bg){
   const tb=$("gen-table").querySelector("tbody");
   tb.innerHTML="";
-  for(const[gen,g]of Object.entries(s.by_generation||{})){
+  const max=Math.max(...Object.values(bg).map(g=>g.saved_usd),0.0001);
+  for(const[gen,g]of Object.entries(bg)){
     const tr=document.createElement("tr");
     const hit=g.cache.cache_hit_rate>0?(g.cache.cache_hit_rate*100).toFixed(0)+"%":"—";
+    const w=Math.max(2,Math.round(100*g.saved_usd/max));
     tr.innerHTML=`<td>${gen}</td><td>${g.requests}</td>
-      <td>${fmtUsd(g.saved_usd)}</td><td>${hit}</td>`;
+      <td>${fmtUsd(g.saved_usd)}</td><td>${hit}</td>
+      <td><div class="gen-bar"><div class="gen-bar-fill"
+        style="width:${w}%;background:${gen.includes("legacy")?"#30363d":"#3fb950"}"></div></div></td>`;
     tb.appendChild(tr);
   }
 }
@@ -83,22 +158,24 @@ function log(msg){
   el.prepend(new Date().toLocaleTimeString()+"  "+msg+"\n");
   while(el.scrollHeight>3000&&el.firstChild)el.removeChild(el.lastChild);
 }
+function onDispatch(d){
+  dispatchN++;
+  $("dispatch-count").textContent=dispatchN+" dispatches";
+  log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`
+      +(d.cache_read_tokens>0?` cache:${d.cache_read_tokens}r/${d.cache_write_tokens}w`:""));
+}
+function onShadow(d){
+  const inc=d.incumbent||{},sh=d.shadow||{};
+  log(`shadow: inc=${inc.verdict} vs sh=${sh.verdict} parse=${sh.parse_ok} `
+      +`Δ${((sh.latency_s||0)-(inc.latency_s||0)).toFixed(1)}s`);
+}
 function connect(){
   es=new EventSource("/api/stream");
   es.onopen=()=>{$("conn").className="on";$("mode").textContent="live"};
   es.onerror=()=>{$("conn").className="off";$("mode").textContent="reconnecting…"};
-  es.addEventListener("harvest",e=>{
-    const d=JSON.parse(e.data);hydrate(d);log("harvest snapshot");
-  });
-  es.addEventListener("dispatch",e=>{
-    const d=JSON.parse(e.data);
-    log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`);
-  });
-  es.addEventListener("shadow",e=>{
-    const d=JSON.parse(e.data);
-    log(`shadow: inc=${d.incumbent?.verdict} vs sh=${d.shadow?.verdict} ` +
-        `parse=${d.shadow?.parse_ok} Δ${((d.shadow?.latency_s||0)-(d.incumbent?.latency_s||0)).toFixed(1)}s`);
-  });
+  es.addEventListener("harvest",e=>{hydrate(JSON.parse(e.data));log("harvest snapshot")});
+  es.addEventListener("dispatch",e=>onDispatch(JSON.parse(e.data)));
+  es.addEventListener("shadow",e=>onShadow(JSON.parse(e.data)));
 }
 fetch("/api/dashboard/summary").then(r=>r.json()).then(hydrate).catch(()=>{});
 connect();
