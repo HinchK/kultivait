@@ -226,6 +226,15 @@ def create_app(
             cache_price_in=cache_price_in,
             **decision_meta,
         )
+        # V1 (#106): broadcast the dispatch to the dashboard
+        _sse_broadcast("dispatch", {
+            "tier": tier, "local": completion.local,
+            "cost_usd": metered_cash, "notional_usd": notional,
+            "tokens_in": completion.tokens_in, "tokens_out": completion.tokens_out,
+            "cache_read_tokens": getattr(completion, "cache_read_tokens", 0),
+            "cache_write_tokens": getattr(completion, "cache_write_tokens", 0),
+            "preprocess_model": decision_meta.get("preprocess_model"),
+        })
 
     def _decision_meta(
         decision: Decision, fallback_reason: "str | None", messages: list[dict]
@@ -890,6 +899,68 @@ def create_app(
             "tokens_after": result.tokens_after,
             "compost_id": result.compost_id,
         }
+
+    # ---- Dashboard SSE (Map #105 / V1) ----
+    _sse_clients: list = []
+
+    # V1: shadow records broadcast to the dashboard via the listener registry
+    from kultivait.distill.shadow import add_shadow_listener
+    add_shadow_listener(lambda row: _sse_broadcast("shadow", row))
+
+    def _sse_broadcast(event_type: str, data: dict) -> None:
+        """Fire-and-forget fan-out to connected dashboard clients."""
+        frame = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+        dead = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(frame)
+            except Exception:  # noqa: BLE001 - a dead client never kills serving
+                dead.append(q)
+        for q in dead:
+            if q in _sse_clients:
+                _sse_clients.remove(q)
+
+    @app.get("/api/dashboard/summary")
+    def dashboard_summary() -> dict:
+        """Initial hydration: the harvest snapshot + the shadow summary."""
+        from kultivait.distill.shadow import shadow_summary
+        h = ledger.harvest()
+        return {**h, "shadow": shadow_summary()}
+
+    @app.get("/api/stream")
+    async def sse_stream():
+        """SSE endpoint: dispatch/shadow events + periodic harvest snapshots."""
+        import asyncio
+        from starlette.responses import StreamingResponse
+
+        q: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _sse_clients.append(q)
+
+        async def gen():
+            try:
+                # initial hydration on connect
+                h = ledger.harvest()
+                yield f"event: harvest\ndata: {json.dumps(h)}\n\n"
+                while True:
+                    try:
+                        frame = await asyncio.wait_for(q.get(), timeout=15.0)
+                        yield frame
+                    except asyncio.TimeoutError:
+                        # periodic snapshot (keeps the connection alive + fresh)
+                        h = ledger.harvest()
+                        yield f"event: harvest\ndata: {json.dumps(h)}\n\n"
+            finally:
+                if q in _sse_clients:
+                    _sse_clients.remove(q)
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
+    from pathlib import Path as _P
+    from fastapi.staticfiles import StaticFiles as _SM
+    _dash_dir = _P(__file__).parent / "dashboard"
+    app.mount("/dashboard", _SM(directory=str(_dash_dir), html=True), name="dashboard")
 
     @app.get("/harvest")
     def harvest():

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kultivait dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    background:#0d1117;color:#e6edf3;padding:20px;min-height:100vh}
+h1{font-size:1.4rem;margin-bottom:4px;color:#58a6ff}
+.sub{color:#8b949e;font-size:.85rem;margin-bottom:20px}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;
+       padding:16px;margin-bottom:16px}
+.panel h2{font-size:.95rem;color:#e6edf3;margin-bottom:12px}
+.gauge-row{display:flex;gap:16px;flex-wrap:wrap}
+.gauge{flex:1;min-width:140px;text-align:center;padding:12px;
+       background:#0d1117;border-radius:6px;border:1px solid #21262d}
+.gauge .label{font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.05em}
+.gauge .value{font-size:1.6rem;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+.gauge .value.green{color:#3fb950}.gauge .value.blue{color:#58a6ff}.gauge .value.orange{color:#d29922}
+#conn{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+#conn.on{background:#3fb950}#conn.off{background:#f85149}
+#event-log{font-family:ui-monospace,monospace;font-size:.75rem;color:#8b949e;
+           max-height:120px;overflow-y:auto;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+td,th{padding:4px 8px;border-bottom:1px solid #21262d;text-align:left}
+th{color:#8b949e;font-weight:500}
+td{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<h1><span id="conn" class="off"></span>kultivait</h1>
+<div class="sub">the harvest — live · <span id="mode">connecting…</span></div>
+
+<div class="panel">
+<h2>three lenses</h2>
+<div class="gauge-row">
+  <div class="gauge"><div class="label">kept in pocket</div>
+    <div class="value green" id="kept-pocket">$0.00</div></div>
+  <div class="gauge"><div class="label">kept via cache</div>
+    <div class="value blue" id="kept-cache">$0.00</div></div>
+  <div class="gauge"><div class="label">metered cash out</div>
+    <div class="value orange" id="cash-out">$0.00</div></div>
+</div>
+</div>
+
+<div class="panel">
+<h2>by generation</h2>
+<table id="gen-table"><thead><tr>
+  <th>generation</th><th>requests</th><th>kept $</th><th>cache hit</th>
+</tr></thead><tbody></tbody></table>
+</div>
+
+<div class="panel">
+<h2>event log</h2>
+<div id="event-log"></div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let es=null;
+
+function fmtUsd(v){return "$"+(v||0).toFixed(4)}
+function hydrate(s){
+  $("kept-pocket").textContent=fmtUsd(s.saved_usd);
+  $("cash-out").textContent=fmtUsd(s.metered_spent_usd||s.spent_usd);
+  const cache=s.cache||{};
+  $("kept-cache").textContent=fmtUsd(cache.kept_via_cache_usd);
+  const tb=$("gen-table").querySelector("tbody");
+  tb.innerHTML="";
+  for(const[gen,g]of Object.entries(s.by_generation||{})){
+    const tr=document.createElement("tr");
+    const hit=g.cache.cache_hit_rate>0?(g.cache.cache_hit_rate*100).toFixed(0)+"%":"—";
+    tr.innerHTML=`<td>${gen}</td><td>${g.requests}</td>
+      <td>${fmtUsd(g.saved_usd)}</td><td>${hit}</td>`;
+    tb.appendChild(tr);
+  }
+}
+function log(msg){
+  const el=$("event-log");
+  el.prepend(new Date().toLocaleTimeString()+"  "+msg+"\n");
+  while(el.scrollHeight>3000&&el.firstChild)el.removeChild(el.lastChild);
+}
+function connect(){
+  es=new EventSource("/api/stream");
+  es.onopen=()=>{$("conn").className="on";$("mode").textContent="live"};
+  es.onerror=()=>{$("conn").className="off";$("mode").textContent="reconnecting…"};
+  es.addEventListener("harvest",e=>{
+    const d=JSON.parse(e.data);hydrate(d);log("harvest snapshot");
+  });
+  es.addEventListener("dispatch",e=>{
+    const d=JSON.parse(e.data);
+    log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`);
+  });
+  es.addEventListener("shadow",e=>{
+    const d=JSON.parse(e.data);
+    log(`shadow: inc=${d.incumbent?.verdict} vs sh=${d.shadow?.verdict} ` +
+        `parse=${d.shadow?.parse_ok} Δ${((d.shadow?.latency_s||0)-(d.incumbent?.latency_s||0)).toFixed(1)}s`);
+  });
+}
+fetch("/api/dashboard/summary").then(r=>r.json()).then(hydrate).catch(()=>{});
+connect();
+</script>
+</body>
+</html>

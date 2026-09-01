@@ -45,11 +45,26 @@ def _default_log_path() -> Path:
     return Path.home() / ".kultivait" / "shadow.jsonl"
 
 
+# V1 (#106): dashboard callback — server registers; append fires it
+_shadow_listeners: list = []
+
+
+def add_shadow_listener(fn) -> None:
+    if fn not in _shadow_listeners:
+        _shadow_listeners.append(fn)
+
+
 def append_shadow_log(record: ShadowRecord, path: "Path | None" = None) -> None:
     p = Path(path) if path else _default_log_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    row = asdict(record)
     with p.open("a") as f:
-        f.write(json.dumps(asdict(record)) + "\n")
+        f.write(json.dumps(row) + "\n")
+    for fn in _shadow_listeners:
+        try:
+            fn(row)
+        except Exception:  # noqa: BLE001 - a dashboard failure never kills shadowing
+            pass
 
 
 def read_shadow_log(path: "Path | None" = None) -> list:
