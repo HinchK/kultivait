@@ -89,6 +89,35 @@ class Ledger:
                                       "kept_via_cache_usd": round(v["kept_via_cache_usd"], 6)}
                                   for k, v in cohorts.items()},
         }
+    def _by_generation(self, prompt_entries: list) -> dict:
+        """S3 (#103): per-distillate-generation slicing on preprocess_model —
+        untagged/legacy entries group under 'legacy/incumbent'."""
+        gens: dict = {}
+        for e in prompt_entries:
+            gen = e.get("preprocess_model") or "legacy/incumbent"
+            g = gens.setdefault(gen, {"requests": 0, "saved_usd": 0.0,
+                                      "cache": {"dispatches": 0, "kept_via_cache_usd": 0.0,
+                                                "cache_read_tokens": 0, "tokens_in": 0}})
+            g["requests"] += 1
+            g["saved_usd"] += max(0.0, e.get("notional_usd", e.get("cost_usd", 0.0))
+                                  - e.get("cost_usd", 0.0))
+            if e.get("cache_read_tokens") or e.get("cache_write_tokens"):
+                g["cache"]["dispatches"] += 1
+                g["cache"]["kept_via_cache_usd"] += (
+                    (e.get("cache_read_tokens", 0) * 0.9 * e.get("cache_price_in", 0.0)
+                     - e.get("cache_write_tokens", 0)
+                     * ({"5m": 1.25, "1h": 2.0}.get(e.get("cache_ttl", "5m"), 1.25) - 1.0)
+                     * e.get("cache_price_in", 0.0)) / 1e6)
+                g["cache"]["cache_read_tokens"] += e.get("cache_read_tokens", 0)
+                g["cache"]["tokens_in"] += e.get("tokens_in", 0)
+        for gen, g in gens.items():
+            g["saved_usd"] = round(g["saved_usd"], 4)
+            c = g["cache"]
+            c["kept_via_cache_usd"] = round(c["kept_via_cache_usd"], 6)
+            c["cache_hit_rate"] = (round(c["cache_read_tokens"] / c["tokens_in"], 4)
+                                   if c["tokens_in"] else 0.0)
+        return gens
+
     def harvest(self) -> dict:
         entries = []
         if self._path.exists():
@@ -139,9 +168,11 @@ class Ledger:
         toll_rate = (tolls_fired / len(prompt_entries)) if prompt_entries else 0.0
 
         cache = self._cache_section(prompt_entries)
+        by_generation = self._by_generation(prompt_entries)
 
         return {
             "cache": cache,
+            "by_generation": by_generation,
             "prompts": len(prompt_entries),
             "local_prompts": sum(1 for e in prompt_entries if e.get("local")),
             "tokens_local": sum(e["tokens_in"] + e["tokens_out"] for e in prompt_entries if e.get("local")),

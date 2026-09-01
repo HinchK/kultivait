@@ -725,6 +725,15 @@ def format_harvest(stats: dict) -> str:
         ]
         if cohort_txt:
             lines.append(f"    ttl cohorts        {cohort_txt}")
+    by_gen = stats.get("by_generation")
+    if by_gen:
+        lines += ["", "  by generation (preprocess_model)"]
+        for gen, g in sorted(by_gen.items()):
+            cache_txt = ""
+            if g["cache"]["dispatches"]:
+                cache_txt = (f" | cache hit {g['cache']['cache_hit_rate']:.0%} "
+                             f"kept ${g['cache']['kept_via_cache_usd']:.4f}")
+            lines.append(f"    {gen:<28} {g['requests']:>4} req  kept ${g['saved_usd']:.2f}{cache_txt}")
     toll = stats.get("toll_activity")
     if toll and (
         toll.get("fired", 0) > 0
