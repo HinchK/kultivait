@@ -92,6 +92,58 @@ td{font-variant-numeric:tabular-nums}
 </tr></thead><tbody></tbody></table>
 </div>
 
+<!-- V3: cache economics -->
+<div class="panel" id="cache-panel">
+<h2>cache economics</h2>
+<div class="gauge-row">
+  <div class="gauge" id="gauge-cache-hit">
+    <div class="label">cache hit rate</div>
+    <svg width="80" height="44" viewBox="0 0 80 44">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6" stroke-linecap="round"/>
+      <path id="dial-cache-hit" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#58a6ff" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value blue" id="cache-hit-pct">—</div>
+    <div class="sub-v" id="cache-read-tokens">0 read tokens</div>
+  </div>
+  <div class="gauge" id="gauge-amortization">
+    <div class="label">reads per write</div>
+    <div style="position:relative;width:120px;margin:8px auto;height:44px">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:6px;
+                  background:#21262d;border-radius:3px"></div>
+      <div id="amort-bar" style="position:absolute;bottom:0;left:0;height:6px;
+                  background:#3fb950;border-radius:3px;width:0%;
+                  transition:width .3s ease"></div>
+      <div style="position:absolute;bottom:0;left:14.28%;width:2px;height:12px;
+                  background:#d29922"></div>
+      <div style="position:absolute;bottom:14px;left:8%;font-size:.6rem;
+                  color:#d29922">1.4×</div>
+    </div>
+    <div class="value" id="reads-per-write">—</div>
+    <div class="sub-v" id="amort-status">break-even at 1.4×</div>
+  </div>
+  <div class="gauge" id="gauge-ttl-cohorts">
+    <div class="label">ttl cohorts</div>
+    <div id="ttl-cohort-list" style="text-align:left;font-size:.8rem;margin-top:8px">
+      <div style="color:#8b949e">no cache-bearing dispatches</div>
+    </div>
+  </div>
+</div>
+<div style="margin-top:12px">
+  <div class="label" style="font-size:.75rem;color:#8b949e;text-transform:uppercase;
+       letter-spacing:.05em;margin-bottom:6px">cache savings — rolling</div>
+  <svg id="cache-sparkline" width="100%" height="48" viewBox="0 0 600 48"
+       preserveAspectRatio="none" aria-label="cache savings sparkline">
+    <polyline id="cache-spark-line" fill="none" stroke="#58a6ff" stroke-width="2"
+              points=""/>
+    <polyline id="cache-spark-fill" fill="rgba(88,166,255,0.1)" stroke="none"
+              points=""/>
+  </svg>
+</div>
+</div>
+
 <div class="panel">
 <h2>event log</h2>
 <div id="event-log"></div>
@@ -131,6 +183,7 @@ function hydrate(s){
   const c=s.cache||{};
   $("cache-hit-rate").textContent=c.cache_hit_rate!==undefined
     ?"hit rate "+(c.cache_hit_rate*100).toFixed(0)+"%":"hit rate —";
+  renderCache(c);
   // dials: kept-in-pocket and kept-via-cache as savings ratios (cap 100%)
   setDial("dial-kept-pocket",base>0?(s.saved_usd||0)/base:0);
   setDial("dial-kept-cache",c.dispatches>0?Math.min(1,c.cache_hit_rate*2):0);
@@ -163,12 +216,63 @@ function onDispatch(d){
   $("dispatch-count").textContent=dispatchN+" dispatches";
   log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`
       +(d.cache_read_tokens>0?` cache:${d.cache_read_tokens}r/${d.cache_write_tokens}w`:""));
+  onDispatchCache(d);
 }
 function onShadow(d){
   const inc=d.incumbent||{},sh=d.shadow||{};
   log(`shadow: inc=${inc.verdict} vs sh=${sh.verdict} parse=${sh.parse_ok} `
       +`Δ${((sh.latency_s||0)-(inc.latency_s||0)).toFixed(1)}s`);
 }
+/* V3: cache economics state + rendering */
+const SPARK_MAX=40;
+let sparkData=[];
+function renderCache(c){
+  if(!c)return;
+  const hit=c.cache_hit_rate||0;
+  $("cache-hit-pct").textContent=(hit*100).toFixed(0)+"%";
+  setDial("dial-cache-hit",hit);
+  $("cache-read-tokens").textContent=(c.cache_read_tokens_sum||0).toLocaleString()+" read tokens";
+  const rpw=c.cache_reads_per_write||0;
+  $("reads-per-write").textContent=rpw>0?rpw.toFixed(1)+"×":"—";
+  $("amort-bar").style.width=Math.min(100,(rpw/7)*100)+"%";
+  const st=$("amort-status");
+  if(rpw>=1.4){st.textContent="amortized ✓";st.style.color="#3fb950"}
+  else if(rpw>0){st.textContent="below break-even ("+rpw.toFixed(1)+"×)";st.style.color="#d29922"}
+  else{st.textContent="break-even at 1.4×";st.style.color="#8b949e"}
+  renderTTL(c.cache_ttl_cohorts||{});
+}
+function renderTTL(cohorts){
+  const el=$("ttl-cohort-list");
+  const keys=Object.keys(cohorts);
+  if(!keys.length){el.innerHTML='<div style="color:#8b949e">no cache-bearing dispatches</div>';return}
+  el.innerHTML=keys.map(k=>{
+    const c=cohorts[k];
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0">
+      <span style="color:${k==="5m"?"#58a6ff":k==="1h"?"#bc8cff":"#8b949e"}">${k}</span>
+      <span>${c.dispatches} dsp · $${(c.kept_via_cache_usd||0).toFixed(4)}</span></div>`;
+  }).join("");
+}
+function pushSparkPoint(v){
+  sparkData.push(v);
+  if(sparkData.length>SPARK_MAX)sparkData.shift();
+  const n=sparkData.length;
+  const max=Math.max(...sparkData,0.0001);
+  const pts=sparkData.map((v,i)=>{
+    const x=(i/(Math.max(n-1,1)))*600;
+    const y=44-(v/max)*40;
+    return x.toFixed(1)+","+y.toFixed(1);
+  });
+  $("cache-spark-line").setAttribute("points",pts.join(" "));
+  $("cache-spark-fill").setAttribute("points",
+    "0,48 "+pts.join(" ")+" 600,48");
+}
+function onDispatchCache(d){
+  if(d.cache_read_tokens>0||d.cache_write_tokens>0){
+    const est=(d.cache_read_tokens*0.9-(d.cache_write_tokens||0)*0.25)/1e6;
+    pushSparkPoint(Math.max(0,est));
+  }
+}
+
 function connect(){
   es=new EventSource("/api/stream");
   es.onopen=()=>{$("conn").className="on";$("mode").textContent="live"};
