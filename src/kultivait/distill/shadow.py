@@ -204,6 +204,53 @@ def shadow_after_response(
     )
 
 
+def run_shadow_probe(
+    *,
+    band: str = "contested",
+    n: int = 7,
+    shadow_model: str,
+    incumbent_model: str,
+    generate,
+    log_path: "Path | None" = None,
+) -> dict:
+    """S2 (#102): replay the hardened corpus's band prompts through the shadow
+    model via the aligned generate path, recording real shadow.jsonl rows.
+
+    The incumbent side replays from the framing-aligned path too (the probe is
+    a controlled comparison, not a live-traffic approximation). Eval
+    instruments are read, never trained on (#70 disjointness).
+    """
+    from kultivait.capability_eval import load_corpus
+
+    tasks = [t for t in load_corpus() if t.rubric.get("band") == band][:max(1, n)]
+    rows_written = 0
+    for t in tasks:
+        prompt = next((m.get("content", "") for m in reversed(t.messages)
+                       if m.get("role") == "user"), "")
+        if not prompt:
+            continue
+        # incumbent turn (the active seat judges first, as in live)
+        inc = run_shadow_pass(
+            prompt, f"probe:{t.id}",
+            incumbent_model=incumbent_model, incumbent_verdict="",
+            incumbent_max_fit=0.0, incumbent_latency_s=0.0,
+            shadow_model=incumbent_model, generate=generate,
+        )
+        inc_verdict = inc.shadow.get("verdict")
+        inc_latency = inc.shadow.get("latency_s", 0.0)
+        inc_fit = inc.shadow.get("max_fit", 0.0)
+        # shadow turn
+        rec = run_shadow_pass(
+            prompt, f"probe:{t.id}",
+            incumbent_model=incumbent_model, incumbent_verdict=inc_verdict,
+            incumbent_max_fit=inc_fit, incumbent_latency_s=inc_latency,
+            shadow_model=shadow_model, generate=generate,
+        )
+        append_shadow_log(rec, log_path)
+        rows_written += 1
+    return {"band": band, "tasks_probed": rows_written,
+            "shadow_model": shadow_model, "incumbent_model": incumbent_model}
+
 class DistillSeat:
     """The live preprocessor seat (ADR 0017): the model resolves per call, so
     a seat update swaps models on the next request with no restart."""

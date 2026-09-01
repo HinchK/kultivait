@@ -968,6 +968,36 @@ def cmd_distill_status(args: argparse.Namespace) -> None:
     print("\n".join(lines))
 
 
+def cmd_shadow_probe(args: argparse.Namespace) -> None:
+    """S2 (#102): synthetic replay across the contested corpus to accumulate
+    shadow telemetry without waiting for live traffic."""
+    from kultivait.distill.shadow import run_shadow_probe
+    from kultivait.server import _default_preprocess_generate_for
+
+    config = get_config()
+    d = config.distill
+    if not d.shadow_model:
+        print("no shadow model configured: set [distill] shadow_model first.")
+        return
+    if d.shadow_mode != "on":
+        print(f"shadow mode is '{d.shadow_mode}': the probe works regardless "
+              "(it dispatches directly), but live shadowing stays off.")
+
+    generate = _default_preprocess_generate_for()
+    result = run_shadow_probe(
+        band=args.band, n=args.n,
+        shadow_model=d.shadow_model, incumbent_model=d.model,
+        generate=generate,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"shadow probe: {result['tasks_probed']} {result['band']}-band prompts "
+              f"replayed | incumbent {result['incumbent_model']} vs shadow "
+              f"{result['shadow_model']} | rows appended to ~/.kultivait/shadow.jsonl")
+        print("inspect: kultivait shadow")
+
+
 def cmd_shadow(args: argparse.Namespace) -> None:
     """S1 (#101): the enriched shadow read — latency deltas, parse validity,
     the calibration-correction read, the decomposed #73 readiness."""
@@ -1166,9 +1196,18 @@ def main() -> None:
                         help="recompute the incumbent baseline first (same path)")
     eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
     eval_d.set_defaults(func=cmd_distill_eval)
-    shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
-    shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
-    shadow_cmd.add_argument("--json", action="store_true", help="machine-readable output")
+    shadow_cmd = sub.add_parser("shadow", help="shadow observatory + probe")
+    shadow_sub = shadow_cmd.add_subparsers(dest="shadow_cmd")
+    shadow_read = shadow_sub.add_parser("read", help="shadow log summary + readiness")
+    shadow_read.add_argument("--log", default=None, help="shadow log path")
+    shadow_read.add_argument("--json", action="store_true", help="machine-readable output")
+    shadow_read.set_defaults(func=cmd_shadow)
+    probe_cmd = shadow_sub.add_parser("probe", help="replay corpus prompts through the shadow")
+    probe_cmd.add_argument("--band", default="contested", choices=["simple", "contested", "escalatory"])
+    probe_cmd.add_argument("--n", type=int, default=7, help="max prompts to replay")
+    probe_cmd.add_argument("--json", action="store_true", help="machine-readable output")
+    probe_cmd.set_defaults(func=cmd_shadow_probe)
+    # bare 'kultivait shadow' defaults to the read surface
     shadow_cmd.set_defaults(func=cmd_shadow)
     cutover_cmd = sub.add_parser(
         "cutover", help="flip the live preprocessor model (human confirmation; prints rollback)")
