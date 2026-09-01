@@ -900,6 +900,74 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_distill_status(args: argparse.Namespace) -> None:
+    """S4 (#104): the distillate registry dashboard — generations, seats,
+    footprints, gen-3 readiness at a glance."""
+    import subprocess as _sp
+    import tomllib as _toml
+
+    registry_path = KULTIVAIT_HOME / "models" / "distillates.json"
+    registry = {}
+    if registry_path.exists():
+        registry = json.loads(registry_path.read_text())
+
+    config = get_config()
+    d = config.distill
+
+    # ollama footprints (best-effort; graceful when the server is down)
+    footprints: dict = {}
+    try:
+        r = _sp.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines()[1:]:
+            parts = line.split()
+            if parts:
+                footprints[parts[0]] = {"size": parts[2] if len(parts) > 2 else "?",
+                                        "tag": parts[1] if len(parts) > 1 else "?"}
+    except Exception:  # noqa: BLE001 - the dashboard must render without ollama
+        pass
+
+    entries = []
+    for name, spec in sorted(registry.items(),
+                              key=lambda kv: (kv[1].get("generation", 0), kv[0])):
+        seat = "retired"
+        if name == d.model:
+            seat = "ACTIVE (preprocessor)"
+        elif name == d.shadow_model:
+            seat = f"SHADOW (mode={d.shadow_mode}, rate={d.shadow_sample_rate})"
+        fp = footprints.get(f"{name}:latest", footprints.get(name, {}))
+        entries.append({
+            "name": name, "generation": spec.get("generation"),
+            "base": spec.get("base"), "quantize": spec.get("quantize"),
+            "registered": spec.get("registered"), "seat": seat,
+            "ollama_size": fp.get("size", "not in ollama"),
+            "fused_path": spec.get("fused_path"),
+        })
+
+    summary = {"active_seat": d.model, "shadow_seat": d.shadow_model,
+               "shadow_mode": d.shadow_mode, "shadow_sample_rate": d.shadow_sample_rate,
+               "distillates": entries}
+
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2))
+        return
+
+    lines = [
+        "distillate registry",
+        "",
+        f"  active preprocessor     {d.model}",
+        f"  shadow                  {d.shadow_model or '(none)'}  "
+        f"(mode={d.shadow_mode}, rate={d.shadow_sample_rate})",
+        "",
+        f"  {'DISTILLATE':<30} {'GEN':>3} {'QUANT':>7} {'SIZE':>9}  SEAT",
+        f"  {'-'*30} {'-'*3} {'-'*7} {'-'*9}  {'-'*24}",
+    ]
+    for e in entries:
+        lines.append(f"  {e['name']:<30} {e['generation']:>3} {e['quantize'] or '?':>7} "
+                     f"{e['ollama_size']:>9}  {e['seat']}")
+    lines.append("")
+    print("\n".join(lines))
+
+
 def cmd_shadow(args: argparse.Namespace) -> None:
     """S1 (#101): the enriched shadow read — latency deltas, parse validity,
     the calibration-correction read, the decomposed #73 readiness."""
@@ -1088,6 +1156,9 @@ def main() -> None:
     export_cmd.add_argument("--no-quantize", action="store_true",
                             help="skip quantize-at-import (default q4_K_M)")
     export_cmd.set_defaults(func=cmd_distill_export)
+    status_cmd = distill_sub.add_parser("status", help="distillate registry dashboard")
+    status_cmd.add_argument("--json", action="store_true", help="machine-readable output")
+    status_cmd.set_defaults(func=cmd_distill_status)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
