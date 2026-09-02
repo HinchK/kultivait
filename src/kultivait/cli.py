@@ -901,6 +901,38 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_hook_loopback(args: argparse.Namespace) -> None:
+    """Z4 (#122): generate OS-level loopback redirection config (review-only)."""
+    from kultivait.hook.loopback import full_setup_guide
+
+    port = args.port or get_config().port
+    guide = full_setup_guide(port=port)
+
+    if args.generate_hosts:
+        print(guide["hosts"])
+        return
+    if args.generate_pf:
+        print(guide["pf_rules"])
+        return
+    if args.generate_uninstall:
+        print(guide["uninstall"])
+        return
+    if args.generate_cert:
+        print(guide["cert_instructions"])
+        return
+
+    # full guide
+    print(guide["hosts"])
+    print()
+    print(guide["pf_rules"])
+    print()
+    print(guide["cert_instructions"])
+    print()
+    print(guide["uninstall"])
+    print()
+    print(guide["trade_offs"])
+
+
 def cmd_hook_ide(args: argparse.Namespace) -> None:
     """Z3 (#121): IDE auto-patcher — detect + patch IDE configs."""
     from kultivait.hook.ide import detect_all, patch_ide, restore_ide
@@ -1406,6 +1438,13 @@ def main(argv: list | None = None) -> None:
     hook_ide.add_argument("--host", default="127.0.0.1")
     hook_ide.add_argument("--port", type=int, default=None)
     hook_ide.set_defaults(func=cmd_hook_ide)
+    hook_loopback = hook_sub.add_parser("loopback", help="generate OS-level redirection config (review-only)")
+    hook_loopback.add_argument("--generate-hosts", action="store_true")
+    hook_loopback.add_argument("--generate-pf", action="store_true")
+    hook_loopback.add_argument("--generate-cert", action="store_true")
+    hook_loopback.add_argument("--generate-uninstall", action="store_true")
+    hook_loopback.add_argument("--port", type=int, default=None)
+    hook_loopback.set_defaults(func=cmd_hook_loopback)
     # bare 'kultivait hook' defaults to the shell integration
     hook_cmd.set_defaults(func=cmd_hook)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
