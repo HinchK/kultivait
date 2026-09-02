@@ -1146,7 +1146,22 @@ def cmd_eval(args: argparse.Namespace) -> None:
         print(format_eval_summary(summary))
 
 
-def main() -> None:
+def _require_subcommand(group: argparse.ArgumentParser):
+    """Handler for a bare group invocation (`kultivait distill`).
+
+    A group parser only gets a `func` from its subcommands, so without this the
+    dispatch in `main()` trips over a missing attribute. Print the group's own
+    help and exit with argparse's usage-error code instead.
+    """
+
+    def _handler(_args: argparse.Namespace) -> None:
+        group.print_help()
+        raise SystemExit(2)
+
+    return _handler
+
+
+def main(argv: list | None = None) -> None:
     parser = argparse.ArgumentParser(prog="kultivait")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1188,6 +1203,8 @@ def main() -> None:
 
     distill = sub.add_parser("distill", help="distillation pipeline operations")
     distill_sub = distill.add_subparsers(dest="distill_cmd")
+    # bare 'kultivait distill' has no subcommand to supply a handler
+    distill.set_defaults(func=_require_subcommand(distill))
     corpus_cmd = distill_sub.add_parser("corpus", help="assemble the corpus from the harvest")
     corpus_cmd.add_argument("--dry-run", action="store_true",
                             help="print anchors, strata, and the held-out roster")
@@ -1246,11 +1263,17 @@ def main() -> None:
                         help="recompute the incumbent baseline first (same path)")
     eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
     eval_d.set_defaults(func=cmd_distill_eval)
-    shadow_cmd = sub.add_parser("shadow", help="shadow observatory + probe")
+    # the read surface's flags sit on a shared parent so both the documented bare
+    # form (`kultivait shadow --log X`) and `kultivait shadow read --log X` parse
+    shadow_read_flags = argparse.ArgumentParser(add_help=False)
+    shadow_read_flags.add_argument("--log", default=None, help="shadow log path")
+    shadow_read_flags.add_argument("--json", action="store_true",
+                                   help="machine-readable output")
+    shadow_cmd = sub.add_parser("shadow", parents=[shadow_read_flags],
+                                help="shadow observatory + probe")
     shadow_sub = shadow_cmd.add_subparsers(dest="shadow_cmd")
-    shadow_read = shadow_sub.add_parser("read", help="shadow log summary + readiness")
-    shadow_read.add_argument("--log", default=None, help="shadow log path")
-    shadow_read.add_argument("--json", action="store_true", help="machine-readable output")
+    shadow_read = shadow_sub.add_parser("read", parents=[shadow_read_flags],
+                                        help="shadow log summary + readiness")
     shadow_read.set_defaults(func=cmd_shadow)
     probe_cmd = shadow_sub.add_parser("probe", help="replay corpus prompts through the shadow")
     probe_cmd.add_argument("--band", default="contested", choices=["simple", "contested", "escalatory"])
@@ -1287,7 +1310,7 @@ def main() -> None:
     bench_cmd.add_argument("--json", action="store_true", help="machine-readable summary output")
     bench_cmd.set_defaults(func=cmd_eval)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
 
 
