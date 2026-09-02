@@ -117,6 +117,36 @@ def _sort_targets_desc(contract_json: str) -> str:
     return json.dumps(data)
 
 
+def with_teacher_fallback(
+    primary_fn,
+    fallback_fns: "list | None" = None,
+    max_primary_retries: int = 3,
+    retry_delay_s: float = 2.0,
+):
+    """W1 (#113): dynamic teacher fallback — primary gets N retries with backoff,
+    then the fallback chain takes over (multi-teacher). Each fallback gets the
+    same retry budget. If all teachers exhaust, raises the last error (the
+    caller's BudgetStop still protects the run)."""
+    import time as _t
+    chain = [primary_fn] + (fallback_fns or [])
+
+    def wrapped(*args, **kwargs):
+        last_err = None
+        for i, fn in enumerate(chain):
+            retries = max_primary_retries if i == 0 else 1
+            for attempt in range(retries):
+                try:
+                    return fn(*args, **kwargs)
+                except BudgetStop:
+                    raise
+                except Exception as e:  # noqa: BLE001 - any teacher failure
+                    last_err = e
+                    if attempt < retries - 1:
+                        _t.sleep(retry_delay_s * (attempt + 1))
+        raise last_err or RuntimeError("all teachers exhausted")
+
+    return wrapped
+
 def generate_corpus(
     seeds: list,
     *,
