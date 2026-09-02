@@ -900,6 +900,51 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """V5 (#110): the one-command dashboard — health-check serve, open the browser.
+
+    Attaches to a running instance if one answers; otherwise starts serve
+    in the background first. --no-open prints the URL headless-safe.
+    """
+    import subprocess
+    import time as _time
+    import webbrowser
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    url = f"http://{host}:{port}/dashboard"
+
+    def _alive() -> bool:
+        try:
+            import httpx
+            r = httpx.get(f"http://{host}:{port}/api/dashboard/summary", timeout=2)
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001 - any failure means not alive
+            return False
+
+    if not _alive():
+        print(f"no serve at :{port} — starting one…", file=sys.stderr)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn",
+             "kultivait.server:create_app_factory", "--factory",
+             "--host", host, "--port", str(port)],
+            start_new_session=True,
+        )
+        for _ in range(20):
+            _time.sleep(0.5)
+            if _alive():
+                break
+        else:
+            print(f"serve did not come up (pid {proc.pid}); "
+                  f"try 'kultivait serve' manually, then browse {url}",
+                  file=sys.stderr)
+            return
+
+    print(f"dashboard: {url}")
+    if not args.no_open:
+        webbrowser.open(url)
+
+
 def cmd_distill_status(args: argparse.Namespace) -> None:
     """S4 (#104): the distillate registry dashboard — generations, seats,
     footprints, gen-3 readiness at a glance."""
@@ -1189,6 +1234,11 @@ def main() -> None:
     status_cmd = distill_sub.add_parser("status", help="distillate registry dashboard")
     status_cmd.add_argument("--json", action="store_true", help="machine-readable output")
     status_cmd.set_defaults(func=cmd_distill_status)
+    dash_cmd = sub.add_parser("dashboard", help="open the web dashboard")
+    dash_cmd.add_argument("--host", default="127.0.0.1")
+    dash_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
+    dash_cmd.add_argument("--no-open", action="store_true", help="print the URL without opening a browser")
+    dash_cmd.set_defaults(func=cmd_dashboard)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
