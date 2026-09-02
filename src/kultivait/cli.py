@@ -7,6 +7,7 @@ editable.
 """
 
 import argparse
+import os
 import json
 import random
 import os
@@ -900,6 +901,52 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_run(args: argparse.Namespace) -> None:
+    """Z1 (#119): transparent process wrapper — inject proxy env vars and
+    execute the child command. kultivait's own CLI dispatches strip these
+    vars (PROXY_ENV_STRIP), so no recursion."""
+    import shlex
+    import signal
+    import subprocess
+
+    if not args.command:
+        print("usage: kultivait run [--host H] [--port P] -- <command...>", file=sys.stderr)
+        raise SystemExit(2)
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+
+    env = dict(os.environ)
+    env["OPENAI_BASE_URL"] = f"{base}/v1"
+    env["ANTHROPIC_BASE_URL"] = base
+    # some tools require a non-empty key; kultivait's proxy ignores it
+    env.setdefault("OPENAI_API_KEY", "kultivait")
+    env.setdefault("ANTHROPIC_API_KEY", "kultivait")
+
+    cmd = list(args.command)
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]  # strip the argparse REMAINDER separator
+    try:
+        proc = subprocess.Popen(cmd, env=env)
+    except FileNotFoundError:
+        print(f"kultivait run: command not found: {cmd[0]}", file=sys.stderr)
+        raise SystemExit(127)
+
+    # forward terminal signals to the child
+    def _fwd(signum, _frame):
+        proc.send_signal(signum)
+
+    old_int = signal.signal(signal.SIGINT, _fwd)
+    old_term = signal.signal(signal.SIGTERM, _fwd)
+    try:
+        rc = proc.wait()
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+    raise SystemExit(rc)
+
+
 def cmd_dashboard(args: argparse.Namespace) -> None:
     """V5 (#110): the one-command dashboard — health-check serve, open the browser.
 
@@ -1256,6 +1303,12 @@ def main(argv: list | None = None) -> None:
     dash_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
     dash_cmd.add_argument("--no-open", action="store_true", help="print the URL without opening a browser")
     dash_cmd.set_defaults(func=cmd_dashboard)
+    run_cmd = sub.add_parser("run", help="transparently wrap a command with proxy env vars")
+    run_cmd.add_argument("--host", default="127.0.0.1")
+    run_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
+    run_cmd.add_argument("command", nargs=argparse.REMAINDER,
+                         help="the command to execute (after --)")
+    run_cmd.set_defaults(func=cmd_run)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
