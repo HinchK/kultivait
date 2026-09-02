@@ -901,6 +901,45 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_hook_ide(args: argparse.Namespace) -> None:
+    """Z3 (#121): IDE auto-patcher — detect + patch IDE configs."""
+    from kultivait.hook.ide import detect_all, patch_ide, restore_ide
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+
+    detected = detect_all()
+    if not detected:
+        print("no supported IDEs detected (cursor, vscode, windsurf)")
+        return
+
+    # filter by --ide if given
+    if args.ide and args.ide != "all":
+        filtered = {k: v for k, v in detected.items() if k == args.ide}
+        if not filtered:
+            print(f"--ide {args.ide}: not installed or not detected")
+            return
+        detected = filtered
+
+    print(f"detected: {', '.join(detected.keys())}")
+    for ide, path in detected.items():
+        if args.restore:
+            if restore_ide(path):
+                print(f"  {ide}: restored from backup")
+            else:
+                print(f"  {ide}: no backup found")
+            continue
+
+        result = patch_ide(ide, path, base, dry_run=args.dry_run)
+        if result["dry_run"]:
+            print(f"  {ide} [dry-run] would set: {', '.join(result['keys_set'])}")
+        elif result["patched"]:
+            print(f"  {ide}: patched {', '.join(result['keys_set'])} (backup: {result['backup']})")
+        else:
+            print(f"  {ide}: already routed (no change needed)")
+
+
 def cmd_hook(args: argparse.Namespace) -> None:
     """Z2 (#120): the shell integration — export/unset lines for eval."""
     host = args.host or "127.0.0.1"
@@ -1351,12 +1390,23 @@ def main(argv: list | None = None) -> None:
     run_cmd.add_argument("command", nargs=argparse.REMAINDER,
                          help="the command to execute (after --)")
     run_cmd.set_defaults(func=cmd_run)
-    hook_cmd = sub.add_parser("hook", help="shell integration (eval \"$(kultivait hook)\")")
-    hook_cmd.add_argument("--shell", default="sh", choices=["sh", "bash", "zsh", "fish"])
-    hook_cmd.add_argument("--unset", action="store_true", help="print unset lines")
-    hook_cmd.add_argument("--check", action="store_true", help="report current hook status")
-    hook_cmd.add_argument("--host", default="127.0.0.1")
-    hook_cmd.add_argument("--port", type=int, default=None)
+    hook_cmd = sub.add_parser("hook", help="shell + IDE integration")
+    hook_sub = hook_cmd.add_subparsers(dest="hook_cmd")
+    hook_shell = hook_sub.add_parser("shell", help="shell-safe export/unset lines")
+    hook_shell.add_argument("--shell", default="sh", choices=["sh", "bash", "zsh", "fish"])
+    hook_shell.add_argument("--unset", action="store_true")
+    hook_shell.add_argument("--check", action="store_true")
+    hook_shell.add_argument("--host", default="127.0.0.1")
+    hook_shell.add_argument("--port", type=int, default=None)
+    hook_shell.set_defaults(func=cmd_hook)
+    hook_ide = hook_sub.add_parser("ide", help="auto-patch IDE configs for proxy routing")
+    hook_ide.add_argument("--ide", default="all", choices=["cursor", "vscode", "windsurf", "all"])
+    hook_ide.add_argument("--dry-run", action="store_true")
+    hook_ide.add_argument("--restore", action="store_true")
+    hook_ide.add_argument("--host", default="127.0.0.1")
+    hook_ide.add_argument("--port", type=int, default=None)
+    hook_ide.set_defaults(func=cmd_hook_ide)
+    # bare 'kultivait hook' defaults to the shell integration
     hook_cmd.set_defaults(func=cmd_hook)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
