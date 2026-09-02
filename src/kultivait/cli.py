@@ -901,6 +901,48 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_hook(args: argparse.Namespace) -> None:
+    """Z2 (#120): the shell integration — export/unset lines for eval."""
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+    shell = args.shell
+
+    def _export(key, val):
+        if shell == "fish":
+            print(f'set -gx {key} "{val}"')
+        else:
+            print(f'export {key}="{val}"')
+
+    def _unset(key):
+        if shell == "fish":
+            print(f"set -e {key}")
+        else:
+            print(f"unset {key}")
+
+    if args.check:
+        cur_base = os.environ.get("OPENAI_BASE_URL", "")
+        cur_a = os.environ.get("ANTHROPIC_BASE_URL", "")
+        ok = cur_base == f"{base}/v1" and cur_a == base
+        print(f"OPENAI_BASE_URL={cur_base or '(unset)'}")
+        print(f"ANTHROPIC_BASE_URL={cur_a or '(unset)'}")
+        print(f"expected: {base}")
+        print("hooked: yes" if ok else "hooked: no (run: eval \"$(kultivait hook)\")")
+        return
+
+    if args.unset:
+        _unset("OPENAI_BASE_URL")
+        _unset("ANTHROPIC_BASE_URL")
+        _unset("OPENAI_API_KEY")
+        _unset("ANTHROPIC_API_KEY")
+        return
+
+    _export("OPENAI_BASE_URL", f"{base}/v1")
+    _export("ANTHROPIC_BASE_URL", base)
+    _export("OPENAI_API_KEY", "kultivait")
+    _export("ANTHROPIC_API_KEY", "kultivait")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Z1 (#119): transparent process wrapper — inject proxy env vars and
     execute the child command. kultivait's own CLI dispatches strip these
@@ -1309,6 +1351,13 @@ def main(argv: list | None = None) -> None:
     run_cmd.add_argument("command", nargs=argparse.REMAINDER,
                          help="the command to execute (after --)")
     run_cmd.set_defaults(func=cmd_run)
+    hook_cmd = sub.add_parser("hook", help="shell integration (eval \"$(kultivait hook)\")")
+    hook_cmd.add_argument("--shell", default="sh", choices=["sh", "bash", "zsh", "fish"])
+    hook_cmd.add_argument("--unset", action="store_true", help="print unset lines")
+    hook_cmd.add_argument("--check", action="store_true", help="report current hook status")
+    hook_cmd.add_argument("--host", default="127.0.0.1")
+    hook_cmd.add_argument("--port", type=int, default=None)
+    hook_cmd.set_defaults(func=cmd_hook)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
