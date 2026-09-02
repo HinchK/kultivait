@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -148,7 +149,7 @@ def train(
     while True:
         rung_cfg = choose_rung(base, breaches)
         argv = [
-            "python", "-m", "mlx_lm.lora",
+            sys.executable, "-m", "mlx_lm.lora",
             "--model", spec.hf_repo,
             "--train",
             "--data", str(corpus_dir),
@@ -159,7 +160,7 @@ def train(
             "--adapter-path", str(adapter_path),
         ]
         if epochs > 1:
-            argv += ["--save-every-iters", str(max(1, iters // epochs))]
+            argv += ["--save-every", str(max(1, iters // epochs))]
         if rung_cfg["grad_checkpoint"]:
             argv.append("--grad-checkpoint")
         if resume:

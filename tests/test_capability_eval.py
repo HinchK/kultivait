@@ -119,7 +119,8 @@ def test_load_corpus():
     assert t0.id == "file_search_and_edit"
     assert len(t0.tools) >= 2
     assert "rubric" in t0.__dict__
-    assert t0.rubric.get("version") == "v1"
+    assert t0.rubric.get("version") == "v2"  # re-tagged per #79 (band/features metadata)
+    assert t0.rubric.get("band") == "simple"
 
 
 def test_get_family():
@@ -150,12 +151,13 @@ def test_select_cross_family_judge_enforcement():
     assert j_name2 == "anthropic"
     assert get_family(j_name2) != get_family("openai")
 
-    # 3. Violation when no cross-family judge exists
+    # 3. Violation when no cross-family API judge exists (#71: CLI judges
+    #    are excluded — the new error names the api-kind requirement)
     single_family_backends = {
         "anthropic": MockTargetBackend("anthropic"),
         "claude-opus": MockJudgeBackend("claude-opus"),
     }
-    with pytest.raises(ValueError, match="No cross-family judge available"):
+    with pytest.raises(ValueError, match="No cross-family API judge available"):
         select_cross_family_judge("anthropic", single_family_backends)
 
 

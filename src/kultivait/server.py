@@ -105,7 +105,15 @@ def _default_preprocess_generate_for(
 
     def generate(target_model: str, prompt: str) -> tuple[str, float]:
         actual_model = target_model or model or "qwen3.5:4b"
-        messages = [{"role": "user", "content": prompt}]
+        # G2 (#96): the train/serve framing fix — serving frames requests in
+        # the TRAINED chat shape (system contract + user query), matching the
+        # distillation corpus pairs byte-for-byte. Gen-1's single-blob framing
+        # produced 0% parse through serving; this is the fix at the serve end.
+        from kultivait.preprocessor import PREPROCESSOR_PROMPT
+        messages = [
+            {"role": "system", "content": PREPROCESSOR_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
         t0 = time.monotonic()
         if runtime == "llamacpp":
             payload = {"model": actual_model, "messages": messages, "stream": False}
@@ -117,14 +125,15 @@ def _default_preprocess_generate_for(
                 "model": actual_model,
                 "messages": messages,
                 "stream": False,
-                "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": 700},
+                "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": 1000},  # G3: 700 truncated contract JSON
             }
             if actual_model.startswith("qwen3"):
                 payload["think"] = False
             r = httpx.post(f"{chat_base_url}/api/chat", json=payload, timeout=600)
             r.raise_for_status()
             text = r.json()["message"]["content"]
-        clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        clean_text = re.sub(r"<\|.*?\|>", "", clean_text).strip()  # G3: strip leaked special tokens (<|im_end|> etc.)
         return clean_text, time.monotonic() - t0
 
     return generate
@@ -189,6 +198,7 @@ def create_app(
 
     def _record(tier: str, completion: Completion, **decision_meta) -> None:
         backend = backends.get(tier)
+        cache_price_in = float(getattr(backend, "price_in", 0.0) or 0.0)
         # Metered cash: API backend reports real metered spend; CLI/local is 0.0
         # Notional value: value at target's own pricing
         is_api = bool(backend and not backend.local and getattr(backend, "supports_tools", False))
@@ -210,8 +220,21 @@ def create_app(
             cost_usd=metered_cash,
             notional_usd=notional,
             truncated=completion.truncated,
+            cache_read_tokens=getattr(completion, "cache_read_tokens", 0),
+            cache_write_tokens=getattr(completion, "cache_write_tokens", 0),
+            cache_ttl=getattr(completion, "cache_ttl", ""),
+            cache_price_in=cache_price_in,
             **decision_meta,
         )
+        # V1 (#106): broadcast the dispatch to the dashboard
+        _sse_broadcast("dispatch", {
+            "tier": tier, "local": completion.local,
+            "cost_usd": metered_cash, "notional_usd": notional,
+            "tokens_in": completion.tokens_in, "tokens_out": completion.tokens_out,
+            "cache_read_tokens": getattr(completion, "cache_read_tokens", 0),
+            "cache_write_tokens": getattr(completion, "cache_write_tokens", 0),
+            "preprocess_model": decision_meta.get("preprocess_model"),
+        })
 
     def _decision_meta(
         decision: Decision, fallback_reason: "str | None", messages: list[dict]
@@ -501,6 +524,7 @@ def create_app(
             "tier": tier,
             "fallback_reason": fallback_reason,
             "verdict": verdict,
+            "fingerprint": fingerprint,
             "dispatch_messages": dispatch_messages,
             "effort_flags": effort_flags,
             "model_override": model_override,
@@ -528,6 +552,7 @@ def create_app(
                 tools=tools,
                 effort_flags=route_info["effort_flags"],
                 model_override=route_info["model_override"],
+                fingerprint=route_info.get("fingerprint"),
             )
 
         # Human toll pick: unbounded failover across capable ranking
@@ -545,6 +570,7 @@ def create_app(
                     tools=tools,
                     effort_flags=route_info["effort_flags"],
                     model_override=route_info["model_override"],
+                    fingerprint=route_info.get("fingerprint"),
                 )
                 if candidate != tier:
                     route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"
@@ -873,6 +899,68 @@ def create_app(
             "tokens_after": result.tokens_after,
             "compost_id": result.compost_id,
         }
+
+    # ---- Dashboard SSE (Map #105 / V1) ----
+    _sse_clients: list = []
+
+    # V1: shadow records broadcast to the dashboard via the listener registry
+    from kultivait.distill.shadow import add_shadow_listener
+    add_shadow_listener(lambda row: _sse_broadcast("shadow", row))
+
+    def _sse_broadcast(event_type: str, data: dict) -> None:
+        """Fire-and-forget fan-out to connected dashboard clients."""
+        frame = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+        dead = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(frame)
+            except Exception:  # noqa: BLE001 - a dead client never kills serving
+                dead.append(q)
+        for q in dead:
+            if q in _sse_clients:
+                _sse_clients.remove(q)
+
+    @app.get("/api/dashboard/summary")
+    def dashboard_summary() -> dict:
+        """Initial hydration: the harvest snapshot + the shadow summary."""
+        from kultivait.distill.shadow import shadow_summary
+        h = ledger.harvest()
+        return {**h, "shadow": shadow_summary()}
+
+    @app.get("/api/stream")
+    async def sse_stream():
+        """SSE endpoint: dispatch/shadow events + periodic harvest snapshots."""
+        import asyncio
+        from starlette.responses import StreamingResponse
+
+        q: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _sse_clients.append(q)
+
+        async def gen():
+            try:
+                # initial hydration on connect
+                h = ledger.harvest()
+                yield f"event: harvest\ndata: {json.dumps(h)}\n\n"
+                while True:
+                    try:
+                        frame = await asyncio.wait_for(q.get(), timeout=15.0)
+                        yield frame
+                    except asyncio.TimeoutError:
+                        # periodic snapshot (keeps the connection alive + fresh)
+                        h = ledger.harvest()
+                        yield f"event: harvest\ndata: {json.dumps(h)}\n\n"
+            finally:
+                if q in _sse_clients:
+                    _sse_clients.remove(q)
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Accel-Buffering": "no"})
+
+    from pathlib import Path as _P
+    from fastapi.staticfiles import StaticFiles as _SM
+    _dash_dir = _P(__file__).parent / "dashboard"
+    app.mount("/dashboard", _SM(directory=str(_dash_dir), html=True), name="dashboard")
 
     @app.get("/harvest")
     def harvest():

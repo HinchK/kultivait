@@ -16,3 +16,8 @@ Once pay-per-token frontier providers land (docs/adr/0004-api-frontier-surface.m
 - Tollbooth `RouteOption` gains a cost-kind annotation (subscription | metered | local) alongside the existing `estimated_cost_usd`; ranking math is untouched.
 - The benchmark harness (ticket #33, now unblocked) inherits its dollar definitions from these lenses: accuracy vs metered cash out and vs notional value, both already computed by the harvest.
 - Terms canonized in CONTEXT.md: **Metered cost**, **Notional cost**, **Reference price**.
+
+## Amendment (2026-08-25): cache-aware accounting
+
+Dual-track accounting extends to provider prompt caching without redefinition. Ledger entries on api dispatches carry canonical `cache_read_tokens` / `cache_write_tokens` / `cache_ttl` extras (dialect-normalized at the backends; writes priced TTL-aware at 1.25×/2×). **Notional on API dispatches remains equal to metered** — cache discounts flow into both; cache savings are a separately computed third line (kept-via-cache = the full-price-minus-discounted input cost over cache-bearing dispatches), so kept-in-pocket (routing), cash out (metered), and kept-via-cache (caching) stay orthogonal and seasons stay comparable. The harvest renders a cache section (kept-via-cache, hit rate, reads-per-write, TTL cohorts, dispatch count) in text and JSON. **The cash-never-ranks rule extends by name**: cache-effective pricing is cash — observability only, never a route-menu input; reranking on cache economics requires a fresh ADR.
+

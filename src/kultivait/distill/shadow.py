@@ -45,11 +45,26 @@ def _default_log_path() -> Path:
     return Path.home() / ".kultivait" / "shadow.jsonl"
 
 
+# V1 (#106): dashboard callback — server registers; append fires it
+_shadow_listeners: list = []
+
+
+def add_shadow_listener(fn) -> None:
+    if fn not in _shadow_listeners:
+        _shadow_listeners.append(fn)
+
+
 def append_shadow_log(record: ShadowRecord, path: "Path | None" = None) -> None:
     p = Path(path) if path else _default_log_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    row = asdict(record)
     with p.open("a") as f:
-        f.write(json.dumps(asdict(record)) + "\n")
+        f.write(json.dumps(row) + "\n")
+    for fn in _shadow_listeners:
+        try:
+            fn(row)
+        except Exception:  # noqa: BLE001 - a dashboard failure never kills shadowing
+            pass
 
 
 def read_shadow_log(path: "Path | None" = None) -> list:
@@ -204,6 +219,53 @@ def shadow_after_response(
     )
 
 
+def run_shadow_probe(
+    *,
+    band: str = "contested",
+    n: int = 7,
+    shadow_model: str,
+    incumbent_model: str,
+    generate,
+    log_path: "Path | None" = None,
+) -> dict:
+    """S2 (#102): replay the hardened corpus's band prompts through the shadow
+    model via the aligned generate path, recording real shadow.jsonl rows.
+
+    The incumbent side replays from the framing-aligned path too (the probe is
+    a controlled comparison, not a live-traffic approximation). Eval
+    instruments are read, never trained on (#70 disjointness).
+    """
+    from kultivait.capability_eval import load_corpus
+
+    tasks = [t for t in load_corpus() if t.rubric.get("band") == band][:max(1, n)]
+    rows_written = 0
+    for t in tasks:
+        prompt = next((m.get("content", "") for m in reversed(t.messages)
+                       if m.get("role") == "user"), "")
+        if not prompt:
+            continue
+        # incumbent turn (the active seat judges first, as in live)
+        inc = run_shadow_pass(
+            prompt, f"probe:{t.id}",
+            incumbent_model=incumbent_model, incumbent_verdict="",
+            incumbent_max_fit=0.0, incumbent_latency_s=0.0,
+            shadow_model=incumbent_model, generate=generate,
+        )
+        inc_verdict = inc.shadow.get("verdict")
+        inc_latency = inc.shadow.get("latency_s", 0.0)
+        inc_fit = inc.shadow.get("max_fit", 0.0)
+        # shadow turn
+        rec = run_shadow_pass(
+            prompt, f"probe:{t.id}",
+            incumbent_model=incumbent_model, incumbent_verdict=inc_verdict,
+            incumbent_max_fit=inc_fit, incumbent_latency_s=inc_latency,
+            shadow_model=shadow_model, generate=generate,
+        )
+        append_shadow_log(rec, log_path)
+        rows_written += 1
+    return {"band": band, "tasks_probed": rows_written,
+            "shadow_model": shadow_model, "incumbent_model": incumbent_model}
+
 class DistillSeat:
     """The live preprocessor seat (ADR 0017): the model resolves per call, so
     a seat update swaps models on the next request with no restart."""
@@ -227,7 +289,17 @@ class DistillSeat:
         return self.shadow_mode == "on" and bool(self.shadow_model)
 
 
+def _percentile(values: list, p: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    k = max(0, min(len(s) - 1, int(p * (len(s) - 1))))
+    return s[k]
+
+
 def shadow_summary(log_path: "Path | None" = None) -> dict:
+    """S1 (#101): the enriched read — latency deltas, parse validity, the
+    calibration-correction read, and the #73 decomposed readiness."""
     rows = read_shadow_log(log_path)
     readiness = compute_cutover_readiness(rows)
     models = {
@@ -236,6 +308,68 @@ def shadow_summary(log_path: "Path | None" = None) -> dict:
         "shadow": sorted({r.get("shadow", {}).get("model") for r in rows
                           if r.get("shadow", {}).get("model")}),
     }
+
+    # latency deltas (shadow - incumbent per record; negative = shadow faster)
+    inc_lat = [r.get("incumbent", {}).get("latency_s", 0) for r in rows]
+    sh_lat = [r.get("shadow", {}).get("latency_s", 0) for r in rows]
+    deltas = [s - i for i, s in zip(inc_lat, sh_lat)] if rows else []
+    latency = {
+        "incumbent_p50_s": round(_percentile(inc_lat, 0.5), 2),
+        "incumbent_p90_s": round(_percentile(inc_lat, 0.9), 2),
+        "shadow_p50_s": round(_percentile(sh_lat, 0.5), 2),
+        "shadow_p90_s": round(_percentile(sh_lat, 0.9), 2),
+        "delta_p50_s": round(_percentile(deltas, 0.5), 2) if deltas else 0.0,
+        "delta_p90_s": round(_percentile(deltas, 0.9), 2) if deltas else 0.0,
+    }
+
+    # parse validity
+    parse_ok = sum(1 for r in rows if r.get("shadow", {}).get("parse_ok"))
+    parse_validity = round(parse_ok / len(rows), 4) if rows else 0.0
+
+    # calibration divergence: the verdict-pair distribution (#73's expected
+    # divergence — shadow contested where incumbent says frontier = correction)
+    divergence: dict = {}
+    corrections = 0
+    for r in rows:
+        iv = r.get("incumbent", {}).get("verdict") or "?"
+        sv = r.get("shadow", {}).get("verdict") or "?"
+        pair = f"inc:{iv}->shadow:{sv}"
+        divergence[pair] = divergence.get(pair, 0) + 1
+        if iv == "frontier" and sv == "contested":
+            corrections += 1
+    calibration = {
+        "verdict_pairs": divergence,
+        "calibration_corrections": corrections,
+        "correction_rate": round(corrections / len(rows), 4) if rows else 0.0,
+    }
+
+    # the #73 decomposed readiness arms
+    non_contested = [r for r in rows
+                     if r.get("incumbent", {}).get("verdict") in ("local", "frontier")]
+    stability_agree = (sum(1 for r in non_contested if r.get("agree"))
+                       / len(non_contested)) if non_contested else 0.0
+    shadow_contested = sum(1 for r in rows
+                           if r.get("shadow", {}).get("verdict") == "contested")
+    repopulation = round(shadow_contested / len(rows), 4) if rows else 0.0
+    readiness_arms = {
+        "stability_non_contested_ge_90": {
+            "value": round(stability_agree, 4), "bar": 0.90,
+            "pass": stability_agree >= 0.90},
+        "repopulation_band_5_to_25": {
+            "value": repopulation, "bar": "5%-25%",
+            "pass": 0.05 <= repopulation <= 0.25},
+        "health_zero_anomalies": {
+            "value": readiness.get("anomalies", 0), "bar": 0,
+            "pass": readiness.get("anomalies", 0) == 0},
+        "sample_n_ge_30": {
+            "value": readiness.get("n", 0), "bar": 30,
+            "pass": readiness.get("n", 0) >= 30},
+    }
+
     return {**readiness, "models": models,
+            "latency": latency,
+            "parse_validity": parse_validity,
+            "calibration": calibration,
+            "readiness_arms": readiness_arms,
             "instruction": ("cutover is the human flip: set [distill] model to the "
                             "shadow candidate; rollback = revert the knob")}

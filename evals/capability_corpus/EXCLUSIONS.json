@@ -1,0 +1,6 @@
+{
+ "note": "Eval instruments are never trained on (ADR 0013 extended by #70). These escalation ids are EXCLUDED from distill synthesis seeding.",
+ "excluded_escalation_ids": [
+  "esc-sourced: distributed-trace-dispatch-failures (ops escalation, 2026-08) -> task esc_escalation_sourced_fanout"
+ ]
+}

@@ -29,6 +29,7 @@ class TaskCase:
     messages: list[dict]
     tools: list[dict]
     mock_responses: dict[str, str] = field(default_factory=dict)
+    context_text: str = ""  # materialized repo context (H3/#90); rides as system
     max_turns: int = 4
     rubric: dict = field(default_factory=dict)
 
@@ -49,6 +50,8 @@ class EvalArtifact:
     judge_family: str
     judge_reasoning: str
     rubric_version: str
+    judges: "dict | None" = None       # H4: {"a": {name, score, passed}, "b": {...}}
+    agreement_flag: "bool | None" = None
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -66,6 +69,8 @@ class EvalArtifact:
             "judge_name": self.judge_name,
             "judge_family": self.judge_family,
             "judge_reasoning": self.judge_reasoning,
+            "judges": self.judges,
+            "agreement_flag": self.agreement_flag,
             "rubric_version": self.rubric_version,
             "ts": self.ts,
         }
@@ -89,24 +94,30 @@ def select_cross_family_judge(
     target_tier: str,
     available_backends: dict[str, Backend],
 ) -> tuple[str, Backend]:
-    """Selects a judge backend whose provider family strictly differs from target.
-    Raises ValueError if no cross-family judge is available."""
+    """Selects an API-kind judge backend whose provider family strictly differs
+    from the target. CLI judges are excluded (#65: the auto-selected CLI judge
+    timed out at 600s — judge candidates must be api-kind). Raises ValueError
+    if no cross-family API judge is available."""
     target_family = get_family(target_tier)
+
+    def is_api_kind(b: Backend) -> bool:
+        # API backends: not local AND client-tools-capable; CLI backends run
+        # their own agent loops (supports_tools=False) and time out as judges.
+        return getattr(b, "supports_tools", False) is True and not getattr(b, "local", True)
+
     cross_candidates = [
         (name, b) for name, b in available_backends.items()
-        if get_family(name) != target_family
+        if get_family(name) != target_family and is_api_kind(b)
     ]
 
     if not cross_candidates:
         raise ValueError(
-            f"No cross-family judge available for target '{target_tier}' (family: {target_family}). "
-            f"Cross-family model judging requires at least one backend from a different provider family."
+            f"No cross-family API judge available for target '{target_tier}' "
+            f"(family: {target_family}). Judge candidates must be api-kind backends "
+            f"(CLI judges are excluded — they time out under judging loads). "
+            f"Register an api tier from a different family, or pin judge_backend "
+            f"explicitly when calling run_capability_eval."
         )
-
-    # Prefer frontier API backends over local backends for judging
-    frontier_candidates = [c for c in cross_candidates if not getattr(c[1], "local", False)]
-    if frontier_candidates:
-        return frontier_candidates[0]
     return cross_candidates[0]
 
 
@@ -124,6 +135,12 @@ def load_corpus(corpus_path: Path | None = None) -> list[TaskCase]:
     data = json.loads(path.read_text(encoding="utf-8"))
     tasks = []
     for item in data:
+        context_text = ""
+        if item.get("context_files"):
+            from kultivait.context_gen import materialize
+            context_text = materialize(
+                item["context_files"], item.get("context_seed", item["id"]),
+                far_fact=item.get("far_fact", ""))
         tasks.append(
             TaskCase(
                 id=item["id"],
@@ -132,11 +149,55 @@ def load_corpus(corpus_path: Path | None = None) -> list[TaskCase]:
                 messages=item.get("messages", []),
                 tools=item.get("tools", []),
                 mock_responses=item.get("mock_responses", {}),
+                context_text=context_text,
                 max_turns=item.get("max_turns", 4),
                 rubric=item.get("rubric", {}),
             )
         )
     return tasks
+
+
+_CALL_COUNTS: dict = {}
+
+
+def _mock_response_for(task: "TaskCase", fn_name: str) -> str:
+    """Mock resolution with adversarial sequence support (#88 / H1).
+
+    mock_responses values may be:
+      - a str: the cooperative single response (simple band default);
+      - a list: call-indexed SEQUENCES — each call returns the next entry;
+        the final entry repeats. Entries may carry error markers
+        ({"__error__": {...}}) rendered as realistic tool failures
+        (HTTP 429 + retry-after, 500, 422 schema mismatch) that the loop
+        must diagnose and retry past.
+    """
+    key = (task.id, fn_name)
+    idx = _CALL_COUNTS.get(key, 0)
+    _CALL_COUNTS[key] = idx + 1
+    val = task.mock_responses.get(fn_name, f"Mock tool {fn_name} executed successfully.")
+    if isinstance(val, list):
+        if not val:
+            return f"Mock tool {fn_name} executed successfully."
+        entry = val[min(idx, len(val) - 1)]
+    else:
+        entry = val
+    if isinstance(entry, dict) and "__error__" in entry:
+        e = entry["__error__"]
+        kind = e.get("kind", "500")
+        if kind == "429":
+            return (f"HTTP 429 Too Many Requests: rate limit exceeded. "
+                    f"Retry-After: {e.get('retry_after', 2)}s. "
+                    f"Your request was not processed.")
+        if kind == "422":
+            return ("HTTP 422 Unprocessable Entity: schema mismatch — "
+                    f"{e.get('detail', 'the request payload did not match the tool schema')}. "
+                    "The call was rejected; inspect the schema and retry.")
+        return f"HTTP 500 Internal Server Error: {e.get('detail', 'transient backend failure')}. Retry may succeed."
+    return entry if isinstance(entry, str) else json.dumps(entry)
+
+
+def reset_mock_counts() -> None:
+    _CALL_COUNTS.clear()
 
 
 def run_task(
@@ -148,6 +209,8 @@ def run_task(
 ) -> tuple[list[dict], list[dict], int, int, float]:
     """Dispatches a multi-turn tool-loop task directly to a backend."""
     messages = [dict(m) for m in task.messages]
+    if task.context_text:
+        messages.insert(0, {"role": "system", "content": task.context_text})
     tool_calls_made: list[dict] = []
     tot_in = 0
     tot_out = 0
@@ -193,7 +256,7 @@ def run_task(
                 tool_calls_made.append(tc)
                 fn = tc.get("function", {})
                 fn_name = fn.get("name", "")
-                resp_content = task.mock_responses.get(fn_name, f"Mock tool {fn_name} executed successfully.")
+                resp_content = _mock_response_for(task, fn_name)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.get("id", "call_1"),
@@ -206,6 +269,40 @@ def run_task(
             break
 
     return messages, tool_calls_made, tot_in, tot_out, tot_cost
+
+
+def efficiency_penalty(tool_calls: list[dict]) -> "tuple[float, list[str]]":
+    """H2 (#89): repeated identical tool calls are waste and cost score.
+
+    An identical call = same tool name AND same serialized arguments. Each
+    repeat beyond the first on a failing sequence is legitimate retry ONLY
+    when the mock changed beneath it — we cannot know that here, so repeats
+    count against efficiency at a flat rate, but pure-duplicate back-to-back
+    calls (no intervening different call) count double: that is blind
+    looping, not diagnosis. Returns (penalty_fraction, notes) where the
+    fraction multiplies the task score.
+    """
+    if not tool_calls:
+        return 1.0, []
+    seen: dict = {}
+    duplicates = 0
+    blind = 0
+    prev_key = None
+    for tc in tool_calls:
+        fn = tc.get("function", {})
+        key = (fn.get("name", ""), fn.get("arguments", ""))
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            duplicates += 1
+            if key == prev_key:
+                blind += 1
+        prev_key = key
+    if not duplicates:
+        return 1.0, []
+    penalty = max(0.25, 1.0 - 0.15 * duplicates - 0.20 * blind)
+    notes = [f"efficiency: {duplicates} repeated call(s)"
+             + (f", {blind} blind back-to-back repeat(s)" if blind else "")]
+    return penalty, notes
 
 
 def judge_transcript(
@@ -283,6 +380,9 @@ def run_capability_eval(
     artifacts_dir: Path | None = None,
     judge_backend: Backend | None = None,
     judge_name: str | None = None,
+    dual_judge: bool = False,
+    judge_b_backend: "Backend | None" = None,
+    judge_b_name: "str | None" = None,
     ledger: Ledger | None = None,
 ) -> dict:
     """Runs capability evaluation across targets x effort levels, saving per-case artifacts
@@ -317,10 +417,28 @@ def run_capability_eval(
 
         j_family = get_family(j_name)
 
+        # H4 (#91): dual-judge — a second pinned judge from a distinct family,
+        # also cross-family vs the target. Guardrails raise before any dispatch.
+        jb_name = jb_b = None
+        if dual_judge:
+            if not (judge_b_backend and judge_b_name):
+                raise ValueError("dual_judge requires judge_b_backend + judge_b_name")
+            if get_family(judge_b_name) == get_family(j_name):
+                raise ValueError(
+                    f"Dual judges must come from distinct families: "
+                    f"'{j_name}' and '{judge_b_name}' are both '{j_family}'.")
+            if get_family(judge_b_name) == get_family(target):
+                raise ValueError(
+                    f"Cross-family violation: judge_b '{judge_b_name}' and target "
+                    f"'{target}' are both in family '{get_family(target)}'.")
+            jb_name, jb_b = judge_b_name, judge_b_backend
+
         for effort in effort_levels:
             passed_count = 0
             total_score = 0.0
             task_count = len(eval_corpus)
+            band_agree: dict = {}
+            band_scores: dict = {}
 
             for task in eval_corpus:
                 transcript, tool_calls, tokens_in, tokens_out, cost_usd = run_task(
@@ -337,6 +455,37 @@ def run_capability_eval(
                     rubric=task.rubric,
                     task_desc=task.description,
                 )
+                # H2 efficiency applies to judge A's verdict
+                mult, eff_notes = efficiency_penalty(tool_calls)
+                if mult < 1.0:
+                    score = round(score * mult, 4)
+                    reasoning = (reasoning + " | " + "; ".join(eff_notes)).strip(" |")
+                    passed = passed and score >= task.rubric.get("passing_score", 0.8)
+
+                judges_field = None
+                a_score_raw = score
+                agreement_flag = None
+                if jb_b is not None:
+                    # H4 (#91): judge B scores the SAME transcript
+                    b_passed, b_score, b_reasoning = judge_transcript(
+                        judge_backend=jb_b,
+                        transcript=transcript,
+                        rubric=task.rubric,
+                        task_desc=task.description,
+                    )
+                    b_mult, _ = efficiency_penalty(tool_calls)
+                    if b_mult < 1.0:
+                        b_score = round(b_score * b_mult, 4)
+                        b_passed = b_passed and b_score >= task.rubric.get("passing_score", 0.8)
+                    agreement_flag = passed == b_passed
+                    score = round((score + b_score) / 2.0, 4)
+                    passed = passed and b_passed  # mean path: both must pass
+                    judges_field = {"a": {"name": j_name, "score": a_score_raw,
+                                          "passed": (a_score_raw >= task.rubric.get("passing_score", 0.8))},
+                                    "b": {"name": jb_name, "score": b_score, "passed": b_passed}}
+                    reasoning = f"[{j_name}] {reasoning} || [{jb_name}] {b_reasoning}"
+                    band_agree.setdefault(task.rubric.get("band", "?"), []).append(agreement_flag)
+                    band_scores.setdefault(task.rubric.get("band", "?"), []).append(score)
 
                 if passed:
                     passed_count += 1
@@ -353,10 +502,12 @@ def run_capability_eval(
                     cost_usd=cost_usd,
                     passed=passed,
                     score=score,
-                    judge_name=j_name,
-                    judge_family=j_family,
+                    judge_name=(f"{j_name}+{jb_name}" if jb_b is not None else j_name),
+                    judge_family=(f"{j_family}/{get_family(jb_name)}" if jb_b is not None else j_family),
                     judge_reasoning=reasoning,
                     rubric_version=task.rubric.get("version", "v1"),
+                    judges=judges_field,
+                    agreement_flag=agreement_flag,
                 )
                 artifacts.append(artifact)
 
@@ -366,13 +517,25 @@ def run_capability_eval(
 
             pass_rate = passed_count / task_count if task_count else 0.0
             avg_score = total_score / task_count if task_count else 0.0
-            summary_targets[target][effort] = {
+            cell = {
                 "pass_rate": pass_rate,
                 "avg_score": avg_score,
                 "passed": passed_count,
                 "total": task_count,
                 "judge_family": j_family,
             }
+            if jb_b is not None:
+                all_agree = [a for v in band_agree.values() for a in v]
+                cell["judges"] = [j_name, jb_name]
+                cell["inter_judge_agreement"] = (
+                    round(sum(all_agree) / len(all_agree), 4) if all_agree else 0.0)
+                cell["bands"] = {
+                    b: {"avg_score": round(sum(s) / len(s), 4) if s else 0.0,
+                        "agreement": (round(sum(v) / len(v), 4) if v else 0.0),
+                        "n": len(s)}
+                    for b, s, v in ((b, band_scores.get(b, []), band_agree.get(b, []))
+                                    for b in set(band_scores) | set(band_agree))}
+            summary_targets[target][effort] = cell
 
     rubric_v = eval_corpus[0].rubric.get("version", "v1") if eval_corpus else "v1"
 

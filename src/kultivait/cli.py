@@ -709,6 +709,31 @@ def format_harvest(stats: dict) -> str:
         f"  metered cash out   ${metered_spent:.2f}",
         f"  kept in pocket     ${stats['saved_usd']:.2f}",
     ]
+    cache = stats.get("cache")
+    if cache and cache.get("dispatches", 0) > 0:
+        hit_pct = round(100 * cache.get("cache_hit_rate", 0.0))
+        cohorts = cache.get("cache_ttl_cohorts", {})
+        cohort_txt = ", ".join(
+            f"{k}: {v['dispatches']} dsp ${v['kept_via_cache_usd']:.4f}"
+            for k, v in sorted(cohorts.items()))
+        lines += [
+            "",
+            "  cache economics",
+            f"    kept via cache     ${cache.get('kept_via_cache_usd', 0.0):.4f}",
+            f"    hit rate           {hit_pct}%  ({cache.get('dispatches', 0)} cache-bearing dispatches)",
+            f"    reads per write    {cache.get('cache_reads_per_write', 0.0):.1f}",
+        ]
+        if cohort_txt:
+            lines.append(f"    ttl cohorts        {cohort_txt}")
+    by_gen = stats.get("by_generation")
+    if by_gen:
+        lines += ["", "  by generation (preprocess_model)"]
+        for gen, g in sorted(by_gen.items()):
+            cache_txt = ""
+            if g["cache"]["dispatches"]:
+                cache_txt = (f" | cache hit {g['cache']['cache_hit_rate']:.0%} "
+                             f"kept ${g['cache']['kept_via_cache_usd']:.4f}")
+            lines.append(f"    {gen:<28} {g['requests']:>4} req  kept ${g['saved_usd']:.2f}{cache_txt}")
     toll = stats.get("toll_activity")
     if toll and (
         toll.get("fired", 0) > 0
@@ -782,7 +807,11 @@ def cmd_distill_generate(args: argparse.Namespace) -> None:
     if not seeds:
         print("no seed anchors in the harvest (escalation pool empty)")
         return
-    fns = real_teacher_fns(judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli)
+    fns = real_teacher_fns(
+        judge_cli=args.judge_cli, rewriter_cli=args.rewriter_cli,
+        judge_model=getattr(args, "judge_model", None) or None,
+        vary_model=getattr(args, "vary_model", None) or None,
+    )
     rng = random.Random(args.seed)
 
     def ledger_tag(**entry):
@@ -795,7 +824,9 @@ def cmd_distill_generate(args: argparse.Namespace) -> None:
         ledger_record=ledger_tag,
     )
     out = Path(args.out_dir)
-    write_corpus(report.pairs, [], out, heldout=heldout)
+    n_valid = max(1, len(report.pairs) // 6) if len(report.pairs) > 1 else 0
+    split = len(report.pairs) - n_valid
+    write_corpus(report.pairs[:split], report.pairs[split:], out, heldout=heldout)
     print(json.dumps({"out_dir": str(out), "pairs": len(report.pairs),
                       "stats": report.stats}, indent=2))
 
@@ -869,11 +900,185 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """V5 (#110): the one-command dashboard — health-check serve, open the browser.
+
+    Attaches to a running instance if one answers; otherwise starts serve
+    in the background first. --no-open prints the URL headless-safe.
+    """
+    import subprocess
+    import time as _time
+    import webbrowser
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    url = f"http://{host}:{port}/dashboard"
+
+    def _alive() -> bool:
+        try:
+            import httpx
+            r = httpx.get(f"http://{host}:{port}/api/dashboard/summary", timeout=2)
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001 - any failure means not alive
+            return False
+
+    if not _alive():
+        print(f"no serve at :{port} — starting one…", file=sys.stderr)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn",
+             "kultivait.server:create_app_factory", "--factory",
+             "--host", host, "--port", str(port)],
+            start_new_session=True,
+        )
+        for _ in range(20):
+            _time.sleep(0.5)
+            if _alive():
+                break
+        else:
+            print(f"serve did not come up (pid {proc.pid}); "
+                  f"try 'kultivait serve' manually, then browse {url}",
+                  file=sys.stderr)
+            return
+
+    print(f"dashboard: {url}")
+    if not args.no_open:
+        webbrowser.open(url)
+
+
+def cmd_distill_status(args: argparse.Namespace) -> None:
+    """S4 (#104): the distillate registry dashboard — generations, seats,
+    footprints, gen-3 readiness at a glance."""
+    import subprocess as _sp
+    import tomllib as _toml
+
+    registry_path = KULTIVAIT_HOME / "models" / "distillates.json"
+    registry = {}
+    if registry_path.exists():
+        registry = json.loads(registry_path.read_text())
+
+    config = get_config()
+    d = config.distill
+
+    # ollama footprints (best-effort; graceful when the server is down)
+    footprints: dict = {}
+    try:
+        r = _sp.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines()[1:]:
+            parts = line.split()
+            if parts:
+                footprints[parts[0]] = {"size": parts[2] if len(parts) > 2 else "?",
+                                        "tag": parts[1] if len(parts) > 1 else "?"}
+    except Exception:  # noqa: BLE001 - the dashboard must render without ollama
+        pass
+
+    entries = []
+    for name, spec in sorted(registry.items(),
+                              key=lambda kv: (kv[1].get("generation", 0), kv[0])):
+        seat = "retired"
+        if name == d.model:
+            seat = "ACTIVE (preprocessor)"
+        elif name == d.shadow_model:
+            seat = f"SHADOW (mode={d.shadow_mode}, rate={d.shadow_sample_rate})"
+        fp = footprints.get(f"{name}:latest", footprints.get(name, {}))
+        entries.append({
+            "name": name, "generation": spec.get("generation"),
+            "base": spec.get("base"), "quantize": spec.get("quantize"),
+            "registered": spec.get("registered"), "seat": seat,
+            "ollama_size": fp.get("size", "not in ollama"),
+            "fused_path": spec.get("fused_path"),
+        })
+
+    summary = {"active_seat": d.model, "shadow_seat": d.shadow_model,
+               "shadow_mode": d.shadow_mode, "shadow_sample_rate": d.shadow_sample_rate,
+               "distillates": entries}
+
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2))
+        return
+
+    lines = [
+        "distillate registry",
+        "",
+        f"  active preprocessor     {d.model}",
+        f"  shadow                  {d.shadow_model or '(none)'}  "
+        f"(mode={d.shadow_mode}, rate={d.shadow_sample_rate})",
+        "",
+        f"  {'DISTILLATE':<30} {'GEN':>3} {'QUANT':>7} {'SIZE':>9}  SEAT",
+        f"  {'-'*30} {'-'*3} {'-'*7} {'-'*9}  {'-'*24}",
+    ]
+    for e in entries:
+        lines.append(f"  {e['name']:<30} {e['generation']:>3} {e['quantize'] or '?':>7} "
+                     f"{e['ollama_size']:>9}  {e['seat']}")
+    lines.append("")
+    print("\n".join(lines))
+
+
+def cmd_shadow_probe(args: argparse.Namespace) -> None:
+    """S2 (#102): synthetic replay across the contested corpus to accumulate
+    shadow telemetry without waiting for live traffic."""
+    from kultivait.distill.shadow import run_shadow_probe
+    from kultivait.server import _default_preprocess_generate_for
+
+    config = get_config()
+    d = config.distill
+    if not d.shadow_model:
+        print("no shadow model configured: set [distill] shadow_model first.")
+        return
+    if d.shadow_mode != "on":
+        print(f"shadow mode is '{d.shadow_mode}': the probe works regardless "
+              "(it dispatches directly), but live shadowing stays off.")
+
+    generate = _default_preprocess_generate_for()
+    result = run_shadow_probe(
+        band=args.band, n=args.n,
+        shadow_model=d.shadow_model, incumbent_model=d.model,
+        generate=generate,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"shadow probe: {result['tasks_probed']} {result['band']}-band prompts "
+              f"replayed | incumbent {result['incumbent_model']} vs shadow "
+              f"{result['shadow_model']} | rows appended to ~/.kultivait/shadow.jsonl")
+        print("inspect: kultivait shadow")
+
+
 def cmd_shadow(args: argparse.Namespace) -> None:
-    """D6: summarize the shadow log + cutover-readiness (ADR 0017)."""
+    """S1 (#101): the enriched shadow read — latency deltas, parse validity,
+    the calibration-correction read, the decomposed #73 readiness."""
     from kultivait.distill.shadow import shadow_summary
 
-    print(json.dumps(shadow_summary(Path(args.log) if args.log else None), indent=2))
+    s = shadow_summary(Path(args.log) if args.log else None)
+    if getattr(args, "json", False):
+        print(json.dumps(s, indent=2))
+        return
+    lines = [
+        "shadow observatory",
+        "",
+        f"  samples             {s['n']}  (models: {', '.join(s['models']['shadow']) or 'none'})",
+        f"  agreement           {s['agreement']:.1%}  | anomalies {s['anomalies']}",
+        f"  parse validity      {s.get('parse_validity', 0):.1%}",
+        "",
+        "  latency",
+        f"    incumbent         p50 {s['latency']['incumbent_p50_s']:.1f}s  p90 {s['latency']['incumbent_p90_s']:.1f}s",
+        f"    shadow            p50 {s['latency']['shadow_p50_s']:.1f}s  p90 {s['latency']['shadow_p90_s']:.1f}s",
+        f"    delta             p50 {s['latency']['delta_p50_s']:+.1f}s  p90 {s['latency']['delta_p90_s']:+.1f}s"
+        "  (negative = shadow faster)",
+        "",
+        "  calibration",
+    ]
+    for pair, n in sorted(s["calibration"]["verdict_pairs"].items(), key=lambda kv: -kv[1]):
+        lines.append(f"    {pair:<30} {n}")
+    lines.append(f"    corrections (inc:frontier->shadow:contested): "
+                 f"{s['calibration']['calibration_corrections']} "
+                 f"({s['calibration']['correction_rate']:.1%})")
+    lines += ["", "  cutover readiness (#73 decomposed)"]
+    for arm, d in s["readiness_arms"].items():
+        mark = "PASS" if d["pass"] else "FAIL"
+        lines.append(f"    {'PASS' if d['pass'] else 'FAIL'}  {arm:<38} {d['value']} (bar: {d['bar']})")
+    ready = all(a["pass"] for a in s["readiness_arms"].values())
+    lines += ["", f"  READY: {'YES' if ready else 'NOT YET'} — {s['instruction']}", ""]
+    print("\n".join(lines))
 
 
 def cmd_distill_eval(args: argparse.Namespace) -> None:
@@ -1000,6 +1205,11 @@ def main() -> None:
                          help="harvest directory for seed anchors")
     gen_cmd.add_argument("--judge-cli", default="opencode", help="judge teacher CLI (neutral family)")
     gen_cmd.add_argument("--rewriter-cli", default="claude", help="rewriter teacher CLI")
+    gen_cmd.add_argument("--judge-model", default="x-ai/grok-4.6",
+                         help="neutral-family API judge model via OpenRouter (the tier labels; "
+                              "default per the ADR 0016 amendment)")
+    gen_cmd.add_argument("--vary-model", default="qwen3:14b",
+                         help="local model drafting variations (executor work, free)")
     gen_cmd.add_argument("--seed", type=int, default=42, help="rng seed")
     gen_cmd.set_defaults(func=cmd_distill_generate)
     train_cmd = distill_sub.add_parser("train", help="train a QLoRA adapter (resource ladder enforced)")
@@ -1021,6 +1231,14 @@ def main() -> None:
     export_cmd.add_argument("--no-quantize", action="store_true",
                             help="skip quantize-at-import (default q4_K_M)")
     export_cmd.set_defaults(func=cmd_distill_export)
+    status_cmd = distill_sub.add_parser("status", help="distillate registry dashboard")
+    status_cmd.add_argument("--json", action="store_true", help="machine-readable output")
+    status_cmd.set_defaults(func=cmd_distill_status)
+    dash_cmd = sub.add_parser("dashboard", help="open the web dashboard")
+    dash_cmd.add_argument("--host", default="127.0.0.1")
+    dash_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
+    dash_cmd.add_argument("--no-open", action="store_true", help="print the URL without opening a browser")
+    dash_cmd.set_defaults(func=cmd_dashboard)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
@@ -1028,8 +1246,18 @@ def main() -> None:
                         help="recompute the incumbent baseline first (same path)")
     eval_d.add_argument("--incumbent-model", default="qwen3.5:4b")
     eval_d.set_defaults(func=cmd_distill_eval)
-    shadow_cmd = sub.add_parser("shadow", help="shadow log summary + cutover readiness")
-    shadow_cmd.add_argument("--log", default=None, help="shadow log path (default ~/.kultivait/shadow.jsonl)")
+    shadow_cmd = sub.add_parser("shadow", help="shadow observatory + probe")
+    shadow_sub = shadow_cmd.add_subparsers(dest="shadow_cmd")
+    shadow_read = shadow_sub.add_parser("read", help="shadow log summary + readiness")
+    shadow_read.add_argument("--log", default=None, help="shadow log path")
+    shadow_read.add_argument("--json", action="store_true", help="machine-readable output")
+    shadow_read.set_defaults(func=cmd_shadow)
+    probe_cmd = shadow_sub.add_parser("probe", help="replay corpus prompts through the shadow")
+    probe_cmd.add_argument("--band", default="contested", choices=["simple", "contested", "escalatory"])
+    probe_cmd.add_argument("--n", type=int, default=7, help="max prompts to replay")
+    probe_cmd.add_argument("--json", action="store_true", help="machine-readable output")
+    probe_cmd.set_defaults(func=cmd_shadow_probe)
+    # bare 'kultivait shadow' defaults to the read surface
     shadow_cmd.set_defaults(func=cmd_shadow)
     cutover_cmd = sub.add_parser(
         "cutover", help="flip the live preprocessor model (human confirmation; prints rollback)")

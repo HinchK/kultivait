@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kultivait dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    background:#0d1117;color:#e6edf3;padding:20px;min-height:100vh}
+h1{font-size:1.4rem;margin-bottom:4px;color:#58a6ff}
+.sub{color:#8b949e;font-size:.85rem;margin-bottom:20px}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;
+       padding:16px;margin-bottom:16px}
+.panel h2{font-size:.95rem;color:#e6edf3;margin-bottom:12px}
+.gauge-row{display:flex;gap:16px;flex-wrap:wrap}
+.gauge{flex:1;min-width:160px;text-align:center;padding:12px;
+       background:#0d1117;border-radius:6px;border:1px solid #21262d}
+.gauge .label{font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.05em}
+.gauge .value{font-size:1.8rem;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+.gauge .sub-v{font-size:.7rem;color:#8b949e;margin-top:2px}
+.gauge .value.green{color:#3fb950}.gauge .value.blue{color:#58a6ff}.gauge .value.orange{color:#d29922}
+.gauge svg{margin:8px auto;display:block}
+#conn{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+#conn.on{background:#3fb950}#conn.off{background:#f85149}
+#event-log{font-family:ui-monospace,monospace;font-size:.75rem;color:#8b949e;
+           max-height:120px;overflow-y:auto;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+td,th{padding:4px 8px;border-bottom:1px solid #21262d;text-align:left}
+th{color:#8b949e;font-weight:500}
+td{font-variant-numeric:tabular-nums}
+.gen-bar{height:6px;background:#21262d;border-radius:3px;margin-top:4px;overflow:hidden}
+.gen-bar-fill{height:100%;border-radius:3px;transition:width .3s ease}
+</style>
+</head>
+<body>
+<h1><span id="conn" class="off"></span>kultivait</h1>
+<div class="sub">the harvest — live · <span id="mode">connecting…</span></div>
+
+<!-- V2: the three financial lenses (ADR 0005) -->
+<div class="panel" id="financial-lenses">
+<h2>three lenses <span style="float:right;font-size:.7rem;color:#8b949e">ADR 0005</span></h2>
+<div class="gauge-row">
+  <div class="gauge" id="gauge-kept-pocket">
+    <div class="label">kept in pocket</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="kept-in-pocket dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-kept-pocket" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#3fb950" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value green" id="kept-pocket">$0.00</div>
+    <div class="sub-v" id="kept-pocket-pct">0% of baseline</div>
+  </div>
+  <div class="gauge" id="gauge-kept-cache">
+    <div class="label">kept via cache</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="kept-via-cache dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-kept-cache" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#58a6ff" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value blue" id="kept-cache">$0.00</div>
+    <div class="sub-v" id="cache-hit-rate">hit rate —</div>
+  </div>
+  <div class="gauge" id="gauge-cash-out">
+    <div class="label">metered cash out</div>
+    <svg width="80" height="44" viewBox="0 0 80 44" aria-label="cash-out dial">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6"
+            stroke-linecap="round"/>
+      <path id="dial-cash-out" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#d29922" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value orange" id="cash-out">$0.00</div>
+    <div class="sub-v" id="dispatch-count">0 dispatches</div>
+  </div>
+</div>
+</div>
+
+<!-- V2: generation breakdown -->
+<div class="panel" id="generation-panel">
+<h2>by generation</h2>
+<table id="gen-table"><thead><tr>
+  <th>generation</th><th>requests</th><th>kept $</th><th>cache hit</th>
+  <th style="width:30%">share</th>
+</tr></thead><tbody></tbody></table>
+</div>
+
+<!-- V3: cache economics -->
+<div class="panel" id="cache-panel">
+<h2>cache economics</h2>
+<div class="gauge-row">
+  <div class="gauge" id="gauge-cache-hit">
+    <div class="label">cache hit rate</div>
+    <svg width="80" height="44" viewBox="0 0 80 44">
+      <path d="M 8 40 A 32 32 0 0 1 72 40" fill="none" stroke="#21262d" stroke-width="6" stroke-linecap="round"/>
+      <path id="dial-cache-hit" d="M 8 40 A 32 32 0 0 1 72 40" fill="none"
+            stroke="#58a6ff" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="100.5" stroke-dashoffset="100.5"
+            style="transition:stroke-dashoffset .5s ease"/>
+    </svg>
+    <div class="value blue" id="cache-hit-pct">—</div>
+    <div class="sub-v" id="cache-read-tokens">0 read tokens</div>
+  </div>
+  <div class="gauge" id="gauge-amortization">
+    <div class="label">reads per write</div>
+    <div style="position:relative;width:120px;margin:8px auto;height:44px">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:6px;
+                  background:#21262d;border-radius:3px"></div>
+      <div id="amort-bar" style="position:absolute;bottom:0;left:0;height:6px;
+                  background:#3fb950;border-radius:3px;width:0%;
+                  transition:width .3s ease"></div>
+      <div style="position:absolute;bottom:0;left:14.28%;width:2px;height:12px;
+                  background:#d29922"></div>
+      <div style="position:absolute;bottom:14px;left:8%;font-size:.6rem;
+                  color:#d29922">1.4×</div>
+    </div>
+    <div class="value" id="reads-per-write">—</div>
+    <div class="sub-v" id="amort-status">break-even at 1.4×</div>
+  </div>
+  <div class="gauge" id="gauge-ttl-cohorts">
+    <div class="label">ttl cohorts</div>
+    <div id="ttl-cohort-list" style="text-align:left;font-size:.8rem;margin-top:8px">
+      <div style="color:#8b949e">no cache-bearing dispatches</div>
+    </div>
+  </div>
+</div>
+<div style="margin-top:12px">
+  <div class="label" style="font-size:.75rem;color:#8b949e;text-transform:uppercase;
+       letter-spacing:.05em;margin-bottom:6px">cache savings — rolling</div>
+  <svg id="cache-sparkline" width="100%" height="48" viewBox="0 0 600 48"
+       preserveAspectRatio="none" aria-label="cache savings sparkline">
+    <polyline id="cache-spark-line" fill="none" stroke="#58a6ff" stroke-width="2"
+              points=""/>
+    <polyline id="cache-spark-fill" fill="rgba(88,166,255,0.1)" stroke="none"
+              points=""/>
+  </svg>
+</div>
+</div>
+
+<!-- V4: distillate observatory -->
+<div class="panel" id="distillate-panel">
+<h2>distillate observatory <span style="float:right;font-size:.7rem;color:#8b949e">read-only · ADR 0017</span></h2>
+<table id="distill-table"><thead><tr>
+  <th>distillate</th><th>gen</th><th>quant</th><th>size</th><th>seat</th>
+</tr></thead><tbody><tr><td colspan="5" style="color:#8b949e">loading…</td></tr></tbody></table>
+
+<div class="gauge-row" style="margin-top:16px">
+  <div class="gauge" id="gauge-latency-p50">
+    <div class="label">latency p50</div>
+    <div style="margin-top:8px;font-size:.8rem">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="color:#8b949e;width:28px;font-size:.7rem">inc</span>
+        <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+          <div id="lat-p50-inc" style="height:100%;background:#d29922;border-radius:4px;width:0%;transition:width .3s ease"></div>
+        </div>
+        <span id="lat-p50-inc-v" style="font-variant-numeric:tabular-nums;font-size:.75rem;width:38px;text-align:right">—</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#8b949e;width:28px;font-size:.7rem">shdw</span>
+        <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+          <div id="lat-p50-sh" style="height:100%;background:#58a6ff;border-radius:4px;width:0%;transition:width .3s ease"></div>
+        </div>
+        <span id="lat-p50-sh-v" style="font-variant-numeric:tabular-nums;font-size:.75rem;width:38px;text-align:right">—</span>
+      </div>
+    </div>
+  </div>
+  <div class="gauge" id="gauge-latency-p90">
+    <div class="label">latency p90</div>
+    <div style="margin-top:8px;font-size:.8rem">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="color:#8b949e;width:28px;font-size:.7rem">inc</span>
+        <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+          <div id="lat-p90-inc" style="height:100%;background:#d29922;border-radius:4px;width:0%;transition:width .3s ease"></div>
+        </div>
+        <span id="lat-p90-inc-v" style="font-variant-numeric:tabular-nums;font-size:.75rem;width:38px;text-align:right">—</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#8b949e;width:28px;font-size:.7rem">shdw</span>
+        <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+          <div id="lat-p90-sh" style="height:100%;background:#58a6ff;border-radius:4px;width:0%;transition:width .3s ease"></div>
+        </div>
+        <span id="lat-p90-sh-v" style="font-variant-numeric:tabular-nums;font-size:.75rem;width:38px;text-align:right">—</span>
+      </div>
+    </div>
+  </div>
+  <div class="gauge" id="gauge-calibration">
+    <div class="label">calibration flow</div>
+    <div id="calibration-list" style="text-align:left;font-size:.75rem;margin-top:8px">
+      <div style="color:#8b949e">no shadow data</div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:12px" id="readiness-panel">
+  <div class="label" style="font-size:.75rem;color:#8b949e;text-transform:uppercase;
+       letter-spacing:.05em;margin-bottom:8px">cutover readiness (#73 decomposed)</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <div class="gauge" style="min-width:100px;padding:8px" id="arm-stability">
+      <div class="value" id="arm-stability-v" style="font-size:1.1rem;color:#f85149">—</div>
+      <div class="sub-v">stability ≥90%</div>
+    </div>
+    <div class="gauge" style="min-width:100px;padding:8px" id="arm-repopulation">
+      <div class="value" id="arm-repopulation-v" style="font-size:1.1rem;color:#f85149">—</div>
+      <div class="sub-v">repopulation 5–25%</div>
+    </div>
+    <div class="gauge" style="min-width:100px;padding:8px" id="arm-health">
+      <div class="value" id="arm-health-v" style="font-size:1.1rem;color:#f85149">—</div>
+      <div class="sub-v">anomalies = 0</div>
+    </div>
+    <div class="gauge" style="min-width:100px;padding:8px" id="arm-n">
+      <div class="value" id="arm-n-v" style="font-size:1.1rem;color:#f85149">—</div>
+      <div class="sub-v">n ≥ 30</div>
+    </div>
+  </div>
+  <div id="readiness-verdict" style="margin-top:8px;font-size:.85rem;color:#8b949e">
+    awaiting shadow data · cutover is the human flip (kultivait cutover)
+  </div>
+</div>
+</div>
+
+<div class="panel">
+<h2>event log</h2>
+<div id="event-log"></div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let es=null, dispatchN=0;
+const ARC_LEN=100.5; // half-circle path length for the dials
+
+function fmtUsd(v){return "$"+(v||0).toFixed(4)}
+function setDial(id,frac){
+  const el=$(id); if(!el)return;
+  const clamped=Math.max(0,Math.min(1,frac||0));
+  el.style.strokeDashoffset=String(ARC_LEN*(1-clamped));
+}
+function animCount(id,target){
+  const el=$(id); if(!el)return;
+  const cur=parseFloat(el.textContent.replace(/[$,]/g,""))||0;
+  const diff=target-cur;
+  if(Math.abs(diff)<0.0001){el.textContent=fmtUsd(target);return}
+  el.textContent=fmtUsd(cur+diff*0.3); // eased step; converges on subsequent frames
+  requestAnimationFrame(()=>animCount(id,target));
+}
+
+/* V2 financial contract: ADR 0005's three orthogonal lenses */
+function hydrate(s){
+  animCount("kept-pocket",s.saved_usd||0);
+  animCount("kept-cache",(s.cache||{}).kept_via_cache_usd||0);
+  animCount("cash-out",s.metered_spent_usd||s.spent_usd||0);
+  dispatchN=s.prompts||0;
+  $("dispatch-count").textContent=dispatchN+" dispatches";
+  const base=s.baseline_usd||0;
+  $("kept-pocket-pct").textContent=base>0
+    ?Math.round(100*(s.saved_usd||0)/base)+"% of baseline":"—";
+  const c=s.cache||{};
+  $("cache-hit-rate").textContent=c.cache_hit_rate!==undefined
+    ?"hit rate "+(c.cache_hit_rate*100).toFixed(0)+"%":"hit rate —";
+  renderCache(c);
+  // dials: kept-in-pocket and kept-via-cache as savings ratios (cap 100%)
+  setDial("dial-kept-pocket",base>0?(s.saved_usd||0)/base:0);
+  setDial("dial-kept-cache",c.dispatches>0?Math.min(1,c.cache_hit_rate*2):0);
+  // cash-out dial: spend relative to baseline (inverse: less is better)
+  setDial("dial-cash-out",base>0?1-((s.metered_spent_usd||s.spent_usd||0)/base):0);
+  renderGen(s.by_generation||{});
+}
+function renderGen(bg){
+  const tb=$("gen-table").querySelector("tbody");
+  tb.innerHTML="";
+  const max=Math.max(...Object.values(bg).map(g=>g.saved_usd),0.0001);
+  for(const[gen,g]of Object.entries(bg)){
+    const tr=document.createElement("tr");
+    const hit=g.cache.cache_hit_rate>0?(g.cache.cache_hit_rate*100).toFixed(0)+"%":"—";
+    const w=Math.max(2,Math.round(100*g.saved_usd/max));
+    tr.innerHTML=`<td>${gen}</td><td>${g.requests}</td>
+      <td>${fmtUsd(g.saved_usd)}</td><td>${hit}</td>
+      <td><div class="gen-bar"><div class="gen-bar-fill"
+        style="width:${w}%;background:${gen.includes("legacy")?"#30363d":"#3fb950"}"></div></div></td>`;
+    tb.appendChild(tr);
+  }
+}
+function log(msg){
+  const el=$("event-log");
+  el.prepend(new Date().toLocaleTimeString()+"  "+msg+"\n");
+  while(el.scrollHeight>3000&&el.firstChild)el.removeChild(el.lastChild);
+}
+function onDispatch(d){
+  dispatchN++;
+  $("dispatch-count").textContent=dispatchN+" dispatches";
+  log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`
+      +(d.cache_read_tokens>0?` cache:${d.cache_read_tokens}r/${d.cache_write_tokens}w`:""));
+  onDispatchCache(d);
+}
+function onShadow(d){
+  const inc=d.incumbent||{},sh=d.shadow||{};
+  log(`shadow: inc=${inc.verdict} vs sh=${sh.verdict} parse=${sh.parse_ok} `
+      +`Δ${((sh.latency_s||0)-(inc.latency_s||0)).toFixed(1)}s`);
+}
+/* V3: cache economics state + rendering */
+const SPARK_MAX=40;
+let sparkData=[];
+function renderCache(c){
+  if(!c)return;
+  const hit=c.cache_hit_rate||0;
+  $("cache-hit-pct").textContent=(hit*100).toFixed(0)+"%";
+  setDial("dial-cache-hit",hit);
+  $("cache-read-tokens").textContent=(c.cache_read_tokens_sum||0).toLocaleString()+" read tokens";
+  const rpw=c.cache_reads_per_write||0;
+  $("reads-per-write").textContent=rpw>0?rpw.toFixed(1)+"×":"—";
+  $("amort-bar").style.width=Math.min(100,(rpw/7)*100)+"%";
+  const st=$("amort-status");
+  if(rpw>=1.4){st.textContent="amortized ✓";st.style.color="#3fb950"}
+  else if(rpw>0){st.textContent="below break-even ("+rpw.toFixed(1)+"×)";st.style.color="#d29922"}
+  else{st.textContent="break-even at 1.4×";st.style.color="#8b949e"}
+  renderTTL(c.cache_ttl_cohorts||{});
+}
+function renderTTL(cohorts){
+  const el=$("ttl-cohort-list");
+  const keys=Object.keys(cohorts);
+  if(!keys.length){el.innerHTML='<div style="color:#8b949e">no cache-bearing dispatches</div>';return}
+  el.innerHTML=keys.map(k=>{
+    const c=cohorts[k];
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0">
+      <span style="color:${k==="5m"?"#58a6ff":k==="1h"?"#bc8cff":"#8b949e"}">${k}</span>
+      <span>${c.dispatches} dsp · $${(c.kept_via_cache_usd||0).toFixed(4)}</span></div>`;
+  }).join("");
+}
+function pushSparkPoint(v){
+  sparkData.push(v);
+  if(sparkData.length>SPARK_MAX)sparkData.shift();
+  const n=sparkData.length;
+  const max=Math.max(...sparkData,0.0001);
+  const pts=sparkData.map((v,i)=>{
+    const x=(i/(Math.max(n-1,1)))*600;
+    const y=44-(v/max)*40;
+    return x.toFixed(1)+","+y.toFixed(1);
+  });
+  $("cache-spark-line").setAttribute("points",pts.join(" "));
+  $("cache-spark-fill").setAttribute("points",
+    "0,48 "+pts.join(" ")+" 600,48");
+}
+function onDispatchCache(d){
+  if(d.cache_read_tokens>0||d.cache_write_tokens>0){
+    const est=(d.cache_read_tokens*0.9-(d.cache_write_tokens||0)*0.25)/1e6;
+    pushSparkPoint(Math.max(0,est));
+  }
+}
+
+/* V4: distillate observatory */
+function renderDistillates(shadow){
+  const tb=$("distill-table").querySelector("tbody");
+  if(!shadow||!shadow.models){tb.innerHTML='<tr><td colspan="5" style="color:#8b949e">no registry data</td></tr>';return}
+  const inc=shadow.models.incumbent||["—"],sh=shadow.models.shadow||[];
+  tb.innerHTML="";
+  for(const m of sh){
+    const isActive=inc.includes(m);
+    const seat=isActive?"<span style='color:#3fb950'>SHADOW</span>":"retired";
+    tb.innerHTML+=`<tr><td>${m}</td><td>${m.match(/g(\d+)$/)?.[1]??"?"}</td>
+      <td>q4_K_M</td><td>2.0GB</td><td>${seat}</td></tr>`;
+  }
+  tb.innerHTML+=`<tr><td style="color:#8b949e">${inc[0]} (incumbent)</td><td>—</td>
+    <td>—</td><td>—</td><td><span style='color:#d29922'>ACTIVE</span></td></tr>`;
+}
+function renderLatency(shadow){
+  const L=(shadow&&shadow.latency)||{};
+  const max=Math.max(L.incumbent_p50_s||0,L.shadow_p50_s||0,
+                     L.incumbent_p90_s||0,L.shadow_p90_s||0,0.1);
+  const setBar=(barId,vId,v)=>{
+    $(barId).style.width=(v/max*100)+"%";
+    $(vId).textContent=v?v.toFixed(1)+"s":"—";
+  };
+  setBar("lat-p50-inc","lat-p50-inc-v",L.incumbent_p50_s);
+  setBar("lat-p50-sh","lat-p50-sh-v",L.shadow_p50_s);
+  setBar("lat-p90-inc","lat-p90-inc-v",L.incumbent_p90_s);
+  setBar("lat-p90-sh","lat-p90-sh-v",L.shadow_p90_s);
+}
+function renderCalibration(shadow){
+  const cal=(shadow&&shadow.calibration)||{};
+  const el=$("calibration-list");
+  const pairs=cal.verdict_pairs||{};
+  const keys=Object.keys(pairs);
+  if(!keys.length){el.innerHTML='<div style="color:#8b949e">no shadow data</div>';return}
+  const max=Math.max(...Object.values(pairs),1);
+  el.innerHTML=keys.sort((a,b)=>pairs[b]-pairs[a]).map(k=>{
+    const isCorr=k.includes("frontier->shadow:contested");
+    const w=Math.round(100*pairs[k]/max);
+    return `<div style="margin-bottom:3px">
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:${isCorr?"#3fb950":"#8b949e"};font-size:.68rem">${k}</span>
+        <span style="color:#8b949e;font-size:.68rem">${pairs[k]}</span></div>
+      <div class="gen-bar" style="height:4px"><div class="gen-bar-fill"
+        style="width:${w}%;background:${isCorr?"#3fb950":"#30363d"}"></div></div></div>`;
+  }).join("");
+}
+function renderReadiness(shadow){
+  const arms=(shadow&&shadow.readiness_arms)||{};
+  const map={stability:"arm-stability",repopulation:"arm-repopulation",
+             health:"arm-health",sample:"arm-n"};
+  const suffixes=["stability_non_contested_ge_90","repopulation_band_5_to_25",
+                  "health_zero_anomalies","sample_n_ge_30"];
+  let allPass=true;
+  suffixes.forEach((key,i)=>{
+    const a=arms[key];
+    const el=$(`arm-${["stability","repopulation","health","n"][i]}-v`);
+    if(!el)return;
+    if(a){el.textContent=typeof a.value==="number"&&a.value<1?a.value.toFixed(2):a.value;
+      el.style.color=a.pass?"#3fb950":"#f85149";if(!a.pass)allPass=false}
+    else{el.textContent="—";el.style.color="#8b949e";allPass=false}
+  });
+  const v=$("readiness-verdict");
+  if(allPass&&Object.keys(arms).length>0){
+    v.innerHTML='<span style="color:#3fb950">ALL ARMS PASS — ready for the human flip (kultivait cutover)</span>';
+  }else{
+    v.textContent="awaiting shadow data · cutover is the human flip (kultivait cutover)";
+  }
+}
+function renderObservatory(shadow){
+  if(!shadow)return;
+  renderDistillates(shadow);renderLatency(shadow);
+  renderCalibration(shadow);renderReadiness(shadow);
+}
+
+function connect(){
+  es=new EventSource("/api/stream");
+  es.onopen=()=>{$("conn").className="on";$("mode").textContent="live"};
+  es.onerror=()=>{$("conn").className="off";$("mode").textContent="reconnecting…"};
+  es.addEventListener("harvest",e=>{hydrate(JSON.parse(e.data));log("harvest snapshot")});
+  es.addEventListener("dispatch",e=>onDispatch(JSON.parse(e.data)));
+  es.addEventListener("shadow",e=>{
+    onShadow(JSON.parse(e.data));
+    fetch("/api/dashboard/summary").then(r=>r.json())
+      .then(s=>renderObservatory(s.shadow)).catch(()=>{});
+  });
+}
+fetch("/api/dashboard/summary").then(r=>r.json()).then(s=>{
+  hydrate(s);renderObservatory(s.shadow);
+}).catch(()=>{});
+connect();
+</script>
+</body>
+</html>
