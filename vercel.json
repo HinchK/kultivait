@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/landing/index.html" },
-    { "source": "/install.sh", "destination": "/landing/install.sh" }
+    { "source": "/install.sh", "destination": "/landing/install.sh" },
+    { "source": "/start.md", "destination": "/landing/start.md" }
   ]
 }
