@@ -64,7 +64,7 @@ curl -fsSL https://kultivait.ai/install.sh | sh
 Or by hand:
 
 ```bash
-uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait
+uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait
 ```
 
 ## Step 2 — Initialize
@@ -139,7 +139,7 @@ That's it. Get them to their first routed prompt, then show them the harvest.
 
 ```bash
 for cmd in "curl -fsSL https://kultivait.ai/install.sh | sh" \
-           "uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait" \
+           "uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait" \
            "kultivait init" "kultivait serve" "kultivait harvest" \
            "kultivait escalations" "kultivait prune --from explore --to plan"; do
   grep -qF "$cmd" README.md && echo "OK: $cmd" || echo "MISSING FROM README: $cmd"
