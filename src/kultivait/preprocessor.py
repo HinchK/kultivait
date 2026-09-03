@@ -85,20 +85,77 @@ def derive_verdict(max_fit: float) -> str:
         return "contested"
 
 
+def _strip_noise(text: str) -> str:
+    """Remove common non-JSON noise: chat template delimiters, markdown fences."""
+    text = re.sub(r"<\|[^>]*\|>", "", text)  # <|im_end|>, <|im_start|> etc.
+    # markdown code fences: ```json ... ``` or ``` ... ```
+    text = re.sub(r"```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"```", "", text)
+    return text.strip()
+
+
+def _find_balanced_candidates(text: str) -> "list[str]":
+    """Scan for ALL complete balanced-braces {...} substrings at depth 0,
+    with string-escape awareness. Returns candidates in order of appearance."""
+    results = []
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
+
+    for i, c in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if c == "\\" and in_string:
+            escaped = True
+            continue
+        if c == '"' and not escaped:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    results.append(text[start : i + 1])
+                    start = -1
+            if depth < 0:
+                break  # unbalanced close; stop scanning
+
+    return results
+
+
 def extract_json(text: str) -> tuple[dict | None, str | None]:
-    """Extract outermost JSON object from text, ignoring surrounding prose/fences."""
+    """Extract the first complete JSON object from text, ignoring surrounding
+    prose/fences/chat-template delimiters. Uses balanced-braces scanning (not
+    a greedy regex) so trailing prose containing `}` doesn't corrupt the match.
+    String-aware: braces inside quoted strings are not counted."""
     if not isinstance(text, str):
         return None, "non-string output"
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if not m:
+
+    cleaned = _strip_noise(text)
+    candidates = _find_balanced_candidates(cleaned)
+    if not candidates:
+        # retry on the original (noise stripping might have eaten something)
+        candidates = _find_balanced_candidates(text)
+    if not candidates:
         return None, "no braces found"
-    try:
-        data = json.loads(m.group(0))
-        if isinstance(data, dict):
-            return data, None
-        return None, "json root is not an object"
-    except json.JSONDecodeError as e:
-        return None, f"json parse: {e}"
+
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                return data, None
+        except json.JSONDecodeError:
+            continue  # try the next balanced candidate (prose {braces} etc.)
+
+    return None, f"json parse: no valid object among {len(candidates)} candidate(s)"
 
 
 def _extract_last_user_message(messages: list[dict]) -> str:

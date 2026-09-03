@@ -7,6 +7,7 @@ editable.
 """
 
 import argparse
+import os
 import json
 import random
 import os
@@ -900,6 +901,165 @@ def cmd_cutover(args: argparse.Namespace) -> None:
           "the next request serves the reverted model.")
 
 
+def cmd_hook_loopback(args: argparse.Namespace) -> None:
+    """Z4 (#122): generate OS-level loopback redirection config (review-only)."""
+    from kultivait.hook.loopback import full_setup_guide
+
+    port = args.port or get_config().port
+    guide = full_setup_guide(port=port)
+
+    if args.generate_hosts:
+        print(guide["hosts"])
+        return
+    if args.generate_pf:
+        print(guide["pf_rules"])
+        return
+    if args.generate_uninstall:
+        print(guide["uninstall"])
+        return
+    if args.generate_cert:
+        print(guide["cert_instructions"])
+        return
+
+    # full guide
+    print(guide["hosts"])
+    print()
+    print(guide["pf_rules"])
+    print()
+    print(guide["cert_instructions"])
+    print()
+    print(guide["uninstall"])
+    print()
+    print(guide["trade_offs"])
+
+
+def cmd_hook_ide(args: argparse.Namespace) -> None:
+    """Z3 (#121): IDE auto-patcher — detect + patch IDE configs."""
+    from kultivait.hook.ide import detect_all, patch_ide, restore_ide
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+
+    detected = detect_all()
+    if not detected:
+        print("no supported IDEs detected (cursor, vscode, windsurf)")
+        return
+
+    # filter by --ide if given
+    if args.ide and args.ide != "all":
+        filtered = {k: v for k, v in detected.items() if k == args.ide}
+        if not filtered:
+            print(f"--ide {args.ide}: not installed or not detected")
+            return
+        detected = filtered
+
+    print(f"detected: {', '.join(detected.keys())}")
+    for ide, path in detected.items():
+        if args.restore:
+            if restore_ide(path):
+                print(f"  {ide}: restored from backup")
+            else:
+                print(f"  {ide}: no backup found")
+            continue
+
+        result = patch_ide(ide, path, base, dry_run=args.dry_run)
+        if result["dry_run"]:
+            print(f"  {ide} [dry-run] would set: {', '.join(result['keys_set'])}")
+        elif result["patched"]:
+            print(f"  {ide}: patched {', '.join(result['keys_set'])} (backup: {result['backup']})")
+        else:
+            print(f"  {ide}: already routed (no change needed)")
+
+
+def cmd_hook(args: argparse.Namespace) -> None:
+    """Z2 (#120): the shell integration — export/unset lines for eval."""
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+    shell = args.shell
+
+    def _export(key, val):
+        if shell == "fish":
+            print(f'set -gx {key} "{val}"')
+        else:
+            print(f'export {key}="{val}"')
+
+    def _unset(key):
+        if shell == "fish":
+            print(f"set -e {key}")
+        else:
+            print(f"unset {key}")
+
+    if args.check:
+        cur_base = os.environ.get("OPENAI_BASE_URL", "")
+        cur_a = os.environ.get("ANTHROPIC_BASE_URL", "")
+        ok = cur_base == f"{base}/v1" and cur_a == base
+        print(f"OPENAI_BASE_URL={cur_base or '(unset)'}")
+        print(f"ANTHROPIC_BASE_URL={cur_a or '(unset)'}")
+        print(f"expected: {base}")
+        print("hooked: yes" if ok else "hooked: no (run: eval \"$(kultivait hook)\")")
+        return
+
+    if args.unset:
+        _unset("OPENAI_BASE_URL")
+        _unset("ANTHROPIC_BASE_URL")
+        _unset("OPENAI_API_KEY")
+        _unset("ANTHROPIC_API_KEY")
+        return
+
+    _export("OPENAI_BASE_URL", f"{base}/v1")
+    _export("ANTHROPIC_BASE_URL", base)
+    _export("OPENAI_API_KEY", "kultivait")
+    _export("ANTHROPIC_API_KEY", "kultivait")
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """Z1 (#119): transparent process wrapper — inject proxy env vars and
+    execute the child command. kultivait's own CLI dispatches strip these
+    vars (PROXY_ENV_STRIP), so no recursion."""
+    import shlex
+    import signal
+    import subprocess
+
+    if not args.command:
+        print("usage: kultivait run [--host H] [--port P] -- <command...>", file=sys.stderr)
+        raise SystemExit(2)
+
+    host = args.host or "127.0.0.1"
+    port = args.port or get_config().port
+    base = f"http://{host}:{port}"
+
+    env = dict(os.environ)
+    env["OPENAI_BASE_URL"] = f"{base}/v1"
+    env["ANTHROPIC_BASE_URL"] = base
+    # some tools require a non-empty key; kultivait's proxy ignores it
+    env.setdefault("OPENAI_API_KEY", "kultivait")
+    env.setdefault("ANTHROPIC_API_KEY", "kultivait")
+
+    cmd = list(args.command)
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]  # strip the argparse REMAINDER separator
+    try:
+        proc = subprocess.Popen(cmd, env=env)
+    except FileNotFoundError:
+        print(f"kultivait run: command not found: {cmd[0]}", file=sys.stderr)
+        raise SystemExit(127)
+
+    # forward terminal signals to the child
+    def _fwd(signum, _frame):
+        proc.send_signal(signum)
+
+    old_int = signal.signal(signal.SIGINT, _fwd)
+    old_term = signal.signal(signal.SIGTERM, _fwd)
+    try:
+        rc = proc.wait()
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+    raise SystemExit(rc)
+
+
 def cmd_dashboard(args: argparse.Namespace) -> None:
     """V5 (#110): the one-command dashboard — health-check serve, open the browser.
 
@@ -1256,6 +1416,37 @@ def main(argv: list | None = None) -> None:
     dash_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
     dash_cmd.add_argument("--no-open", action="store_true", help="print the URL without opening a browser")
     dash_cmd.set_defaults(func=cmd_dashboard)
+    run_cmd = sub.add_parser("run", help="transparently wrap a command with proxy env vars")
+    run_cmd.add_argument("--host", default="127.0.0.1")
+    run_cmd.add_argument("--port", type=int, default=None, help="default: the serve config port")
+    run_cmd.add_argument("command", nargs=argparse.REMAINDER,
+                         help="the command to execute (after --)")
+    run_cmd.set_defaults(func=cmd_run)
+    hook_cmd = sub.add_parser("hook", help="shell + IDE integration")
+    hook_sub = hook_cmd.add_subparsers(dest="hook_cmd")
+    hook_shell = hook_sub.add_parser("shell", help="shell-safe export/unset lines")
+    hook_shell.add_argument("--shell", default="sh", choices=["sh", "bash", "zsh", "fish"])
+    hook_shell.add_argument("--unset", action="store_true")
+    hook_shell.add_argument("--check", action="store_true")
+    hook_shell.add_argument("--host", default="127.0.0.1")
+    hook_shell.add_argument("--port", type=int, default=None)
+    hook_shell.set_defaults(func=cmd_hook)
+    hook_ide = hook_sub.add_parser("ide", help="auto-patch IDE configs for proxy routing")
+    hook_ide.add_argument("--ide", default="all", choices=["cursor", "vscode", "windsurf", "all"])
+    hook_ide.add_argument("--dry-run", action="store_true")
+    hook_ide.add_argument("--restore", action="store_true")
+    hook_ide.add_argument("--host", default="127.0.0.1")
+    hook_ide.add_argument("--port", type=int, default=None)
+    hook_ide.set_defaults(func=cmd_hook_ide)
+    hook_loopback = hook_sub.add_parser("loopback", help="generate OS-level redirection config (review-only)")
+    hook_loopback.add_argument("--generate-hosts", action="store_true")
+    hook_loopback.add_argument("--generate-pf", action="store_true")
+    hook_loopback.add_argument("--generate-cert", action="store_true")
+    hook_loopback.add_argument("--generate-uninstall", action="store_true")
+    hook_loopback.add_argument("--port", type=int, default=None)
+    hook_loopback.set_defaults(func=cmd_hook_loopback)
+    # bare 'kultivait hook' defaults to the shell integration
+    hook_cmd.set_defaults(func=cmd_hook)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")

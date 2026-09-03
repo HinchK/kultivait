@@ -117,6 +117,94 @@ def _sort_targets_desc(contract_json: str) -> str:
     return json.dumps(data)
 
 
+def resolve_majority_label(labels: "list[str | None]") -> "tuple[str | None, bool]":
+    """Q2 (#126): multi-family majority vote — the tier the most teachers agree on.
+    Returns (majority_tier, was_unanimous). None labels (teacher failures) are
+    excluded from the vote; a unanimous 2-of-2 or 3-of-3 wins outright; a
+    2-of-3 split wins with was_unanimous=False; a full disagreement (all three
+    different) returns (None, False) — flagged for synthetic-anchor resolution."""
+    valid = [l for l in labels if l in ("local", "contested", "frontier")]
+    if not valid:
+        return None, False
+    counts: dict = {}
+    for l in valid:
+        counts[l] = counts.get(l, 0) + 1
+    best = max(counts, key=counts.get)
+    best_count = counts[best]
+    if best_count == 1 and len(counts) > 1:
+        return None, False  # full disagreement: no majority
+    unanimous = best_count == len(valid) == len(labels)
+    return best, unanimous
+
+
+def build_synthetic_frontier_anchors(count: int = 8) -> "list[dict]":
+    """Q2 (#126): hand-authored frontier prompts with a-priori labels —
+    bypasses the labeler entirely, validated by schema (not teacher).
+    The frontier stratum's direct-seeded pairs, ending the starvation."""
+    templates = [
+        ("Design the multi-region failover architecture for {x} with consistency model, storage layout, and cutover sequencing.", "architecture"),
+        ("Overhaul {x} for production multi-tenant scale: schema migration plan, API versioning, and zero-downtime deployment.", "architecture"),
+        ("Root-cause the intermittent deadlock in {x} across three services and specify the production fix with rollback semantics.", "debugging"),
+        ("Draft the technical design doc for evolving {x} into a platform: service boundaries, data ownership, and failure domains.", "architecture"),
+        ("Architect the real-time event pipeline for {x}: partitioning strategy, exactly-once semantics, and backpressure handling.", "architecture"),
+        ("Diagnose the throughput collapse in {x} under load and specify the scaling fix with benchmark methodology.", "debugging"),
+        ("Design the security model for {x}: authentication boundary, authorization granularity, and audit trail.", "architecture"),
+        ("Specify the distributed tracing instrumentation plan for {x}: correlation IDs, sampling strategy, and SLO alerting.", "compound"),
+    ]
+    subjects = ["the dispatch service", "the ledger pipeline", "the tollbooth", "the escalation store",
+                "the preprocessor", "the router", "the harvest", "the cache engine"]
+    anchors = []
+    for i in range(count):
+        tmpl, tt = templates[i % len(templates)]
+        subj = subjects[i % len(subjects)]
+        anchors.append({
+            "prompt": tmpl.format(x=subj),
+            "tier": "frontier",
+            "task_type": tt,
+        })
+    return anchors
+
+
+def validate_synthetic_anchor(anchor: dict) -> bool:
+    """Q2 (#126): schema validation for a synthetic anchor (not teacher-validated)."""
+    return (
+        isinstance(anchor.get("prompt"), str)
+        and len(anchor["prompt"]) > 30
+        and anchor.get("tier") == "frontier"
+        and anchor.get("task_type") in ("architecture", "debugging", "compound")
+    )
+
+
+def with_teacher_fallback(
+    primary_fn,
+    fallback_fns: "list | None" = None,
+    max_primary_retries: int = 3,
+    retry_delay_s: float = 2.0,
+):
+    """W1 (#113): dynamic teacher fallback — primary gets N retries with backoff,
+    then the fallback chain takes over (multi-teacher). Each fallback gets the
+    same retry budget. If all teachers exhaust, raises the last error (the
+    caller's BudgetStop still protects the run)."""
+    import time as _t
+    chain = [primary_fn] + (fallback_fns or [])
+
+    def wrapped(*args, **kwargs):
+        last_err = None
+        for i, fn in enumerate(chain):
+            retries = max_primary_retries if i == 0 else 1
+            for attempt in range(retries):
+                try:
+                    return fn(*args, **kwargs)
+                except BudgetStop:
+                    raise
+                except Exception as e:  # noqa: BLE001 - any teacher failure
+                    last_err = e
+                    if attempt < retries - 1:
+                        _t.sleep(retry_delay_s * (attempt + 1))
+        raise last_err or RuntimeError("all teachers exhausted")
+
+    return wrapped
+
 def generate_corpus(
     seeds: list,
     *,
