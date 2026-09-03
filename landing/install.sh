@@ -14,7 +14,7 @@ fi
 
 # 2. kultivait
 say "installing kultivait..."
-uv tool install --force --from git+https://github.com/Standard-Pentest/kultivaite kultivait
+uv tool install --force --from git+https://github.com/Standard-Pentest/kultivait kultivait
 
 # 3. in-app setup: runtime choice, models, server, config — all from here.
 #    </dev/tty because `curl | sh` leaves stdin as the pipe; the setup

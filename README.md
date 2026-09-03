@@ -29,7 +29,7 @@ classified 24/24 held-out prompts correctly with zero dangerous misroutes
 curl -fsSL https://kultivait.ai/install.sh | sh
 ```
 
-or, by hand: `uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait`
+or, by hand: `uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait`
 
 ```bash
 kultivait init      # setup screen: survey, choose a garden, download, serve

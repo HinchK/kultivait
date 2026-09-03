@@ -22,7 +22,7 @@ curl -fsSL https://kultivait.ai/install.sh | sh
 Or by hand:
 
 ```bash
-uv tool install --from git+https://github.com/Standard-Pentest/kultivaite kultivait
+uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait
 ```
 
 ## Step 2 — Initialize
