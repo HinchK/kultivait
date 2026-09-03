@@ -1,7 +1,7 @@
 [project]
 name = "kultivait"
 version = "0.1.0"
-description = "Add your description here"
+description = "Local-first LLM routing proxy: weigh every prompt, route to the cheapest model that can carry it, tally the savings."
 readme = "README.md"
 authors = [
     { name = ".: HinchK :.", email = "kasey.hinchman@gmail.com" }
