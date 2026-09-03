@@ -568,11 +568,7 @@
           <text x="274" y="147" font-size="10.5" fill="#c87e4f">weigh</text>
           <text x="274" y="161" font-size="10" fill="#9dab97">nomic-embed-text · 4 ms</text>
 
-          <!-- branch share labels -->
-          <text x="140" y="235" text-anchor="middle" font-size="10" fill="#8fae7c">62%</text>
-          <text x="222" y="252" text-anchor="middle" font-size="10" fill="#8fae7c">23%</text>
-          <text x="296" y="252" text-anchor="middle" font-size="10" fill="#c87e4f">11%</text>
-          <text x="378" y="235" text-anchor="middle" font-size="10" fill="#c87e4f">4%</text>
+          <!-- branch shares intentionally unlabeled: your mix depends on your work -->
 
           <!-- destination beds -->
           <g font-size="11" text-anchor="middle">
@@ -602,9 +598,9 @@
           <circle class="seed p-gemini" r="3.4" fill="#dd9563" style="animation-delay: 4.5s"/>
         </svg>
         <figcaption class="tally">
-          <span class="green">rerouted local <b id="tally-local">85%</b></span>
-          <span>saved this session <b id="tally-usd">$4.87</b></span>
-          <span class="green">est. avoided <b id="tally-wh">31 Wh</b></span>
+          <span class="green">weighed <b>locally</b></span>
+          <span>routed <b>garden-first</b></span>
+          <span class="green">cloud only when it <b>earns it</b></span>
         </figcaption>
       </figure>
     </div>
@@ -612,7 +608,7 @@
     <!-- field notes -->
     <div class="fieldnotes">
       <div class="wrap">
-        <p class="note"><b>Most frontier calls are weeds.</b> In our own agentic sessions, roughly two of every three prompts sent to a frontier model — renames, formatting, summaries — were work an 8B model handles cleanly.</p>
+        <p class="note"><b>Most frontier calls are weeds.</b> In our own agentic sessions, the prompts sent to a frontier model — renames, formatting, summaries — were again and again work a small local model handles cleanly.</p>
         <p class="note"><b>Context compounds.</b> A 50-turn coding session re-reads its own stale context on every turn. You pay the multiplier, the datacenter burns it, and the model wades through it.</p>
         <p class="note"><b>Nobody is watching.</b> Your tools pick a model once and never reconsider. The decision that costs you the most is the one nothing in your stack is making.</p>
       </div>
@@ -650,7 +646,7 @@
         <div class="stage reveal">
           <span class="stage-no">05</span>
           <h3>Harvest</h3>
-          <p>Every routed token and pruned kilobyte is tallied: dollars kept in your pocket, watt-hours never drawn, context kept clean enough to trust.</p>
+          <p>Every routed token and pruned kilobyte is tallied: dollars kept in your pocket, tokens never sent, context kept clean enough to trust.</p>
         </div>
       </div>
     </div>
@@ -661,7 +657,7 @@
     <div class="wrap">
       <span class="tag">The ledger</span>
       <h2 id="ledger-title" class="reveal">Every prompt, <em>accounted for</em></h2>
-      <p class="lede reveal">Real routing decisions from a working session. The cloud is not the enemy — it is a tool you should reach for on purpose.</p>
+      <p class="lede reveal">Illustrative routing decisions — the pattern a working session leaves in the ledger. The cloud is not the enemy — it is a tool you should reach for on purpose. Your own ledger records the real rows.</p>
 
       <div class="ledger-table reveal" role="table" aria-label="Example routing decisions">
         <div class="ledger-row head" role="row">
@@ -695,7 +691,7 @@
           <span class="ledger-cost" role="cell">$0.09</span>
         </div>
       </div>
-      <p class="ledger-foot reveal">Session total: $0.40 routed deliberately, versus $6.12 if every prompt had gone to a frontier model.</p>
+      <p class="ledger-foot reveal">Illustrative session: $0.40 routed deliberately, versus $6.12 if every prompt had gone to a frontier model. Your harvest prints your real totals.</p>
     </div>
   </section>
 
@@ -707,7 +703,8 @@
       <p class="lede reveal">
         Routing saves you the difference between models. Pruning saves you the multiplier on every
         call. At each phase gate, Kultivait distills what the session learned into a brief the next
-        phase can trust — and composts the rest.
+        phase can trust — and composts the rest. Gate figures below are illustrative; your compost
+        pile keeps the real ones.
       </p>
 
       <div class="gates">
@@ -791,27 +788,27 @@
   <section class="on-dark harvest" aria-labelledby="harvest-title">
     <div class="wrap">
       <span class="tag">The harvest</span>
-      <h2 id="harvest-title" class="reveal">What a month of <em>cultivation</em> looks like</h2>
+      <h2 id="harvest-title" class="reveal">What cultivation <em>measures</em></h2>
 
       <div class="stats">
         <div class="stat reveal">
-          <div class="stat-num"><em>2.1M</em></div>
-          <div class="stat-label">tokens rerouted local</div>
+          <div class="stat-num"><em>24/24</em></div>
+          <div class="stat-label">held-out prompts routed correctly</div>
         </div>
         <div class="stat reveal">
-          <div class="stat-num">$127</div>
-          <div class="stat-label">kept in pocket</div>
+          <div class="stat-num"><em>0</em></div>
+          <div class="stat-label">dangerous misroutes</div>
         </div>
         <div class="stat reveal">
-          <div class="stat-num"><em>38%</em></div>
-          <div class="stat-label">context pruned at gates</div>
+          <div class="stat-num">86.9–100%</div>
+          <div class="stat-label">distiller recall across models</div>
         </div>
         <div class="stat reveal">
-          <div class="stat-num">~0.9 kWh</div>
-          <div class="stat-label">est. inference avoided</div>
+          <div class="stat-num"><em>0</em></div>
+          <div class="stat-label">bytes of telemetry phoned home</div>
         </div>
       </div>
-      <p class="stats-foot">figures from a typical month of daily agentic coding · your soil may vary</p>
+      <p class="stats-foot">every figure reproduces from the repo — try <b>uv run experiments/routing_trust.py</b></p>
 
       <div class="final-cta reveal">
         <div>
@@ -844,7 +841,7 @@
     <span>kultivait — grown in a terminal near you</span>
     <nav aria-label="Footer">
       <a href="#how">docs</a>
-      <a href="#ledger">github</a>
+      <a href="https://github.com/Standard-Pentest/kultivait">github</a>
       <a href="#ethos">ethos</a>
     </nav>
   </div>
@@ -890,18 +887,6 @@
     entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
   }, { threshold: 0.12 });
   document.querySelectorAll(".reveal").forEach(el => io.observe(el));
-
-  // gently growing tally
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!reduced) {
-    let usd = 4.87, wh = 31;
-    setInterval(() => {
-      usd += Math.random() * 0.03;
-      wh += Math.random() * 0.2;
-      document.getElementById("tally-usd").textContent = "$" + usd.toFixed(2);
-      document.getElementById("tally-wh").textContent = Math.round(wh) + " Wh";
-    }, 3400);
-  }
 </script>
 </body>
 </html>
