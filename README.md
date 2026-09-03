@@ -556,6 +556,31 @@ uv run pytest
 
 The landing page lives in `landing/index.html`.
 
+### Multi-agent herd sessions (Herdr)
+
+Development on this repo runs as a coordinated agent herd inside
+[Herdr](https://github.com/anomalyco/herdr): a **looper** (main pane,
+orchestration only), an **architect** (`opencode` / GLM-5.3 — specs, code,
+MLX, evals), and two Gemini workers — **agy-docs** (ADRs, runbooks, log
+sync) and **agy-gh** (issue tracker via `gh`) — plus `kultivait serve` on
+`:4114` and a live `/tmp/herdr-process.log` tail pane. Milestones are
+charted as Wayfinder maps; tickets flow claim → dispatch → verify → retire
+until the map closes and the logs are synced.
+
+To recreate the experience in any fresh Herdr workspace, run the wizard from
+a pane in the repo root:
+
+```bash
+scripts/herdr-kultivait-session.sh
+```
+
+It seats the herd idempotently and offers four kickoffs: `w` chart a new
+Wayfinder milestone with you (live grilling in the architect's pane), `b`
+brainstorm a direction into a spec + tickets (grill-with-docs → PRD →
+tickets), `r` resume an existing map, or `s` seat-only. Each agent receives
+its standing brief once, from [`scripts/herdr-briefs/`](scripts/herdr-briefs/)
+— edit those files to tune herd behavior, never the wizard's library.
+
 ## Roadmap
 
 - Distillation-quality eval harness: automated planted-fact recall scoring
