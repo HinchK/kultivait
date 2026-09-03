@@ -1,12 +1,10 @@
 """OpenAI-compatible proxy: weigh locally, route deliberately, tally everything."""
 
-import atexit
 import hashlib
 import json
 import os
 import time
 import uuid
-from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 import httpx
@@ -14,7 +12,6 @@ import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
-from posthog import Posthog
 
 load_dotenv()
 
@@ -167,34 +164,7 @@ def create_app(
             ledger=ledger,
         )
 
-    project_token = os.getenv("POSTHOG_PROJECT_TOKEN")
-    posthog_client = (
-        Posthog(
-            project_token,
-            host=os.getenv("POSTHOG_HOST"),
-            enable_exception_autocapture=True,
-        )
-        if project_token
-        else None
-    )
-    if posthog_client:
-        atexit.register(posthog_client.shutdown)
-
-    @asynccontextmanager
-    async def lifespan(_: FastAPI):
-        yield
-        if posthog_client:
-            posthog_client.shutdown()
-
-    app = FastAPI(title="kultivait", lifespan=lifespan)
-
-    def _capture(event: str, request: Request, properties: dict) -> None:
-        if posthog_client:
-            posthog_client.capture(
-                event,
-                distinct_id="kultivait-proxy",
-                properties={"$process_person_profile": False, **properties},
-            )
+    app = FastAPI(title="kultivait")
 
     def _record(tier: str, completion: Completion, **decision_meta) -> None:
         backend = backends.get(tier)
@@ -649,17 +619,6 @@ def create_app(
                 for item in stream_iter:
                     if isinstance(item, Completion):
                         _record(actual_tier, item, **meta)
-                        _capture(
-                            "chat_completion_completed",
-                            request,
-                            {
-                                "tier": actual_tier,
-                                "local": item.local,
-                                "streaming": True,
-                                "fallback_reason": fallback_reason,
-                                "has_tool_calls": bool(item.tool_calls),
-                            },
-                        )
                         if item.tool_calls:
                             yield chunk(
                                 {
@@ -680,17 +639,6 @@ def create_app(
 
         actual_tier, completion = _dispatch_complete(route, tools)
         _record(actual_tier, completion, **meta)
-        _capture(
-            "chat_completion_completed",
-            request,
-            {
-                "tier": actual_tier,
-                "local": completion.local,
-                "streaming": False,
-                "fallback_reason": fallback_reason,
-                "has_tool_calls": bool(completion.tool_calls),
-            },
-        )
         message: dict = {"role": "assistant", "content": completion.text or None}
         if completion.tool_calls:
             message["tool_calls"] = completion.tool_calls
@@ -754,16 +702,6 @@ def create_app(
                 for item in stream_iter:
                     if isinstance(item, Completion):
                         _record(actual_tier, item, **meta)
-                        _capture(
-                            "message_completion_completed",
-                            request,
-                            {
-                                "tier": actual_tier,
-                                "local": item.local,
-                                "streaming": True,
-                                "has_tool_calls": bool(item.tool_calls),
-                            },
-                        )
                         if started_text_block:
                             yield event("content_block_stop", {"index": block_idx})
                             block_idx += 1
@@ -829,16 +767,6 @@ def create_app(
 
         actual_tier, completion = _dispatch_complete(route, tools)
         _record(actual_tier, completion, **meta)
-        _capture(
-            "message_completion_completed",
-            request,
-            {
-                "tier": actual_tier,
-                "local": completion.local,
-                "streaming": False,
-                "has_tool_calls": bool(completion.tool_calls),
-            },
-        )
         content_blocks: list[dict] = []
         if completion.text:
             content_blocks.append({"type": "text", "text": completion.text})
@@ -882,16 +810,6 @@ def create_app(
             body["transcript"],
             from_phase=body.get("from_phase", "previous"),
             to_phase=body.get("to_phase", "next"),
-        )
-        _capture(
-            "handoff_brief_created",
-            request,
-            {
-                "from_phase": body.get("from_phase", "previous"),
-                "to_phase": body.get("to_phase", "next"),
-                "tokens_before": result.tokens_before,
-                "tokens_after": result.tokens_after,
-            },
         )
         return {
             "brief": result.brief,

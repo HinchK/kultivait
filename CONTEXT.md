@@ -116,5 +116,17 @@ _Avoid_: cache tag, prompt cache marker, cache point
 The separately computed cache-savings line (full-price minus discounted input cost over cache-bearing dispatches).
 _Avoid_: cache savings (unqualified), cache discount
 
+**Green-harvest gate**:
+The end-to-end stranger gate a public release must pass: cold clone to one routed dispatch visible in the harvest, unaided, inside fifteen minutes on the supported matrix.
+_Avoid_: smoke test, quickstart check, e2e (too generic)
+
+**Launch checklist**:
+The recorded all-green audit that defines public-ready: verified-true claims, no telemetry, no internal working files in the repo, canonical entry point, green-harvest gate passed, secrets swept.
+_Avoid_: release checklist (that's the tag mechanics), definition of done
+
+**Canonical home**:
+The one repository a stranger should land on — Standard-Pentest/kultivait upstream — with every public link pointing there and forks de-emphasized.
+_Avoid_: upstream (that's the git remote name), main repo
+
 
 
