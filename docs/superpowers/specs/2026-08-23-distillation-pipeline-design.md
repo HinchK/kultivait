@@ -4,6 +4,8 @@ Date: 2026-08-23
 Branch: main (wayfinder map #44)
 Status: approved via wayfinder map #44 (issues #45–#52); prototype validated (#52)
 
+> Historical note (2026-09-03): shipped as designed except the #50 teacher row — superseded the next day by ADR 0016's amendment (local vary model drafts variations, default `qwen3:14b`; neutral API judge `x-ai/grok-4.6` via OpenRouter labels; `opencode` remains the no-argument fallback). See README "Model distillation & shadow cutover" for the shipped shape.
+
 ## Problem
 
 Kultivait's preprocessor judge — the local 4B that derives every contested routing verdict — carries a systematic calibration weakness the held-out eval measured: judge fits cluster ≥ 0.85 (emptying the contested band, starving the trolltoll of honest cases; live traffic shows 1 contested in 24 preprocessed), and the `local_sufficient` boolean contradicted its own fits on 10 of 12 cases. The flywheel data to fix this already flows through the proxy — escalations, dual-track ledger verdicts and toll choices, capability-eval transcripts — but nothing closes the loop: no corpus assembly, no training, no evaluation, no safe deployment. Every routing decision is observed and discarded.

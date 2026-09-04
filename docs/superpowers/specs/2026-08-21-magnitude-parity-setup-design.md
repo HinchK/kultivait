@@ -2,10 +2,10 @@
 
 Date: 2026-08-21
 Status: awaiting review
-Reference: magnitude's onboarding model-setup flow, local clone at
-`../../magnitude` (upstream: magnitudedev/magnitude). Authoritative upstream
-docs: `magnitude/design/model-management/setup-flow.md`,
-`magnitude/packages/client-common/src/local-models/setup-state.ts`.
+Reference: magnitude's onboarding model-setup flow (upstream:
+[magnitudedev/magnitude](https://github.com/magnitudedev/magnitude)).
+Authoritative upstream docs in that repository: `design/model-management/setup-flow.md`
+and `packages/client-common/src/local-models/setup-state.ts`.
 
 ## Goal
 

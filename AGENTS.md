@@ -23,6 +23,6 @@ If a prompt omits explicit done-criteria or verification commands:
 
 ## 3. Context Budget & Checkpoint Management
 
-- **State File**: For complex tasks or extended planning, maintain `STATE.md` with decisions, open items, and next steps.
+- **State File**: For complex tasks or extended planning, maintain a state file (`STATE.md` at the repo root; create it if absent) with decisions, open items, and next steps.
 - **Slice Boundaries**: Execute multi-slice features across separate focused sessions.
-- **Spec-Driven Work**: Start complex tasks from `docs/spec.md`.
+- **Spec-Driven Work**: Start complex tasks from a design spec (`docs/superpowers/specs/<date>-<slug>-design.md`).
