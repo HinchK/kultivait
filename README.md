@@ -570,7 +570,8 @@ kept-via-cache, and friends — are defined in [CONTEXT.md](CONTEXT.md).
 uv run pytest
 ```
 
-The landing page lives in `landing/index.html`. This repo is developed as
+The landing page lives in `landing/index.html`. Full documentation
+index: [docs/README.md](docs/README.md). This repo is developed as
 a coordinated multi-agent herd (looper, architect, docs and GitHub
 workers) with milestone maps on the issue tracker — tickets and Wayfinder
 maps live here on GitHub.
