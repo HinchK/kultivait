@@ -6,7 +6,7 @@ Status: approved in brainstorming session
 ## Problem
 
 `kultivait init` is often a new user's first interaction with kultivait
-([[2026-07-14-init-hardware-tuning-design]] added the zero-to-local bootstrap
+([2026-07-14 init-hardware-tuning design](./2026-07-14-init-hardware-tuning-design.md) added the zero-to-local bootstrap
 flow it now drives). Today every step — survey summary, tier table, download
 progress, confirmations, server-start wait — is plain sequential
 `print()`/`input()`. It works, but reads as a wall of text rather than

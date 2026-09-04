@@ -59,7 +59,7 @@ HTTP Request (/v1/chat/completions OR /v1/messages)
   │            ├─ Options: uniform notional estimate + cash annotation (metered/subscription/$0)
   │            └─ Empty capable frontier + local serves ──► no toll, straight local
   │
-  ├─ 3. API Dispatch (backends.py — OpenAIBackend / AnthropicBackend / OpenRouterBackend)
+  ├─ 3. API Dispatch (api_backends.py — OpenAIBackend / AnthropicBackend / OpenRouterBackend)
   │      ├─ Translate client dialect → provider grammar (pure helpers)
   │      ├─ Effort self-projection (per-provider table; sticky per fingerprint+target)
   │      ├─ Token clamp: client value never lowered; per-model default; effort headroom

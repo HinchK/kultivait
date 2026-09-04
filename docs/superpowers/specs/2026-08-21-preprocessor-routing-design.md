@@ -4,6 +4,8 @@ Date: 2026-08-21
 Branch: main (wayfinder map #4)
 Status: approved via wayfinder map #4 (issues #5–#14)
 
+> Historical note (2026-09-03): shipped via maps #4/#25 with a drifted tail — Anthropic `/v1/messages` tool calling has since SHIPPED, and `docs/API.md` plus the `[preprocess]`/`[effort]` sections were never created (config is documented in the README). Kept as the design record.
+
 ## Problem
 
 Kultivait currently resolves tiers statically using embedding distance calculations against role centroids (`server.py:_classify`, `server.py:_resolve_tier`). This approach has three key limitations:
@@ -257,14 +259,14 @@ Per the repository's convention, all tests execute hermetically without live sub
 ## Docs
 
 - Update `README.md` to introduce the Preprocessor, Tollbooth, and Route Menu concepts.
-- Document `[preprocess]` and `[effort]` configuration sections in `docs/API.md` (or configuration guide).
+- Document `[preprocess]` and `[effort]` configuration sections in `docs/API.md` (or configuration guide). *(Not done: no `docs/API.md` exists; configuration is documented in the README instead.)*
 - Maintain all canonical terms in `CONTEXT.md`.
 
 ## Out of scope
 
 - Direct implementation of any layer (this design spec concludes wayfinder map #4; implementation is scheduled for a dedicated build effort).
 - Autonomous CLI worker supervision or spawning (kultivait is a proxy, not an orchestrator; client agent loops retain control).
-- Anthropic `/v1/messages` tool calling support (tracked separately under BACKLOG F4).
+- Anthropic `/v1/messages` tool calling support. *(Has since shipped — see README "Endpoints & clients".)*
 - Altering verdict derivation thresholds ($[0.65, 0.85)$ confirmed by held-out eval #14).
 - System-level daemon management (LaunchAgent / systemd process supervision).
 - Learned-from-ledger automated dynamic threshold tuning.

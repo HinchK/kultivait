@@ -2,14 +2,14 @@
 
 **Date**: 2026-08-25  
 **Map / Ticket**: Issue #78 (Cache-probe live verification under ADR 0018 & ADR 0005)  
-**Artifacts**: `/tmp/cache-probe/summary.json`  
+**Artifacts**: probe summary (`/tmp/cache-probe/summary.json`, ephemeral — not retained)  
 **Total Probe Spend**: $0.089  
 
 ---
 
 ## 1. Environment & Probe Setup
 
-This evaluation tested the prompt caching architecture specified in [ADR 0018](docs/adr/0018-cache-breakpoints.md) against live pay-per-token frontier providers via OpenRouter. 
+This evaluation tested the prompt caching architecture specified in [ADR 0018](../../adr/0018-cache-breakpoints.md) against live pay-per-token frontier providers via OpenRouter. 
 
 ### Probe Parameters
 - **Prefix Structure**: A stable ~4.6k-token agent prefix consisting of tools definitions array + system prompt (exceeding provider minimum token thresholds).

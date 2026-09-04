@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-02  
 **Scope**: Developer onboarding, tool interception tiers (Process Wrapper, Shell Hook, IDE Auto-Patcher, Loopback Redirection), recursion safety invariants (`PROXY_ENV_STRIP`), and rollback operations.  
-**Relevant ADRs**: [ADR 0019](../../adr/0019-zero-config-adoption.md), [ADR 0005](../../adr/0005-cost-model-duality.md), [ADR 0017](../../adr/0017-distillate-deployment-and-shadow-rollout.md).
+**Relevant ADRs**: [ADR 0005](../../adr/0005-cost-model-duality.md), [ADR 0017](../../adr/0017-distillate-deployment-and-shadow-rollout.md). *(An "ADR 0019 — zero-config adoption" was planned but never written; this runbook is the operational record.)*
 
 ---
 
