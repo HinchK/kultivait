@@ -23,3 +23,4 @@ Index of locked architectural decisions for kultivait. Each ADR captures the con
 | [0017](0017-distillate-deployment-and-shadow-rollout.md) | Distillate deployment & shadow rollout: [distill] config seat, post-response shadow | Serves distillates via a configurable `[distill]` seat with asynchronous post-response shadow evaluation and human-confirmed cutover. |
 | [0018](0018-cache-breakpoints.md) | Cache breakpoints: proxy-owned at the stable prefix, Anthropic-form canonical, 5m default | Manages prompt cache breakpoints deterministically at tools and system prompt boundaries for prefixes over 1,024 tokens with 5m default TTL. |
 | [`0019`](0019-ambient-gates.md) | Ambient gates: CLI-direct, async, never-blocking; SessionStart injects; briefs are source of truth |
+| [`0020`](0020-energy-estimation.md) | Energy estimation: local-compute Wh only, measured versioned coefficient table, labeled-estimate invariants |
