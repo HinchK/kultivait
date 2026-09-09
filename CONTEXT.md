@@ -128,5 +128,17 @@ _Avoid_: release checklist (that's the tag mechanics), definition of done
 The one repository a stranger should land on — Standard-Pentest/kultivait upstream — with every public link pointing there and forks de-emphasized.
 _Avoid_: upstream (that's the git remote name), main repo
 
+**Ambient gate**:
+A phase-gate fired automatically by an agent-framework hook (SubagentStop, PreCompact) instead of a manual `prune` — async, never blocking the host, composting the transcript before distilling the brief.
+_Avoid_: auto-prune, hook gate ("hook" is adoption wiring), listener
+
+**Handoff brief**:
+The FINDINGS / DECISIONS / CONSTRAINTS / OPEN QUESTIONS distillation a gate emits, written under `~/.kultivait/briefs/<project>/` with a provenance header; briefs are derived artifacts — the compost pile holds the sources.
+_Avoid_: summary, recap, context dump
+
+**Phase map**:
+The repo-local `.kultivait/gates.toml` that maps event context (subagent type, compaction trigger) to from/to phase labels for an ambient gate; unmapped events default to `previous → next`.
+_Avoid_: gate config (too broad), routing table
+
 
 
