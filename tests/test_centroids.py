@@ -227,3 +227,25 @@ def test_snippet_cap_is_512():
     src = inspect.getsource(server)
     assert "user_text[:512]" in src
     assert "user_text[:80]" not in src
+
+
+def test_router_for_version_with_none_embed_batch_on_complete_table(tmp_path):
+    """Regression: dict.get eager-default called seed_mean(embed_batch=None)
+    even when every role was present — crashed the live shadow hook."""
+    ledger = tmp_path / "ledger.jsonl"
+    p = tmp_path / "c.json"
+    cent.learn(fake_embed_batch, TIER_ROLES, ledger_path=ledger,
+               escalations_dir=tmp_path, path=p)
+
+    class Tier:
+        def __init__(self, name, role):
+            self.name, self.role = name, role
+
+    class Cfg:
+        tiers = [Tier("llama", "simple"), Tier("claude", "architect")]
+
+        def capability_order(self):
+            return ["llama", "claude"]
+
+    router = cent.router_for_version("learned-v1", Cfg(), None, p)  # embed_batch=None
+    assert router is not None

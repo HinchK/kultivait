@@ -273,7 +273,10 @@ def router_for_version(version: str, config, embed_batch,
         return None
     centroids = {}
     for tier in config.tiers:
-        centroids[tier.name] = vectors.get(tier.role, seed_mean(tier.role, embed_batch))
+        if tier.role in vectors:
+            centroids[tier.name] = vectors[tier.role]
+        else:  # eager-default bug guard: never evaluate the fallback needlessly
+            centroids[tier.name] = seed_mean(tier.role, embed_batch)
     return Router(centroids=centroids, capability_order=config.capability_order())
 
 
