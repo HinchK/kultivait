@@ -1,0 +1,23 @@
+# Learned centroids: offline recalibration, seed-prior regularization, shadow→eval→human cutover
+
+Routing centroids stop being static: `kultivait centroids learn` mines the harvest into a candidate centroid table — per role, each learned vector a trust-weighted blend `normalize(1.0·c_seed + Σ w_class·mean(embed(texts)))` with gold toll-picks at 1.0, escalation anchors at 0.75, silver served-outcomes at 0.5, and the six static seed prompts' mean as a fixed-weight prior that empirical weight can outvote only in aggregate, never per-signal — full replacement is structurally impossible. Roles below a 10-signal minimum fall back to seeds in the candidate itself, provenance-recorded; the ledger snippet cap rises 80→512 chars so silver learning compounds as history accrues. Candidates live in a versioned `~/.kultivait/centroids.json` (`seeds-v0` materialized as the table-form baseline) behind a `[centroids]` config seat (`active_version` / `shadow_version`); boot loads the active table without re-embedding. Validation mirrors ADR 0017: a fire-and-forget shadow job beside the existing distillate shadow block classifies the already-computed request vector against the candidate, logging disagreements to `shadow.jsonl` (never the ledger); a pre-registered safety eval — zero dangerous misroutes on the `routing_trust` held-out set, accuracy ≥ seed baseline, contested-band toll ceiling, shadow agreement — gates a human `[y/N]` cutover with instant rollback to `seeds-v0`. Grounded in the signal census (`docs/research/2026-09-09-centroid-signals.md`): gold is empty today (0 toll-answered rows), 80-char snippets cannot carry silver, and the real full-text corpus is 46 escalation transcripts — the design learns honestly from thin signals rather than pretending to confidence. Separate lane from distillate training (ADR 0013's hierarchy is borrowed, its pipeline untouched).
+
+## Considered Options
+
+- **Online/incremental drift** (centroids update as traffic flows): rejected — unattended movement toward cheap models is the exact dangerous failure the router exists to prevent, and no eval gate can inspect a moving target; "continuously" is satisfied by re-runnable offline recalibration.
+- **Full empirical replacement** (learned = mean of history when signals suffice): rejected — removes the prior that bounds drift; a skewed month of trivial prompts would silently rewrite the architect centroid.
+- **Gold-only learning** (wait for toll picks): rejected — the census shows gold is empty (0 answered rows); the feature would be dead code for months; escalations + snippet silver give honest, weighted signal now.
+- **Snippet-only silver at the current 80-char cap**: rejected by measurement — 50/73 live snippets truncate mid-sentence; the cap rises to 512 so future silver is usable, and today's silver weight stays low.
+- **Per-tier (not per-role) learning**: rejected — roles are the stable classification space (`seeds.py`); tiers are machine-specific and multiply sparsely across configs.
+- **Unbounded per-signal weight** (let strong signals dominate the prior): rejected — prior weight is fixed at 1.0 with capped class weights; only aggregate volume moves a centroid, and every candidate carries its provenance counts for human inspection at cutover.
+- **Automatic cutover on eval pass**: rejected — model deployment stays a human decision (ADR 0017 precedent); the eval gates eligibility, never activation.
+- **Reusing the distillate corpus pipeline for storage/learning**: rejected for coupling — extraction concepts are shared (truth hierarchy, held-out discipline) but the centroid table, its shadow rows, and its eval are a separate lane.
+
+## Consequences
+
+- `build_router` gains a table-loading path keyed by `[centroids].active_version`; absent config or file, today's seed-embed behavior is unchanged (backward compatible).
+- `centroids learn` is idempotent per version and side-effect-free on routing until cutover; candidates carry per-role provenance counts (gold/silver/escalation/prior) that `centroids status` surfaces.
+- Shadow centroid rows share `shadow.jsonl` with `kind: "centroid"` tagging; existing distill-shadow tooling must filter on kind.
+- The 512-char snippet cap changes ledger row shape going forward only; harvest and existing analyses are unaffected (fields are additive).
+- The safety eval (#180) pre-registers bars including zero dangerous misroutes on the same held-out set that validated the seeds (24/24); a candidate failing any bar is recorded, never cut over, and the table retains `seeds-v0` as the standing fallback.
+- Escalation transcripts become routing signal — their retention window is now load-bearing and must not be silently shortened.
