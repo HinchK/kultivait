@@ -1,0 +1,26 @@
+{
+  "G1 brief recall (mean)": {
+    "value": 0.9666666666666667,
+    "pass": true
+  },
+  "G1b worst-case recall": {
+    "value": 0.8333333333333334,
+    "pass": true
+  },
+  "G2 tokens-kept (mean)": {
+    "value": 0.18421119098420227,
+    "pass": true
+  },
+  "G3 kill durability": {
+    "value": 3,
+    "pass": true
+  },
+  "G4 injection p95 ms": {
+    "value": 0.05112950748298317,
+    "pass": true
+  },
+  "G5 sync-prefix p95 ms": {
+    "value": 0.3736444021342322,
+    "pass": true
+  }
+}

@@ -1,0 +1,66 @@
+{"message": {"role": "user", "content": "step 0: reading the host hook payload fields now"}}
+{"message": {"role": "assistant", "content": "acknowledged: reading the host hook payload fields now"}}
+{"message": {"role": "user", "content": "step 1: the transcript extractor walks each JSONL line and keeps role-text turns"}}
+{"message": {"role": "assistant", "content": "acknowledged: walked the settings merge for idempotency a second time"}}
+{"message": {"role": "user", "content": "step 2: phase resolution walks up from cwd looking for the map file"}}
+{"message": {"role": "assistant", "content": "acknowledged: no-transcript events log and return silently"}}
+{"message": {"role": "user", "content": "step 3: project identity is the basename slug plus eight hex of the path"}}
+{"message": {"role": "assistant", "content": "acknowledged: checked the ten-thousand-character context cap against typical brief sizes"}}
+{"message": {"role": "user", "content": "step 4: considered a staleness TTL on injection and set it aside"}}
+{"message": {"role": "assistant", "content": "acknowledged: the compost id carries from and to phases plus a nonce"}}
+{"message": {"role": "assistant", "content": "constraint noted: uninstall must never remove foreign hooks"}}
+{"message": {"role": "user", "content": "step 5: the injection branch prints a fenced block on stdout"}}
+{"message": {"role": "assistant", "content": "acknowledged: the injection branch prints a fenced block on stdout"}}
+{"message": {"role": "user", "content": "step 6: checked the ten-thousand-character context cap against typical brief sizes"}}
+{"message": {"role": "assistant", "content": "constraint noted: the phase map defaults to previous-to-next"}}
+{"message": {"role": "assistant", "content": "acknowledged: sketching the kill-mid-distill durability test"}}
+{"message": {"role": "user", "content": "step 7: walked the settings merge for idempotency a second time"}}
+{"message": {"role": "assistant", "content": "acknowledged: considered a staleness TTL on injection and set it aside"}}
+{"message": {"role": "user", "content": "step 8: the fallback line goes in the project CLAUDE.md"}}
+{"message": {"role": "assistant", "content": "acknowledged: the distill hook runs async so the parent never waits"}}
+{"message": {"role": "user", "content": "the path in question is ~/.kultivait/briefs/<project>/latest.json"}}
+{"message": {"role": "user", "content": "step 9: verified foreign hooks survive uninstall"}}
+{"message": {"role": "assistant", "content": "acknowledged: project identity is the basename slug plus eight hex of the path"}}
+{"message": {"role": "user", "content": "step 10: looked at matchers for the all-source sessionstart pattern"}}
+{"message": {"role": "assistant", "content": "acknowledged: looked at matchers for the all-source sessionstart pattern"}}
+{"message": {"role": "user", "content": "step 11: the distill hook runs async so the parent never waits"}}
+{"message": {"role": "user", "content": "also see src/kultivait/gates.py:54"}}
+{"message": {"role": "assistant", "content": "acknowledged: phase resolution walks up from cwd looking for the map file"}}
+{"message": {"role": "user", "content": "step 12: sketching the kill-mid-distill durability test"}}
+{"message": {"role": "assistant", "content": "acknowledged: verified foreign hooks survive uninstall"}}
+{"message": {"role": "user", "content": "step 13: the compost id carries from and to phases plus a nonce"}}
+{"message": {"role": "assistant", "content": "acknowledged: the transcript extractor walks each JSONL line and keeps role-text turns"}}
+{"message": {"role": "assistant", "content": "decision: named the family gates not hook to avoid the adoption collision"}}
+{"message": {"role": "user", "content": "step 14: no-transcript events log and return silently"}}
+{"message": {"role": "assistant", "content": "acknowledged: the fallback line goes in the project CLAUDE.md"}}
+{"message": {"role": "user", "content": "step 15: reading the host hook payload fields now"}}
+{"message": {"role": "assistant", "content": "acknowledged: reading the host hook payload fields now"}}
+{"message": {"role": "user", "content": "step 16: the transcript extractor walks each JSONL line and keeps role-text turns"}}
+{"message": {"role": "assistant", "content": "decision: sessionstart injects the latest brief with provenance"}}
+{"message": {"role": "assistant", "content": "acknowledged: walked the settings merge for idempotency a second time"}}
+{"message": {"role": "user", "content": "step 17: phase resolution walks up from cwd looking for the map file"}}
+{"message": {"role": "assistant", "content": "acknowledged: no-transcript events log and return silently"}}
+{"message": {"role": "user", "content": "step 18: project identity is the basename slug plus eight hex of the path"}}
+{"message": {"role": "assistant", "content": "acknowledged: checked the ten-thousand-character context cap against typical brief sizes"}}
+{"message": {"role": "user", "content": "step 19: considered a staleness TTL on injection and set it aside"}}
+{"message": {"role": "assistant", "content": "acknowledged: the compost id carries from and to phases plus a nonce"}}
+{"message": {"role": "user", "content": "step 20: the injection branch prints a fenced block on stdout"}}
+{"message": {"role": "assistant", "content": "acknowledged: the injection branch prints a fenced block on stdout"}}
+{"message": {"role": "user", "content": "step 21: checked the ten-thousand-character context cap against typical brief sizes"}}
+{"message": {"role": "assistant", "content": "acknowledged: sketching the kill-mid-distill durability test"}}
+{"message": {"role": "user", "content": "step 22: walked the settings merge for idempotency a second time"}}
+{"message": {"role": "assistant", "content": "acknowledged: considered a staleness TTL on injection and set it aside"}}
+{"message": {"role": "user", "content": "step 23: the fallback line goes in the project CLAUDE.md"}}
+{"message": {"role": "assistant", "content": "acknowledged: the distill hook runs async so the parent never waits"}}
+{"message": {"role": "user", "content": "step 24: verified foreign hooks survive uninstall"}}
+{"message": {"role": "assistant", "content": "acknowledged: project identity is the basename slug plus eight hex of the path"}}
+{"message": {"role": "user", "content": "step 25: looked at matchers for the all-source sessionstart pattern"}}
+{"message": {"role": "assistant", "content": "acknowledged: looked at matchers for the all-source sessionstart pattern"}}
+{"message": {"role": "user", "content": "step 26: the distill hook runs async so the parent never waits"}}
+{"message": {"role": "assistant", "content": "acknowledged: phase resolution walks up from cwd looking for the map file"}}
+{"message": {"role": "user", "content": "step 27: sketching the kill-mid-distill durability test"}}
+{"message": {"role": "assistant", "content": "acknowledged: verified foreign hooks survive uninstall"}}
+{"message": {"role": "user", "content": "step 28: the compost id carries from and to phases plus a nonce"}}
+{"message": {"role": "assistant", "content": "acknowledged: the transcript extractor walks each JSONL line and keeps role-text turns"}}
+{"message": {"role": "user", "content": "step 29: no-transcript events log and return silently"}}
+{"message": {"role": "assistant", "content": "acknowledged: the fallback line goes in the project CLAUDE.md"}}

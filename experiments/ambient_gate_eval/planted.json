@@ -1,0 +1,82 @@
+{
+  "t00": [
+    "src/kultivait/ambient.py:88",
+    "~/.kultivait/briefs/<project>/latest.json",
+    "the gate must never block the host agent",
+    "rotation keeps the twenty most recent briefs",
+    "chose async fire-and-forget over sync distills",
+    "bounded rotation replaces a single rolling file"
+  ],
+  "t01": [
+    "docs/adr/0019-ambient-gates.md",
+    "experiments/ambient_gate_eval/protocol.md",
+    "compost is written before distillation begins",
+    "uninstall must never remove foreign hooks",
+    "sessionstart injects the latest brief with provenance",
+    "no staleness TTL; the provenance header carries the timestamp"
+  ],
+  "t02": [
+    "tests/test_ambient.py:140",
+    ".claude/settings.json",
+    "rotation keeps the twenty most recent briefs",
+    "briefs are derived artifacts; compost holds the sources",
+    "CLI-direct transport instead of proxy POST",
+    "chose async fire-and-forget over sync distills"
+  ],
+  "t03": [
+    "~/.kultivait/briefs/<project>/latest.json",
+    "src/kultivait/gates.py:54",
+    "uninstall must never remove foreign hooks",
+    "the phase map defaults to previous-to-next",
+    "named the family gates not hook to avoid the adoption collision",
+    "sessionstart injects the latest brief with provenance"
+  ],
+  "t04": [
+    "experiments/ambient_gate_eval/protocol.md",
+    ".kultivait/gates.toml",
+    "briefs are derived artifacts; compost holds the sources",
+    "the gate must never block the host agent",
+    "bounded rotation replaces a single rolling file",
+    "CLI-direct transport instead of proxy POST"
+  ],
+  "t05": [
+    ".claude/settings.json",
+    "src/kultivait/ambient.py:88",
+    "the phase map defaults to previous-to-next",
+    "compost is written before distillation begins",
+    "no staleness TTL; the provenance header carries the timestamp",
+    "named the family gates not hook to avoid the adoption collision"
+  ],
+  "t06": [
+    "src/kultivait/gates.py:54",
+    "docs/adr/0019-ambient-gates.md",
+    "the gate must never block the host agent",
+    "rotation keeps the twenty most recent briefs",
+    "chose async fire-and-forget over sync distills",
+    "bounded rotation replaces a single rolling file"
+  ],
+  "t07": [
+    ".kultivait/gates.toml",
+    "tests/test_ambient.py:140",
+    "compost is written before distillation begins",
+    "uninstall must never remove foreign hooks",
+    "sessionstart injects the latest brief with provenance",
+    "no staleness TTL; the provenance header carries the timestamp"
+  ],
+  "t08": [
+    "src/kultivait/ambient.py:88",
+    "~/.kultivait/briefs/<project>/latest.json",
+    "rotation keeps the twenty most recent briefs",
+    "briefs are derived artifacts; compost holds the sources",
+    "CLI-direct transport instead of proxy POST",
+    "chose async fire-and-forget over sync distills"
+  ],
+  "t09": [
+    "docs/adr/0019-ambient-gates.md",
+    "experiments/ambient_gate_eval/protocol.md",
+    "uninstall must never remove foreign hooks",
+    "the phase map defaults to previous-to-next",
+    "named the family gates not hook to avoid the adoption collision",
+    "sessionstart injects the latest brief with provenance"
+  ]
+}
