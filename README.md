@@ -124,6 +124,7 @@ kultivait hook [shell|ide|loopback]# zero-config adoption & tool integration
 kultivait dashboard                # open real-time web telemetry UI
 kultivait route "why does this test deadlock?"    # dry-run a classification
 kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
+kultivait gates install --claude           # ambient gates: prune at phase boundaries automatically
 kultivait escalations [--brief]    # cloud-worthy prompts served locally
 kultivait harvest [--json]         # cumulative savings
 kultivait distill corpus [--dry-run]              # preview anchor set & held-out roster
@@ -581,8 +582,6 @@ maps live here on GitHub.
 - Distillation-quality eval harness: automated planted-fact recall scoring
   across transcripts (recall spans 86.9–100% across
   `experiments/distill_eval/results.json` models today)
-- Ambient gates via agent-framework hooks (e.g. Claude Code hooks), so
-  pruning happens at phase boundaries without manual invocation
 - Watt-hour estimation in the ledger
 - Learned centroids from your own routing history
 

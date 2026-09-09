@@ -44,6 +44,7 @@ Historical design blueprints and empirical findings documenting the implementati
 - [docs/superpowers/specs/2026-08-23-rest-frontier-providers-design.md](superpowers/specs/2026-08-23-rest-frontier-providers-design.md) — Design specification for direct REST frontier provider integrations (for backend engineers)
 - [docs/superpowers/specs/2026-08-24-tools-dogfooding-findings.md](superpowers/specs/2026-08-24-tools-dogfooding-findings.md) — Empirical dogfooding transcript analysis of streaming tool calling (for agent harness integrators)
 - [docs/superpowers/specs/2026-08-25-prompt-caching-findings.md](superpowers/specs/2026-08-25-prompt-caching-findings.md) — Cache amortization measurements and TTL cohort behavior (for performance evaluators)
+- [docs/superpowers/specs/2026-09-08-ambient-gates-design.md](superpowers/specs/2026-09-08-ambient-gates-design.md) — Design for framework-agnostic ambient phase-gates (`gates fire`, Claude Code adapter, install surface) (for contributors)
 
 ---
 
@@ -62,6 +63,8 @@ Verified empirical snapshots validating public documentation claims against runn
 
 - [docs/research/2026-09-03-public-claims-verification.md](research/2026-09-03-public-claims-verification.md) — Audit register verifying claims in public docs against repository code (for release auditors)
 - [docs/research/2026-09-03-docs-curation-audit.md](research/2026-09-03-docs-curation-audit.md) — Comprehensive audit and disposition register of all repository documentation (for documentation maintainers)
+- [docs/research/2026-09-04-claude-hooks-api.md](research/2026-09-04-claude-hooks-api.md) — Verified Claude Code hooks API register grounding the ambient-gates design (for contributors)
+- [docs/research/2026-09-08-ambient-gates-dogfood.md](research/2026-09-08-ambient-gates-dogfood.md) — Herd dogfooding verdict: live end-to-end gate loop with consumption evidence (for maintainers)
 
 ---
 
