@@ -1,0 +1,19 @@
+# kultivait energy coefficient table — v1 (2026-09-09)
+# Measured on Apple M4 Pro (24 GB), macOS, ollama 0.32.15, zeus-apple-silicon
+# IOReport energy windows (sudo-free), N=5 medians, idle-rate-subtracted domain
+# sum (CPU+GPU+GPU-SRAM+DRAM). Units: Wh per 1K tokens, net of idle.
+# est. figures — ADR 0020 invariants apply (labeled est., version named, 2 sig figs).
+# NOTE: measured with the dev herd active; the 14B decode cell is flagged
+# (marginally above the extrapolated literature bound — see README.md).
+
+version = "energy-v1-20260909"
+chip = "Apple M4 Pro (24 GB unified)"
+runtime = "ollama 0.32.15"
+method = "zeus IOReport windows; prefill=dispatch->first token (response|thinking); decode=generation; idle-subtracted; medians of N=5"
+
+[classes]
+"1.5b" = { prefill_wh_per_1k = 0.00010, decode_wh_per_1k = 0.03784, representative = "qwen2.5-coder:1.5b" }
+"3b" = { prefill_wh_per_1k = 0.00007, decode_wh_per_1k = 0.07214, representative = "kv-judge-llama32-3b-g3 (llama-3.2-3b class)" }
+"4b" = { prefill_wh_per_1k = 0.00341, decode_wh_per_1k = 0.13042, representative = "qwen3.5:4b" }
+"8b" = { prefill_wh_per_1k = 0.00060, decode_wh_per_1k = 0.19242, representative = "llama3.1:8b" }
+"14b" = { prefill_wh_per_1k = 0.00074, decode_wh_per_1k = 0.38760, representative = "qwen3:14b", flag = "marginally-above-extrapolated-bound" }

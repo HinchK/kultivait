@@ -1,0 +1,23 @@
+{
+  "stamp": "2026-09-09T16:23:16Z",
+  "ollama": "0.32.15",
+  "medians_wh_per_1k": {
+    "qwen2.5-coder:1.5b|prefill": 0.0001,
+    "qwen2.5-coder:1.5b|decode": 0.03784,
+    "kv-judge-llama32-3b-g3|prefill": 7e-05,
+    "kv-judge-llama32-3b-g3|decode": 0.07214,
+    "qwen3.5:4b|prefill": 0.00341,
+    "qwen3.5:4b|decode": 0.13042,
+    "llama3.1:8b|prefill": 0.0006,
+    "llama3.1:8b|decode": 0.19242,
+    "qwen3:14b|prefill": 0.00074,
+    "qwen3:14b|decode": 0.3876
+  },
+  "idle_10s_domains_mj": {
+    "e_cpu_mj": 73887,
+    "e_gpu_mj": 1820,
+    "e_gpu_sram_mj": 0,
+    "e_dram_mj": 6447,
+    "e_ane_mj": 0
+  }
+}
