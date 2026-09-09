@@ -182,6 +182,18 @@ def create_app(
             metered_cash = 0.0
             notional = completion.cost_usd
 
+        # ADR 0020: local-compute energy estimate + table tag on every dispatch
+        from kultivait import energy as _energy
+        from kultivait.cli import CONFIG_PATH as _CONFIG_PATH
+
+        est_wh, energy_model = _energy.dispatch_estimate(
+            is_local=completion.local,
+            model=tier,
+            tokens_in=completion.tokens_in,
+            tokens_out=completion.tokens_out,
+            overrides=_energy._load_overrides(_CONFIG_PATH),
+        )
+
         ledger.record(
             tier=tier,
             local=completion.local,
@@ -194,6 +206,8 @@ def create_app(
             cache_write_tokens=getattr(completion, "cache_write_tokens", 0),
             cache_ttl=getattr(completion, "cache_ttl", ""),
             cache_price_in=cache_price_in,
+            est_wh=est_wh,
+            energy_model=energy_model,
             **decision_meta,
         )
         # V1 (#106): broadcast the dispatch to the dashboard
@@ -204,6 +218,8 @@ def create_app(
             "cache_read_tokens": getattr(completion, "cache_read_tokens", 0),
             "cache_write_tokens": getattr(completion, "cache_write_tokens", 0),
             "preprocess_model": decision_meta.get("preprocess_model"),
+            "est_wh": est_wh, "energy_model": energy_model,
+            "latency_s": decision_meta.get("latency_s"),
         })
 
     def _decision_meta(
@@ -615,10 +631,11 @@ def create_app(
 
             def sse():
                 yield chunk({"role": "assistant"})
+                t_dispatch = time.time()
                 actual_tier, stream_iter = _dispatch_stream(route, tools)
                 for item in stream_iter:
                     if isinstance(item, Completion):
-                        _record(actual_tier, item, **meta)
+                        _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
                         if item.tool_calls:
                             yield chunk(
                                 {
@@ -637,8 +654,9 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
+        t_dispatch = time.time()
         actual_tier, completion = _dispatch_complete(route, tools)
-        _record(actual_tier, completion, **meta)
+        _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
         message: dict = {"role": "assistant", "content": completion.text or None}
         if completion.tool_calls:
             message["tool_calls"] = completion.tool_calls
@@ -683,6 +701,7 @@ def create_app(
                 return f"event: {etype}\ndata: {json.dumps({'type': etype, **payload})}\n\n"
 
             def sse():
+                t_dispatch = time.time()
                 actual_tier, stream_iter = _dispatch_stream(route, tools)
                 yield event(
                     "message_start",
@@ -701,7 +720,7 @@ def create_app(
                 started_text_block = False
                 for item in stream_iter:
                     if isinstance(item, Completion):
-                        _record(actual_tier, item, **meta)
+                        _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
                         if started_text_block:
                             yield event("content_block_stop", {"index": block_idx})
                             block_idx += 1
@@ -765,8 +784,9 @@ def create_app(
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
+        t_dispatch = time.time()
         actual_tier, completion = _dispatch_complete(route, tools)
-        _record(actual_tier, completion, **meta)
+        _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
         content_blocks: list[dict] = []
         if completion.text:
             content_blocks.append({"type": "text", "text": completion.text})

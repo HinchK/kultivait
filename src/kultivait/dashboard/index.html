@@ -92,6 +92,14 @@ td{font-variant-numeric:tabular-nums}
 </tr></thead><tbody></tbody></table>
 </div>
 
+<!-- ADR 0020: energy (estimated) — static values only, no timers -->
+<div class="panel" id="energy-panel">
+<h2>energy <span class="sub">estimated</span></h2>
+<div class="value" id="energy-wh">—</div>
+<div class="sub" id="energy-meta">0 local dispatches</div>
+<div class="sub" id="energy-version"></div>
+</div>
+
 <!-- V3: cache economics -->
 <div class="panel" id="cache-panel">
 <h2>cache economics</h2>
@@ -237,6 +245,12 @@ let es=null, dispatchN=0;
 const ARC_LEN=100.5; // half-circle path length for the dials
 
 function fmtUsd(v){return "$"+(v||0).toFixed(4)}
+function sig2(v){ // 2 significant figures (ADR 0020 invariant)
+  if(!v)return "0";
+  const d=Math.ceil(Math.log10(Math.abs(v)));
+  const p=2-d;
+  return (Math.round(v*Math.pow(10,p))/Math.pow(10,p)).toString();
+}
 function setDial(id,frac){
   const el=$(id); if(!el)return;
   const clamped=Math.max(0,Math.min(1,frac||0));
@@ -265,6 +279,11 @@ function hydrate(s){
   $("cache-hit-rate").textContent=c.cache_hit_rate!==undefined
     ?"hit rate "+(c.cache_hit_rate*100).toFixed(0)+"%":"hit rate —";
   renderCache(c);
+  // ADR 0020: energy (estimated) — static render, version named, no timers
+  const e=s.energy||{};
+  $("energy-wh").textContent=e.est_wh>0?sig2(e.est_wh)+" Wh":"—";
+  $("energy-meta").textContent=(e.dispatches||0)+" local dispatches";
+  $("energy-version").textContent=e.version?("est. · "+e.version):"";
   // dials: kept-in-pocket and kept-via-cache as savings ratios (cap 100%)
   setDial("dial-kept-pocket",base>0?(s.saved_usd||0)/base:0);
   setDial("dial-kept-cache",c.dispatches>0?Math.min(1,c.cache_hit_rate*2):0);
