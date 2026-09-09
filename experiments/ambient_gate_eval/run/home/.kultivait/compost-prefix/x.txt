@@ -1,0 +1,131 @@
+user: step 0: reading the host hook payload fields now
+
+assistant: acknowledged: reading the host hook payload fields now
+
+user: step 1: the transcript extractor walks each JSONL line and keeps role-text turns
+
+assistant: acknowledged: walked the settings merge for idempotency a second time
+
+user: step 2: phase resolution walks up from cwd looking for the map file
+
+assistant: acknowledged: no-transcript events log and return silently
+
+user: step 3: project identity is the basename slug plus eight hex of the path
+
+assistant: acknowledged: checked the ten-thousand-character context cap against typical brief sizes
+
+user: step 4: considered a staleness TTL on injection and set it aside
+
+assistant: acknowledged: the compost id carries from and to phases plus a nonce
+
+assistant: constraint noted: the gate must never block the host agent
+
+user: step 5: the injection branch prints a fenced block on stdout
+
+assistant: acknowledged: the injection branch prints a fenced block on stdout
+
+user: step 6: checked the ten-thousand-character context cap against typical brief sizes
+
+assistant: constraint noted: rotation keeps the twenty most recent briefs
+
+assistant: acknowledged: sketching the kill-mid-distill durability test
+
+user: step 7: walked the settings merge for idempotency a second time
+
+assistant: acknowledged: considered a staleness TTL on injection and set it aside
+
+user: step 8: the fallback line goes in the project CLAUDE.md
+
+assistant: acknowledged: the distill hook runs async so the parent never waits
+
+user: the path in question is src/kultivait/ambient.py:88
+
+user: step 9: verified foreign hooks survive uninstall
+
+assistant: acknowledged: project identity is the basename slug plus eight hex of the path
+
+user: step 10: looked at matchers for the all-source sessionstart pattern
+
+assistant: acknowledged: looked at matchers for the all-source sessionstart pattern
+
+user: step 11: the distill hook runs async so the parent never waits
+
+user: also see ~/.kultivait/briefs/<project>/latest.json
+
+assistant: acknowledged: phase resolution walks up from cwd looking for the map file
+
+user: step 12: sketching the kill-mid-distill durability test
+
+assistant: acknowledged: verified foreign hooks survive uninstall
+
+user: step 13: the compost id carries from and to phases plus a nonce
+
+assistant: acknowledged: the transcript extractor walks each JSONL line and keeps role-text turns
+
+assistant: decision: chose async fire-and-forget over sync distills
+
+user: step 14: no-transcript events log and return silently
+
+assistant: acknowledged: the fallback line goes in the project CLAUDE.md
+
+user: step 15: reading the host hook payload fields now
+
+assistant: acknowledged: reading the host hook payload fields now
+
+user: step 16: the transcript extractor walks each JSONL line and keeps role-text turns
+
+assistant: decision: bounded rotation replaces a single rolling file
+
+assistant: acknowledged: walked the settings merge for idempotency a second time
+
+user: step 17: phase resolution walks up from cwd looking for the map file
+
+assistant: acknowledged: no-transcript events log and return silently
+
+user: step 18: project identity is the basename slug plus eight hex of the path
+
+assistant: acknowledged: checked the ten-thousand-character context cap against typical brief sizes
+
+user: step 19: considered a staleness TTL on injection and set it aside
+
+assistant: acknowledged: the compost id carries from and to phases plus a nonce
+
+user: step 20: the injection branch prints a fenced block on stdout
+
+assistant: acknowledged: the injection branch prints a fenced block on stdout
+
+user: step 21: checked the ten-thousand-character context cap against typical brief sizes
+
+assistant: acknowledged: sketching the kill-mid-distill durability test
+
+user: step 22: walked the settings merge for idempotency a second time
+
+assistant: acknowledged: considered a staleness TTL on injection and set it aside
+
+user: step 23: the fallback line goes in the project CLAUDE.md
+
+assistant: acknowledged: the distill hook runs async so the parent never waits
+
+user: step 24: verified foreign hooks survive uninstall
+
+assistant: acknowledged: project identity is the basename slug plus eight hex of the path
+
+user: step 25: looked at matchers for the all-source sessionstart pattern
+
+assistant: acknowledged: looked at matchers for the all-source sessionstart pattern
+
+user: step 26: the distill hook runs async so the parent never waits
+
+assistant: acknowledged: phase resolution walks up from cwd looking for the map file
+
+user: step 27: sketching the kill-mid-distill durability test
+
+assistant: acknowledged: verified foreign hooks survive uninstall
+
+user: step 28: the compost id carries from and to phases plus a nonce
+
+assistant: acknowledged: the transcript extractor walks each JSONL line and keeps role-text turns
+
+user: step 29: no-transcript events log and return silently
+
+assistant: acknowledged: the fallback line goes in the project CLAUDE.md
