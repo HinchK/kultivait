@@ -1,0 +1,4 @@
+{"ts": 1788972525.836641, "tier": "llama3.1:8b", "local": true, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.0, "notional_usd": 0.0, "est_wh": 0.0123, "energy_model": "energy-v1-20260909"}
+{"ts": 1788972525.836854, "tier": "llama3.1:8b", "local": true, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.0, "notional_usd": 0.0, "est_wh": 0.4567, "energy_model": "energy-v1-20260909", "preprocess_model": "kv-judge-x"}
+{"ts": 1788972525.837125, "tier": "llama3.1:8b", "local": false, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.0, "notional_usd": 0.0, "est_wh": 0.0, "energy_model": "energy-v1-20260909"}
+{"ts": 1788972525.837169, "tier": "llama3.1:8b", "local": true, "tokens_in": 100, "tokens_out": 50, "cost_usd": 0.0, "notional_usd": 0.0, "est_wh": 0.1001, "energy_model": "energy-v0-legacy"}
