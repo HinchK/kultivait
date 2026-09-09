@@ -233,7 +233,7 @@ def create_app(
             "margin": round(decision.margin, 4),
             "escalated": decision.escalated,
             "fallback_reason": fallback_reason,
-            "snippet": user_text[:80],
+            "snippet": user_text[:512],  # ADR 0021: 512-char substrate for learned centroids
         }
 
     def _classify(messages: list[dict]) -> "Decision":
@@ -241,7 +241,13 @@ def create_app(
             (_text_of(m["content"]) for m in reversed(messages) if m.get("role") == "user"),
             "",
         )
-        return router.classify(embed(user_text))
+        vec = embed(user_text)
+        decision = router.classify(vec)
+        # ADR 0021: log-only dual classification against a candidate table.
+        from kultivait import centroids as _centroids
+
+        _centroids.maybe_shadow_classify(vec, decision)
+        return decision
 
     def _resolve_tier(tier: str, tools: "list | None") -> "tuple[str, str | None]":
         """Returns (served_tier, fallback_reason). Falls back when the
