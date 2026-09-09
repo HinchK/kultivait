@@ -148,5 +148,17 @@ _Avoid_: energy usage (unqualified), actual consumption, avoided energy (that's 
 The versioned, measured Wh-per-1K-tokens table (parameter classes × prefill/decode) that watt-hour estimates compute from — provenance in `experiments/energy_measurement/`, values overridable by config, provenance never.
 _Avoid_: energy model (that's the per-record version tag), power table
 
+**Learned centroid**:
+A role's routing centroid recalibrated offline from harvest signals — a trust-weighted blend of empirical means with the seed prior at fixed weight 1.0; never a full replacement, never live-mutated.
+_Avoid_: adaptive centroid, online learning, trained classifier
+
+**Centroid table**:
+The versioned `~/.kultivait/centroids.json` holding per-role vectors with provenance counts (`seeds-v0` baseline vs `learned-vN` candidates); boot loads whichever version the `[centroids]` seat marks active.
+_Avoid_: router state, model weights, embeddings cache
+
+**Seed prior**:
+The mean of the six static seed-prompt embeddings per role — the fixed-weight regularizer every learned centroid blends against so history can bend routing but never replace its foundations.
+_Avoid_: baseline centroid (that's the table's seeds-v0), anchor set (that's distillation's corpus seeds)
+
 
 

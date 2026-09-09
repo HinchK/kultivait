@@ -46,6 +46,7 @@ Historical design blueprints and empirical findings documenting the implementati
 - [docs/superpowers/specs/2026-08-25-prompt-caching-findings.md](superpowers/specs/2026-08-25-prompt-caching-findings.md) — Cache amortization measurements and TTL cohort behavior (for performance evaluators)
 - [docs/superpowers/specs/2026-09-08-ambient-gates-design.md](superpowers/specs/2026-09-08-ambient-gates-design.md) — Design for framework-agnostic ambient phase-gates (`gates fire`, Claude Code adapter, install surface) (for contributors)
 - [docs/superpowers/specs/2026-09-09-energy-estimation-design.md](superpowers/specs/2026-09-09-energy-estimation-design.md) — Design for local-compute Wh estimation (coefficient table, ledger fields, invariants) (for contributors)
+- [docs/superpowers/specs/2026-09-09-learned-centroids-design.md](superpowers/specs/2026-09-09-learned-centroids-design.md) — Design for offline centroid recalibration from routing history (trust-weighted blend, shadow, cutover) (for contributors)
 
 ---
 
