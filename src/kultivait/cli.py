@@ -225,8 +225,18 @@ def _embed_batch(config: Config, texts: "list[str]") -> np.ndarray:
 
 def build_router(config: Config) -> Router:
     _require_embed_model(config)
+    embed_batch = lambda texts: _embed_batch(config, texts)  # noqa: E731
+    # ADR 0021: boot honors the [centroids] seat's active table version;
+    # absent seat/file/role falls back to embedding the seed prior.
+    from kultivait import centroids as _centroids
+
+    active = _centroids.seat(CONFIG_PATH).get("active_version", "")
+    vectors = _centroids.role_vectors(active, embed_batch) if active else None
     centroids = {}
     for tier in config.tiers:
+        if vectors is not None and tier.role in vectors:
+            centroids[tier.name] = vectors[tier.role]
+            continue
         vecs = _embed_batch(config, ROLE_SEEDS[tier.role])
         vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
         centroids[tier.name] = vecs.mean(axis=0)
@@ -681,6 +691,70 @@ def cmd_gates_briefs(args: argparse.Namespace) -> None:
     from kultivait import ambient
 
     print(ambient.briefs_listing(Path.home(), Path(args.project).resolve()))
+
+
+def cmd_centroids_learn(args: argparse.Namespace) -> None:
+    from kultivait import centroids
+
+    config = get_config()
+    tier_roles = {t.name: t.role for t in config.tiers}
+    result = centroids.learn(
+        lambda texts: _embed_batch(config, texts),
+        tier_roles,
+        ledger_path=LEDGER_PATH,
+        escalations_dir=Path.home() / ".kultivait" / "escalations",
+        min_signals=args.min_signal,
+    )
+    print(f"wrote {result['version']} — per-role provenance:")
+    for role, info in result["roles"].items():
+        prov = info["provenance"]
+        print(
+            f"  {role:<10} {info['source']:<7} "
+            f"gold {prov['gold']} · escalation {prov['escalation']} · silver {prov['silver']}"
+        )
+    print("activate with: kultivait centroids cutover --version " + result["version"])
+
+
+def cmd_centroids_status(args: argparse.Namespace) -> None:
+    from kultivait import centroids
+
+    table = centroids.load_table()
+    conf = centroids.seat(CONFIG_PATH)
+    print(f"seat: active={conf['active_version'] or '(seeds)'} "
+          f"shadow={conf['shadow_version'] or '(off)'}")
+    for version, entry in table.get("versions", {}).items():
+        print(f"{version} ({entry.get('created', '?')}):")
+        for role, row in entry.get("roles", {}).items():
+            prov = row.get("provenance", {})
+            print(
+                f"  {role:<10} {row.get('source', '?'):<7} "
+                f"gold {prov.get('gold', 0)} · escalation {prov.get('escalation', 0)} "
+                f"· silver {prov.get('silver', 0)}"
+            )
+    stats = centroids.shadow_stats()
+    print(f"shadow disagreements logged: {stats['disagreements']}")
+
+
+def cmd_centroids_cutover(args: argparse.Namespace) -> None:
+    from kultivait import centroids
+
+    table = centroids.load_table()
+    if args.version not in table.get("versions", {}):
+        print(f"unknown version {args.version!r}; "
+              f"known: {', '.join(table.get('versions', {})) or '(none)'}",
+              file=sys.stderr)
+        raise SystemExit(2)
+    if not args.yes:
+        answer = input(
+            f"flip active routing centroids to {args.version}? [y/N] "
+        ).strip().lower()
+        if answer not in ("y", "yes"):
+            print("aborted; routing unchanged")
+            return
+    centroids.set_active_version(CONFIG_PATH, args.version)
+    print(f"active_version = {args.version} (takes effect at next `kultivait serve` boot)")
+    if args.version != "seeds-v0":
+        print("rollback: kultivait centroids cutover --version seeds-v0")
 
 
 def cmd_prune(args: argparse.Namespace) -> None:
@@ -1523,6 +1597,27 @@ def main(argv: list | None = None) -> None:
     gates_briefs = gates_sub.add_parser("briefs", help="list handoff briefs for a project")
     gates_briefs.add_argument("--project", default=".", help="project dir (default: cwd)")
     gates_briefs.set_defaults(func=cmd_gates_briefs)
+
+    centroids_cmd = sub.add_parser(
+        "centroids", help="learned routing centroids (ADR 0021)"
+    )
+    centroids_sub = centroids_cmd.add_subparsers(dest="centroids_cmd", required=True)
+    centroids_learn = centroids_sub.add_parser(
+        "learn", help="mine the harvest into a candidate centroid table"
+    )
+    centroids_learn.add_argument("--min-signal", type=int, default=10,
+                                 help="minimum usable signals per role (default 10)")
+    centroids_learn.set_defaults(func=cmd_centroids_learn)
+    centroids_status = centroids_sub.add_parser(
+        "status", help="versions, provenance, shadow stats"
+    )
+    centroids_status.set_defaults(func=cmd_centroids_status)
+    centroids_cutover = centroids_sub.add_parser(
+        "cutover", help="flip [centroids].active_version (human-gated)"
+    )
+    centroids_cutover.add_argument("--version", required=True)
+    centroids_cutover.add_argument("--yes", action="store_true")
+    centroids_cutover.set_defaults(func=cmd_centroids_cutover)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
