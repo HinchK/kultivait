@@ -644,6 +644,45 @@ def cmd_route(args: argparse.Namespace) -> None:
     print(json.dumps(decision.__dict__, indent=2))
 
 
+def cmd_gates_fire(args: argparse.Namespace) -> None:
+    from kultivait import ambient
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        payload = {}
+    # Never-block rule (ADR 0019): fire() swallows everything internally;
+    # this outer guard makes exit-0-on-any-input structural.
+    try:
+        ambient.fire(payload)
+    except Exception:
+        pass
+
+
+def cmd_gates_install(args: argparse.Namespace) -> None:
+    from kultivait import ambient
+
+    if not args.claude:
+        print("choose a framework: --claude", file=sys.stderr)
+        raise SystemExit(2)
+    print(ambient.install_claude(Path.cwd(), dry_run=args.dry_run))
+
+
+def cmd_gates_uninstall(args: argparse.Namespace) -> None:
+    from kultivait import ambient
+
+    if not args.claude:
+        print("choose a framework: --claude", file=sys.stderr)
+        raise SystemExit(2)
+    print(ambient.uninstall_claude(Path.cwd()))
+
+
+def cmd_gates_briefs(args: argparse.Namespace) -> None:
+    from kultivait import ambient
+
+    print(ambient.briefs_listing(Path.home(), Path(args.project).resolve()))
+
+
 def cmd_prune(args: argparse.Namespace) -> None:
     transcript = Path(args.file).read_text() if args.file else sys.stdin.read()
     result = build_gate(get_config()).distill(
@@ -1447,6 +1486,29 @@ def main(argv: list | None = None) -> None:
     hook_loopback.set_defaults(func=cmd_hook_loopback)
     # bare 'kultivait hook' defaults to the shell integration
     hook_cmd.set_defaults(func=cmd_hook)
+
+    gates_cmd = sub.add_parser(
+        "gates", help="ambient phase-gates via agent-framework hooks (ADR 0019)"
+    )
+    gates_sub = gates_cmd.add_subparsers(dest="gates_cmd", required=True)
+    gates_fire = gates_sub.add_parser(
+        "fire", help="handle an agent-framework hook payload (JSON on stdin)"
+    )
+    gates_fire.set_defaults(func=cmd_gates_fire)
+    gates_install = gates_sub.add_parser(
+        "install", help="install ambient-gate hooks into an agent framework's config"
+    )
+    gates_install.add_argument("--claude", action="store_true", help="project .claude/settings.json")
+    gates_install.add_argument("--dry-run", action="store_true", help="print the diff, change nothing")
+    gates_install.set_defaults(func=cmd_gates_install)
+    gates_uninstall = gates_sub.add_parser(
+        "uninstall", help="remove kultivait gates hooks (foreign hooks untouched)"
+    )
+    gates_uninstall.add_argument("--claude", action="store_true", help="project .claude/settings.json")
+    gates_uninstall.set_defaults(func=cmd_gates_uninstall)
+    gates_briefs = gates_sub.add_parser("briefs", help="list handoff briefs for a project")
+    gates_briefs.add_argument("--project", default=".", help="project dir (default: cwd)")
+    gates_briefs.set_defaults(func=cmd_gates_briefs)
     eval_d = distill_sub.add_parser("eval", help="run the 5-gate held-out eval on a model")
     eval_d.add_argument("--model", required=True, help="model name under evaluation")
     eval_d.add_argument("--heldout", required=True, help="held-out JSONL (prompt+label per case)")
