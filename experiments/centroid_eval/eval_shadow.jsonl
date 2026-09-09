@@ -1,0 +1,1 @@
+{"ts": 1788975200.767701, "fingerprint": "eval-fp", "prompt_hash": "", "incumbent": {"kind": "centroid", "tier": "claude", "margin": 0.5, "escalated": false}, "shadow": {"kind": "centroid", "tier": "qwen3.5:4b", "margin": 0.050559860377903165, "escalated": false}, "agree": false}

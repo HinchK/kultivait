@@ -1,0 +1,49 @@
+expected,got,prompt,correct,dangerous,wasteful,margin,escalated,contested
+simple,simple,[seed] Reformat this list into a markdown table,True,False,False,0.06847,False,False
+simple,reasoning,[seed] Write a commit message for these staged changes,False,False,True,0.0084,True,True
+simple,reasoning,[seed] Convert this YAML config to TOML,False,False,True,0.00258,True,True
+simple,simple,[seed] Rename the class and update all its references in this file,True,False,False,0.0771,False,False
+simple,simple,[seed] Strip trailing whitespace and sort these imports,True,False,False,0.02472,False,False
+simple,simple,[seed] Turn this comment into a proper docstring,True,False,False,0.16079,False,False
+reasoning,reasoning,[seed] Why does this mutex sometimes fail to release?,True,False,False,0.04946,False,False
+reasoning,reasoning,[seed] Explain the logic error in this binary search,True,False,False,0.14358,False,False
+reasoning,reasoning,[seed] What causes this generator to skip the last element?,True,False,False,0.09561,False,False
+reasoning,reasoning,[seed] Why does this date parsing break at month boundaries?,True,False,False,0.0806,False,False
+reasoning,reasoning,[seed] Find the reason this retry loop never terminates,True,False,False,0.17057,False,False
+reasoning,reasoning,[seed] Why is this SQL query returning duplicate rows?,True,False,False,0.14451,False,False
+architect,architect,[seed] Refactor the session layer and update every consumer,True,False,False,0.04665,False,False
+architect,architect,[seed] Architect a multi-tenant permission model for this app,True,False,False,0.09581,False,False
+architect,architect,[seed] Audit this OAuth implementation for token-leak risks,True,False,False,0.06563,False,False
+architect,architect,[seed] Design the rollback strategy for this schema migration,True,False,False,0.11998,False,False
+architect,architect,[seed] Reorganize these twelve modules into a coherent package layo,True,False,False,0.14913,False,False
+architect,architect,[seed] Propose an event-driven redesign of the sync pipeline,True,False,False,0.09708,False,False
+docs,docs,[seed] Confirm this matches the current official documentation,True,False,False,0.19561,False,False
+docs,docs,[seed] Is this parameter still supported in the latest version?,True,False,False,0.19945,False,False
+docs,docs,[seed] Look up the current pricing for this model tier,True,False,False,0.09891,False,False
+docs,docs,[seed] Check whether the docs still recommend this pattern,True,False,False,0.10567,False,False
+docs,docs,[seed] What does the changelog say about this deprecation?,True,False,False,0.06887,False,False
+docs,docs,[seed] Verify this against the API reference published this month,True,False,False,0.05915,False,False
+simple,simple,[candidate] Reformat this list into a markdown table,True,False,False,0.05056,False,False
+simple,architect,[candidate] Write a commit message for these staged changes,False,False,True,0.0159,False,True
+simple,architect,[candidate] Convert this YAML config to TOML,False,False,True,0.01248,False,True
+simple,simple,[candidate] Rename the class and update all its references in this file,True,False,False,0.07409,False,False
+simple,architect,[candidate] Strip trailing whitespace and sort these imports,False,False,True,0.00668,False,True
+simple,simple,[candidate] Turn this comment into a proper docstring,True,False,False,0.11698,False,False
+reasoning,reasoning,[candidate] Why does this mutex sometimes fail to release?,True,False,False,0.04946,False,False
+reasoning,reasoning,[candidate] Explain the logic error in this binary search,True,False,False,0.09818,False,False
+reasoning,reasoning,[candidate] What causes this generator to skip the last element?,True,False,False,0.09561,False,False
+reasoning,reasoning,[candidate] Why does this date parsing break at month boundaries?,True,False,False,0.07374,False,False
+reasoning,reasoning,[candidate] Find the reason this retry loop never terminates,True,False,False,0.11605,False,False
+reasoning,reasoning,[candidate] Why is this SQL query returning duplicate rows?,True,False,False,0.14451,False,False
+architect,architect,[candidate] Refactor the session layer and update every consumer,True,False,False,0.06922,False,False
+architect,architect,[candidate] Architect a multi-tenant permission model for this app,True,False,False,0.13403,False,False
+architect,architect,[candidate] Audit this OAuth implementation for token-leak risks,True,False,False,0.07582,False,False
+architect,architect,[candidate] Design the rollback strategy for this schema migration,True,False,False,0.15845,False,False
+architect,architect,[candidate] Reorganize these twelve modules into a coherent package layo,True,False,False,0.13079,False,False
+architect,architect,[candidate] Propose an event-driven redesign of the sync pipeline,True,False,False,0.12905,False,False
+docs,docs,[candidate] Confirm this matches the current official documentation,True,False,False,0.15647,False,False
+docs,docs,[candidate] Is this parameter still supported in the latest version?,True,False,False,0.14814,False,False
+docs,docs,[candidate] Look up the current pricing for this model tier,True,False,False,0.0573,False,False
+docs,docs,[candidate] Check whether the docs still recommend this pattern,True,False,False,0.08979,False,False
+docs,docs,[candidate] What does the changelog say about this deprecation?,True,False,False,0.04889,False,False
+docs,docs,[candidate] Verify this against the API reference published this month,True,False,False,0.04189,False,False
