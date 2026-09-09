@@ -25,6 +25,9 @@ class Ledger:
         cache_write_tokens: int = 0,
         cache_ttl: str = "",
         cache_price_in: float = 0.0,
+        est_wh: float = 0.0,
+        energy_model: str = "",
+        latency_s: float | None = None,
         **extra,
     ) -> None:
         """Extra keyword fields (routing decision metadata, truncation flags,
@@ -49,10 +52,39 @@ class Ledger:
             entry["cache_ttl"] = cache_ttl or "5m"
             if cache_price_in:
                 entry["cache_price_in"] = cache_price_in
+        # ADR 0020: every dispatch record carries the energy estimate and its
+        # coefficient-table tag; latency is forward-looking substrate.
+        entry["est_wh"] = est_wh
+        if energy_model:
+            entry["energy_model"] = energy_model
+        if latency_s is not None:
+            entry["latency_s"] = round(latency_s, 3)
         entry.update(extra)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
             f.write(json.dumps(entry) + "\n")
+
+    def _energy_section(self, entries: list) -> dict:
+        """ADR 0020: local-compute Wh only, estimated against a versioned
+        coefficient table — never a counterfactual, never unlabeled."""
+        local = [
+            e for e in entries
+            if e.get("local") and e.get("est_wh") is not None
+        ]
+        versions = [e.get("energy_model") for e in local if e.get("energy_model")]
+        by_generation: dict = {}
+        for e in local:
+            gen = e.get("preprocess_model", "legacy/incumbent")
+            g = by_generation.setdefault(gen, {"dispatches": 0, "est_wh": 0.0})
+            g["dispatches"] += 1
+            g["est_wh"] += e["est_wh"]
+        return {
+            "dispatches": len(local),
+            "est_wh": round(sum(e["est_wh"] for e in local), 6),
+            # latest tag present: old rows keep their table's numbers (ADR 0020)
+            "version": max(versions) if versions else "",
+            "by_generation": by_generation,
+        }
 
     def _cache_section(self, entries: list) -> dict:
         """Cache economics per the ADR 0005 amendment: kept-via-cache is the
@@ -169,9 +201,11 @@ class Ledger:
 
         cache = self._cache_section(prompt_entries)
         by_generation = self._by_generation(prompt_entries)
+        energy = self._energy_section(prompt_entries)
 
         return {
             "cache": cache,
+            "energy": energy,
             "by_generation": by_generation,
             "prompts": len(prompt_entries),
             "local_prompts": sum(1 for e in prompt_entries if e.get("local")),

@@ -765,6 +765,20 @@ def format_harvest(stats: dict) -> str:
         ]
         if cohort_txt:
             lines.append(f"    ttl cohorts        {cohort_txt}")
+    energy = stats.get("energy")
+    if energy and energy.get("dispatches", 0) > 0 and energy.get("est_wh", 0) > 0:
+        from kultivait.energy import sig2
+        lines += [
+            "",
+            f"  energy (estimated · {energy.get('version', '?')})",
+            f"    local dispatches     {energy['dispatches']}",
+            f"    est. energy          {sig2(energy['est_wh'])} Wh",
+        ]
+        for gen, g in sorted(energy.get("by_generation", {}).items()):
+            if g["dispatches"]:
+                lines.append(
+                    f"      {gen:<26} {sig2(g['est_wh'])} Wh  ({g['dispatches']} dsp)"
+                )
     by_gen = stats.get("by_generation")
     if by_gen:
         lines += ["", "  by generation (preprocess_model)"]
