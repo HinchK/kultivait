@@ -140,5 +140,13 @@ _Avoid_: summary, recap, context dump
 The repo-local `.kultivait/gates.toml` that maps event context (subagent type, compaction trigger) to from/to phase labels for an ambient gate; unmapped events default to `previous → next`.
 _Avoid_: gate config (too broad), routing table
 
+**Watt-hour estimate**:
+The local-compute energy attributed to a dispatch (`est_wh`), computed from the coefficient table against its token counts; cloud and CLI dispatches carry 0.0 — their energy is not ours to claim. Always labeled *est.*
+_Avoid_: energy usage (unqualified), actual consumption, avoided energy (that's the rejected counterfactual)
+
+**Coefficient table**:
+The versioned, measured Wh-per-1K-tokens table (parameter classes × prefill/decode) that watt-hour estimates compute from — provenance in `experiments/energy_measurement/`, values overridable by config, provenance never.
+_Avoid_: energy model (that's the per-record version tag), power table
+
 
 
