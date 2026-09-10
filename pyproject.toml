@@ -1,6 +1,6 @@
 [project]
 name = "kultivait"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first LLM routing proxy: weigh every prompt, route to the cheapest model that can carry it, tally the savings."
 readme = "README.md"
 authors = [
