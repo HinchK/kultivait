@@ -156,6 +156,14 @@ _Avoid_: adaptive centroid, online learning, trained classifier
 The versioned `~/.kultivait/centroids.json` holding per-role vectors with provenance counts (`seeds-v0` baseline vs `learned-vN` candidates); boot loads whichever version the `[centroids]` seat marks active.
 _Avoid_: router state, model weights, embeddings cache
 
+**Planted fact**:
+A named constraint, path, number, version, or decision seeded into a committed synthetic transcript for distillation evals — retained when any anchor group's terms all appear in the brief.
+_Avoid_: ground truth (that's corpus truth hierarchy), test fixture
+
+**Generation loss**:
+The compounding drop in planted-fact survival as a brief is itself re-distilled — the retention metric measuring transcript → brief → re-brief.
+_Avoid_: re-distillation error, drift (unqualified)
+
 **Seed prior**:
 The mean of the six static seed-prompt embeddings per role — the fixed-weight regularizer every learned centroid blends against so history can bend routing but never replace its foundations.
 _Avoid_: baseline centroid (that's the table's seeds-v0), anchor set (that's distillation's corpus seeds)
