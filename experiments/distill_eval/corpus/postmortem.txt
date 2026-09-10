@@ -1,0 +1,47 @@
+POSTMORTEM DISCUSSION — checkout outage, August 26, 02:00-04:30 UTC
+
+ Facilitator: timeline first, blameless frame. Go.
+
+Engineer A: At 02:00 the p99 latency alert fired for /api/checkout. Grafana
+showed checkout pods at 100% CPU. We had just shipped release 7.14.3 at 01:45.
+
+Engineer B: The deploy was canary 5% for 10 minutes, then full. Canary metrics
+looked flat but the dashboard was averaging over 1-minute windows — the spike
+was hidden inside the averaging. ACTION: canary dashboards switch to p99 with
+10-second granularity, owned by the platform team, due end of September.
+
+Engineer A: Root cause turned out to be the new tax calculator in
+src/checkout/tax/v2.py. It re-parses the 74-page tax-rules YAML on every call
+instead of caching it — yaml.safe_load takes 380 ms, and under the 40 rps
+checkout baseline that saturated every core.
+
+Engineer C: The v2 calculator replaced v1 in 7.14.3 behind the flag
+TAX_ENGINE_V2, defaulted ON by mistake — the rollout doc said default OFF.
+DECISION: flag default mistakes are launch blockers; the release checklist gains
+a "flag defaults" line requiring the author to paste the default table from code.
+
+Engineer B: Detection to mitigation was 38 minutes: 02:00 alert, 02:14 someone
+acknowledged, 02:38 flag flipped to OFF via the flags service, latency recovered
+by 02:41. The 24-minute gap between alert and ack was because the on-call was
+already handling the payments webhook flood from the earlier 01:20 incident.
+ACTION: page a secondary on-call when a sev2 is already active; the paging
+policy doc gets this in the next revision.
+
+Engineer C: Blast radius: 11,400 checkout attempts failed during the incident,
+of which 3,100 were paying customers — the rest were bots. Refunds issued:
+$18,730 across 2,940 orders (160 customers retried successfully and needed no
+refund). Customer support fielded 214 tickets.
+
+Engineer A: One more contributing factor: the tax-rules YAML grew from 31 pages
+to 74 pages in the July compliance update, tripling parse cost. Nobody profiled
+it because v1 cached the parse and v2 inherited no cache. ACTION: v2 gets the
+same LRU cache with TTL 24h keyed on the file mtime, shipped in 7.14.4 this week.
+
+Engineer B: Also worth recording — the rollback wasn't a deploy rollback, just
+the flag flip. Good. But the flags service audit log shows the flip at 02:38
+was done by a person reading the runbook, not automation. ACTION: add
+"flip TAX_ENGINE_V2 to OFF" as a one-click mitigation in the alerts runbook.
+
+Facilitator: Summary — 150 minutes total, 38 to mitigate, root cause uncached
+YAML parse in tax v2 with a mis-defaulted flag, $18,730 refunded, cache ships
+in 7.14.4, five action items with owners. Next postmortem review: October 4.

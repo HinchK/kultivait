@@ -14,7 +14,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).parent))
 from facts import FACTS  # noqa: E402
 
-from kultivait.evals import score_brief  # noqa: E402
+from kultivait.evals import score_brief, score_survival  # noqa: E402
 from kultivait.gates import DISTILL_PROMPT  # noqa: E402
 
 OLLAMA = "http://localhost:11434"
@@ -64,7 +64,13 @@ def make_generate(model: str, template: str):
 
 
 def main() -> None:
-    models = sys.argv[1:] or DEFAULT_MODELS
+    argv = sys.argv[1:]
+    gen_loss = 1  # 1 = off; 2+ = re-distill the brief through N-1 more generations
+    if "--gen-loss" in argv:
+        i = argv.index("--gen-loss")
+        gen_loss = int(argv[i + 1])
+        del argv[i:i + 2]
+    models = argv or DEFAULT_MODELS
     results = []
     if RESULTS.exists():
         results = json.loads(RESULTS.read_text())
@@ -91,6 +97,17 @@ def main() -> None:
                     "tokens_after": len(brief) // 4,
                     "seconds": round(seconds, 1),
                 }
+                if gen_loss >= 2:
+                    gen_briefs = [brief]
+                    for _ in range(gen_loss - 1):
+                        gen_briefs.append(
+                            gen(template.format(
+                                from_phase="explore", to_phase="plan",
+                                transcript=gen_briefs[-1]))
+                        )
+                    survival = score_survival(gen_briefs, facts)
+                    row["gen_survival"] = [round(s.recall, 3) for s in survival]
+                    row["gen2_recall"] = round(survival[min(1, len(survival) - 1)].recall, 3)
                 results.append(row)
                 RESULTS.write_text(json.dumps(results, indent=2))
                 print(
