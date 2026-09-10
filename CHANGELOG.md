@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-10
+
+### Added
+
+- Ambient gates via hooks (Map #156): Claude Code hooks adapter, automated
+  phase-gate evaluation, zero-friction developer workflow, ADR 0019.
+- Watt-hour energy estimation (Map #166): Apple Silicon IOReport measurement
+  substrate, coefficient table v1, est_wh and latency_s tracked per ledger entry,
+  kultivait harvest energy reporting block, dashboard panel, ADR 0020.
+- Learned centroids from routing history (Map #176): Routing history clustering
+  & centroid recalibration, shadow-evaluation routing hook, 512-char snippet
+  substrate, safety gate holding cutover back when accuracy fails R2, ADR 0021.
+- Distillation-quality eval harness v2 (Map #187): Planted-fact corpus grown to
+  8 multi-turn/tool-loop transcripts, generation-loss scoring (--gen-loss N),
+  pre-registered bars B1-B5, mechanically emitted README distiller table,
+  model-free unit test pinning table parity, ADR 0022.
+
 ## [0.1.0] - 2026-09-03
 
 First public release.
@@ -50,4 +67,5 @@ First public release.
   canonical links, reproduced claims, secrets sweep) recorded at
   `docs/launch-checklist-2026-09-03.md`.
 
+[0.2.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Standard-Pentest/kultivait/releases/tag/v0.1.0
