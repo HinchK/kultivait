@@ -116,6 +116,10 @@ def main() -> None:
                     f"missing={score.missing}"
                 )
 
+    if "--emit-table" in argv:
+        print(build_readme_table(results))
+        return
+
     # summary
     print("\n=== mean recall by model x prompt ===")
     for model in models:
@@ -130,3 +134,39 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def build_readme_table(results: list) -> str:
+    """The README distiller table, mechanically derived from results.json
+    (ADR 0022): per model over every 8-doc cell (16 per model)."""
+    import statistics as stats
+
+    def fmt_pct(x):
+        return f"{100 * x:.0f}%"
+
+    def fmt_kept(x):
+        return f"{100 * x:.0f}%"
+
+    rows = []
+    for model in sorted({r["model"] for r in results}):
+        rs = [r for r in results if r["model"] == model]
+        if not rs:
+            continue
+        recall = stats.mean(r["recall"] for r in rs)
+        kept = stats.mean(r["tokens_after"] / r["tokens_before"] for r in rs)
+        secs = stats.mean(r["seconds"] for r in rs)
+        g2 = [r["gen2_recall"] for r in rs if "gen2_recall" in r]
+        gen2 = stats.mean(g2) if g2 else None
+        rows.append((recall, model, kept, secs, gen2))
+    lines = [
+        "| model | mean recall | tokens kept | avg time | gen-2 survival |",
+        "|---|---|---|---|---|",
+    ]
+    for recall, model, kept, secs, gen2 in sorted(rows, reverse=True):
+        bold = "**" if recall == max(r[0] for r in rows) else ""
+        gen2_txt = fmt_pct(gen2) if gen2 is not None else "—"
+        lines.append(
+            f"| {bold}{model}{bold} | {bold}{fmt_pct(recall)}{bold} | "
+            f"{fmt_kept(kept)} | {secs:.0f}s | {gen2_txt} |"
+        )
+    return "\n".join(lines)
