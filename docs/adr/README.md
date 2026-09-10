@@ -25,3 +25,4 @@ Index of locked architectural decisions for kultivait. Each ADR captures the con
 | [`0019`](0019-ambient-gates.md) | Ambient gates: CLI-direct, async, never-blocking; SessionStart injects; briefs are source of truth |
 | [`0020`](0020-energy-estimation.md) | Energy estimation: local-compute Wh only, measured versioned coefficient table, labeled-estimate invariants |
 | [`0021`](0021-learned-centroids.md) | Learned centroids: offline recalibration, seed-prior regularization, shadow→eval→human cutover |
+| [`0022`](0022-planted-fact-eval.md) | Planted-fact eval: deterministic anchor-group scoring, committed corpus, generation-loss retention, bars before runs |

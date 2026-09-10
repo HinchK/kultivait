@@ -1,0 +1,22 @@
+# Planted-fact eval: deterministic anchor-group scoring over a committed synthetic corpus, generation-loss retention, bars before runs
+
+Brief quality is measured by **planted-fact recall against a committed synthetic corpus**: each transcript ships with a fact set — every fact a named constraint, path, number, version, or decision — where retention means *any* anchor group has all its terms present in the brief, case-insensitively (groups encode paraphrase alternatives; `src/kultivait/evals.py:score_brief`). Scoring is deterministic substring-anchor matching, deliberately not an LLM judge: the #136 register proved hand-maintained evaluation claims drift, and a judge re-introduces model-shaped nondeterminism into the very measurement meant to catch it. The corpus is committed synthetic only (grown 3→8 transcripts in `experiments/distill_eval/corpus/`, spanning multi-turn chat, tool-call loops, and phase-gate handoff shapes) — never mined from real compost or escalations, which would be both a privacy hazard and a reproducibility hole. **Generation loss** is the retention metric the roadmap's "retention rate" promised: the brief itself is re-distilled (same model, same prompt) and planted-fact survival is scored per generation (`score_survival`; harness `--gen-loss N`), measuring compounding distillation loss rather than single-shot recall. Every sweep runs under ADR 0015 discipline: numeric pass/fail bars are registered in `experiments/distill_eval/protocol.md` and committed *before* the run; FAIL branches are reported honestly and dispositioned (ADR 0017); results land in the committed `results.json` and the README's distiller table regenerates mechanically from it — hand-drifted tables are structurally impossible, closing the #136 finding permanently. The harness stays in `experiments/` (on-machine, local models, like `routing_trust`); no product CLI surface.
+
+## Considered Options
+
+- **LLM-judge recall scoring** (a model rates whether each fact survives): rejected — nondeterministic, model-shaped bias in the measurement of models, unverifiable in CI-free environments, and needs a judge bigger than the distillers it judges.
+- **Exact-string fact matching without anchor groups**: rejected — punishes legitimate paraphrase ("1200" vs "1,200", "rl:" vs "rate-limit prefix"); groups make retention honest without going fuzzy.
+- **Real compost/escalation mining for corpus**: rejected — privacy hazard (user prompts as test fixtures) and irreproducible across machines; synthetic transcripts with planted facts are auditable forever.
+- **Single-shot recall only** (no generation loss): rejected — the roadmap promises retention, and compounding loss (transcript → brief → re-brief) is where distillation actually fails; single-shot recall hides it.
+- **Human-curated free-form grading**: rejected — the original README table's hand-drift (3 of 5 cells wrong, #136 finding (b)#6) is exactly what this harness exists to make impossible.
+- **Harness as a product CLI** (`kultivait distill eval-briefs`): rejected — evaluation tooling rides `experiments/` beside its corpus and results; the distill family stays about training artifacts, and the CLI surface stays product-shaped.
+- **Bars chosen after seeing results**: rejected structurally — protocol.md commits bars before the sweep; FAIL is a recorded outcome of the candidate, never a renegotiation trigger.
+- **Corpus growth by templated generation** (script-expanded transcripts): rejected — hand-authored transcripts carry realistic fact density and dead ends; templating would inflate fact-per-line uniformity and flatter every model.
+
+## Consequences
+
+- `score_brief`/`score_survival` are the single scoring path; any new metric must be deterministic and committed alongside its corpus.
+- Corpus changes (new transcripts, new fact sets) invalidate prior bars: protocol re-registers and the sweep re-runs in full — no partial re-scoring across corpus versions.
+- Per-model FAIL on a bar marks that model ineligible as the recommended distiller but does not fail the harness: measurement is the deliverable, and honest FAILs are outcomes.
+- `results.json` is the single artifact of record; the README table (and any future docs) must derive from it mechanically, with a model-free parity test pinning the derivation.
+- Generation-loss rows (`gen_survival`, `gen2_recall`) appear only for sweeps run with `--gen-loss ≥ 2`; absent fields mean "not measured," never "zero."
