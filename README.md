@@ -94,25 +94,29 @@ classified 24/24 held-out prompts correctly with zero dangerous misroutes
 (cloud-worthy work sent to a weaker model).
 
 The distiller model was chosen by a planted-fact recall eval
-(`experiments/distill_eval/`, 5 models × 2 prompts × 3 transcripts).
-Numbers below are recomputed from the checked-in artifact
-(`experiments/distill_eval/results.json`):
+(`experiments/distill_eval/`, 5 models × 2 prompts × 8 transcripts —
+multi-turn chat, tool loops, phase-gate handoffs included; ADR 0022).
+Numbers below are **emitted mechanically** from the checked-in artifact
+(`experiments/distill_eval/results.json`) — regenerate with
+`uv run python experiments/distill_eval/run.py --emit-table`:
 
-| model | mean recall | tokens kept | avg time |
-|---|---|---|---|
-| **gemma4:latest** | **100%** | 69% | 28s |
-| qwen3:14b | 96.3% | 55% | 18s |
-| phi4:14b | 89.6% | 67% | 19s |
-| qwen2.5:14b | 87.2% | 52% | 16s |
-| llama3.1:8b | 86.9% | 54% | 9s |
+| model | mean recall | tokens kept | avg time | gen-2 survival |
+|---|---|---|---|---|
+| **gemma4:latest** | **94%** | 68% | 31s | 92% |
+| phi4:14b | 92% | 74% | 25s | 90% |
+| qwen3:14b | 87% | 64% | 22s | 87% |
+| qwen2.5:14b | 83% | 54% | 19s | 78% |
+| llama3.1:8b | 77% | 57% | 10s | 69% |
 
 There is no built-in distiller default: `kultivait init` picks your
 machine's largest local model. Recall beats speed at a phase gate: a
 dropped constraint is catastrophic, a slow gate is a coffee sip. Override
 with `KULTIVAIT_DISTILL_MODEL=qwen3:14b` if you prefer the faster,
-tighter-compressing runner-up. A hardened "never omit numbers" prompt
-variant was also tested and rejected — it traded compression away for no
-recall gain; model choice dominated.
+tighter-compressing runner-up. On this corpus the hardened
+"never omit numbers" prompt variant (v2 in the artifact) outperforms the
+base prompt for four of five models — per-prompt splits live in
+`results.json`; gen-2 survival measures how facts weather a re-distilled
+brief (ADR 0022's generation-loss metric).
 
 ## Commands
 

@@ -3,38 +3,156 @@
     "model": "llama3.1:8b",
     "prompt": "v1",
     "doc": "ratelimiter",
-    "recall": 0.818,
+    "recall": 0.727,
     "missing": [
+      "helm-config-required",
       "fakeredis-injection",
       "version-pins"
     ],
     "tokens_before": 641,
-    "tokens_after": 286,
-    "seconds": 10.6
+    "tokens_after": 300,
+    "seconds": 12.8,
+    "gen_survival": [
+      0.727,
+      0.636
+    ],
+    "gen2_recall": 0.636
   },
   {
     "model": "llama3.1:8b",
     "prompt": "v1",
     "doc": "debugging",
-    "recall": 0.889,
-    "missing": [
-      "dst-test-gap"
-    ],
+    "recall": 1.0,
+    "missing": [],
     "tokens_before": 592,
-    "tokens_after": 283,
-    "seconds": 6.9
+    "tokens_after": 322,
+    "seconds": 8.7,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
     "model": "llama3.1:8b",
     "prompt": "v1",
     "doc": "architecture",
-    "recall": 0.889,
+    "recall": 0.778,
     "missing": [
+      "elasticsearch-rejected-ops",
       "reindex-job-home"
     ],
     "tokens_before": 572,
-    "tokens_after": 232,
-    "seconds": 5.9
+    "tokens_after": 239,
+    "seconds": 7.3,
+    "gen_survival": [
+      0.778,
+      0.778
+    ],
+    "gen2_recall": 0.778
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "multiturn-chat",
+    "recall": 0.636,
+    "missing": [
+      "cron-time-utc",
+      "checklist-since-4-2",
+      "invoices-table-size",
+      "index-bloat-pct"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 242,
+    "seconds": 6.9,
+    "gen_survival": [
+      0.636,
+      0.636
+    ],
+    "gen2_recall": 0.636
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "toolloop",
+    "recall": 0.545,
+    "missing": [
+      "token-storage-key",
+      "safari-17-silent-break",
+      "failing-test-count",
+      "fallback-removal-4-0",
+      "shim-dead-code"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 255,
+    "seconds": 7.5,
+    "gen_survival": [
+      0.545,
+      0.545
+    ],
+    "gen2_recall": 0.545
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "phasehandoff",
+    "recall": 0.786,
+    "missing": [
+      "dashboards-plugin-dependency",
+      "finops-declined-volume",
+      "queue-idle-1-2gb"
+    ],
+    "tokens_before": 653,
+    "tokens_after": 319,
+    "seconds": 9.9,
+    "gen_survival": [
+      0.786,
+      0.643
+    ],
+    "gen2_recall": 0.643
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "postmortem",
+    "recall": 0.571,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "parse-ms-380",
+      "ack-gap-24-min",
+      "support-tickets-214",
+      "cache-ttl-24h-mtime",
+      "fix-ship-7-14-4"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 239,
+    "seconds": 7.3,
+    "gen_survival": [
+      0.571,
+      0.357
+    ],
+    "gen2_recall": 0.357
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v1",
+    "doc": "specnegotiation",
+    "recall": 0.667,
+    "missing": [
+      "audit-action-name",
+      "parquet-6-3",
+      "job-cost-60-cents",
+      "migration-number",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 316,
+    "seconds": 9.6,
+    "gen_survival": [
+      0.667,
+      0.667
+    ],
+    "gen2_recall": 0.667
   },
   {
     "model": "llama3.1:8b",
@@ -42,13 +160,18 @@
     "doc": "ratelimiter",
     "recall": 0.727,
     "missing": [
-      "request-state-hook",
-      "version-pins",
-      "open-429-retry-after"
+      "helm-config-required",
+      "rl-key-prefix",
+      "request-state-hook"
     ],
     "tokens_before": 641,
-    "tokens_after": 415,
-    "seconds": 10.0
+    "tokens_after": 469,
+    "seconds": 13.4,
+    "gen_survival": [
+      0.727,
+      0.727
+    ],
+    "gen2_recall": 0.727
   },
   {
     "model": "llama3.1:8b",
@@ -57,8 +180,13 @@
     "recall": 1.0,
     "missing": [],
     "tokens_before": 592,
-    "tokens_after": 418,
-    "seconds": 9.6
+    "tokens_after": 438,
+    "seconds": 10.8,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
     "model": "llama3.1:8b",
@@ -66,233 +194,965 @@
     "doc": "architecture",
     "recall": 0.889,
     "missing": [
-      "reindex-job-home"
+      "elasticsearch-rejected-ops"
     ],
     "tokens_before": 572,
-    "tokens_after": 324,
-    "seconds": 8.2
+    "tokens_after": 435,
+    "seconds": 11.4,
+    "gen_survival": [
+      0.889,
+      0.889
+    ],
+    "gen2_recall": 0.889
   },
   {
-    "model": "qwen2.5:14b",
-    "prompt": "v1",
-    "doc": "ratelimiter",
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "multiturn-chat",
     "recall": 0.818,
     "missing": [
-      "request-state-hook",
-      "version-pins"
+      "cron-time-utc",
+      "failing-line"
     ],
-    "tokens_before": 641,
-    "tokens_after": 305,
-    "seconds": 19.5
+    "tokens_before": 525,
+    "tokens_after": 270,
+    "seconds": 7.3,
+    "gen_survival": [
+      0.818,
+      0.818
+    ],
+    "gen2_recall": 0.818
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "toolloop",
+    "recall": 0.818,
+    "missing": [
+      "token-storage-key",
+      "safari-17-silent-break"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 498,
+    "seconds": 14.5,
+    "gen_survival": [
+      0.818,
+      0.455
+    ],
+    "gen2_recall": 0.455
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "phasehandoff",
+    "recall": 0.857,
+    "missing": [
+      "finops-declined-volume",
+      "queue-idle-1-2gb"
+    ],
+    "tokens_before": 653,
+    "tokens_after": 409,
+    "seconds": 11.1,
+    "gen_survival": [
+      0.857,
+      0.643
+    ],
+    "gen2_recall": 0.643
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "postmortem",
+    "recall": 0.571,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "mitigation-38-min",
+      "ack-gap-24-min",
+      "support-tickets-214",
+      "cache-ttl-24h-mtime",
+      "secondary-oncall-paging"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 355,
+    "seconds": 9.6,
+    "gen_survival": [
+      0.571,
+      0.571
+    ],
+    "gen2_recall": 0.571
+  },
+  {
+    "model": "llama3.1:8b",
+    "prompt": "v2",
+    "doc": "specnegotiation",
+    "recall": 0.867,
+    "missing": [
+      "concurrency-2-and-20",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 494,
+    "seconds": 13.4,
+    "gen_survival": [
+      0.867,
+      0.667
+    ],
+    "gen2_recall": 0.667
   },
   {
     "model": "qwen2.5:14b",
-    "prompt": "v1",
-    "doc": "debugging",
-    "recall": 0.889,
-    "missing": [
-      "dst-test-gap"
-    ],
-    "tokens_before": 592,
-    "tokens_after": 268,
-    "seconds": 13.0
-  },
-  {
-    "model": "qwen2.5:14b",
-    "prompt": "v1",
-    "doc": "architecture",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 572,
-    "tokens_after": 304,
-    "seconds": 14.9
-  },
-  {
-    "model": "qwen2.5:14b",
-    "prompt": "v2",
-    "doc": "ratelimiter",
-    "recall": 0.636,
-    "missing": [
-      "nginx-100rps",
-      "per-key-fairness-only",
-      "request-state-hook",
-      "version-pins"
-    ],
-    "tokens_before": 641,
-    "tokens_after": 339,
-    "seconds": 16.6
-  },
-  {
-    "model": "qwen2.5:14b",
-    "prompt": "v2",
-    "doc": "debugging",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 592,
-    "tokens_after": 375,
-    "seconds": 16.6
-  },
-  {
-    "model": "qwen2.5:14b",
-    "prompt": "v2",
-    "doc": "architecture",
-    "recall": 0.889,
-    "missing": [
-      "elasticsearch-rejected-ops"
-    ],
-    "tokens_before": 572,
-    "tokens_after": 273,
-    "seconds": 14.4
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v1",
-    "doc": "ratelimiter",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 641,
-    "tokens_after": 358,
-    "seconds": 21.4
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v1",
-    "doc": "debugging",
-    "recall": 0.889,
-    "missing": [
-      "dst-test-gap"
-    ],
-    "tokens_before": 592,
-    "tokens_after": 224,
-    "seconds": 12.4
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v1",
-    "doc": "architecture",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 572,
-    "tokens_after": 214,
-    "seconds": 11.8
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v2",
-    "doc": "ratelimiter",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 641,
-    "tokens_after": 567,
-    "seconds": 27.9
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v2",
-    "doc": "debugging",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 592,
-    "tokens_after": 404,
-    "seconds": 22.4
-  },
-  {
-    "model": "qwen3:14b",
-    "prompt": "v2",
-    "doc": "architecture",
-    "recall": 0.889,
-    "missing": [
-      "elasticsearch-rejected-ops"
-    ],
-    "tokens_before": 572,
-    "tokens_after": 232,
-    "seconds": 14.3
-  },
-  {
-    "model": "gemma4:latest",
     "prompt": "v1",
     "doc": "ratelimiter",
-    "recall": 1.0,
-    "missing": [],
+    "recall": 0.909,
+    "missing": [
+      "nginx-100rps"
+    ],
     "tokens_before": 641,
-    "tokens_after": 411,
-    "seconds": 33.9
+    "tokens_after": 379,
+    "seconds": 26.1,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
   },
   {
-    "model": "gemma4:latest",
+    "model": "qwen2.5:14b",
     "prompt": "v1",
     "doc": "debugging",
     "recall": 1.0,
     "missing": [],
     "tokens_before": 592,
-    "tokens_after": 370,
-    "seconds": 25.5
-  },
-  {
-    "model": "gemma4:latest",
-    "prompt": "v1",
-    "doc": "architecture",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 572,
     "tokens_after": 328,
-    "seconds": 27.2
+    "seconds": 15.5,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
-    "model": "gemma4:latest",
-    "prompt": "v2",
-    "doc": "ratelimiter",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 641,
-    "tokens_after": 532,
-    "seconds": 33.2
-  },
-  {
-    "model": "gemma4:latest",
-    "prompt": "v2",
-    "doc": "debugging",
-    "recall": 1.0,
-    "missing": [],
-    "tokens_before": 592,
-    "tokens_after": 414,
-    "seconds": 21.1
-  },
-  {
-    "model": "gemma4:latest",
-    "prompt": "v2",
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
     "doc": "architecture",
     "recall": 1.0,
     "missing": [],
     "tokens_before": 572,
-    "tokens_after": 446,
-    "seconds": 26.5
+    "tokens_after": 222,
+    "seconds": 12.4,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
-    "model": "phi4:14b",
+    "model": "qwen2.5:14b",
     "prompt": "v1",
-    "doc": "ratelimiter",
+    "doc": "multiturn-chat",
     "recall": 0.818,
     "missing": [
-      "nginx-100rps",
-      "version-pins"
+      "cron-time-utc",
+      "division-guard"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 240,
+    "seconds": 12.8,
+    "gen_survival": [
+      0.818,
+      0.818
+    ],
+    "gen2_recall": 0.818
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "toolloop",
+    "recall": 0.727,
+    "missing": [
+      "ttl-55min-refresh-50",
+      "failing-test-count",
+      "shim-dead-code"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 302,
+    "seconds": 16.2,
+    "gen_survival": [
+      0.727,
+      0.727
+    ],
+    "gen2_recall": 0.727
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "phasehandoff",
+    "recall": 0.643,
+    "missing": [
+      "dashboards-plugin-dependency",
+      "finops-declined-volume",
+      "snapshot-bucket-30day",
+      "sla-45min-window",
+      "queue-idle-1-2gb"
+    ],
+    "tokens_before": 653,
+    "tokens_after": 283,
+    "seconds": 17.7,
+    "gen_survival": [
+      0.643,
+      0.429
+    ],
+    "gen2_recall": 0.429
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "postmortem",
+    "recall": 0.571,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "mitigation-38-min",
+      "ack-gap-24-min",
+      "support-tickets-214",
+      "cache-ttl-24h-mtime",
+      "fix-ship-7-14-4"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 282,
+    "seconds": 17.0,
+    "gen_survival": [
+      0.571,
+      0.571
+    ],
+    "gen2_recall": 0.571
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v1",
+    "doc": "specnegotiation",
+    "recall": 0.867,
+    "missing": [
+      "cpu-ceiling-70pct",
+      "job-cost-60-cents"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 413,
+    "seconds": 21.0,
+    "gen_survival": [
+      0.867,
+      0.8
+    ],
+    "gen2_recall": 0.8
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 0.909,
+    "missing": [
+      "fakeredis-injection"
     ],
     "tokens_before": 641,
-    "tokens_after": 647,
-    "seconds": 30.7
+    "tokens_after": 349,
+    "seconds": 19.0,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "dst-test-gap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 295,
+    "seconds": 14.7,
+    "gen_survival": [
+      0.889,
+      0.889
+    ],
+    "gen2_recall": 0.889
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 291,
+    "seconds": 17.3,
+    "gen_survival": [
+      1.0,
+      0.889
+    ],
+    "gen2_recall": 0.889
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "multiturn-chat",
+    "recall": 0.909,
+    "missing": [
+      "cron-time-utc"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 333,
+    "seconds": 17.8,
+    "gen_survival": [
+      0.909,
+      0.818
+    ],
+    "gen2_recall": 0.818
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "toolloop",
+    "recall": 0.727,
+    "missing": [
+      "token-storage-key",
+      "safari-17-silent-break",
+      "failing-test-count"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 318,
+    "seconds": 18.7,
+    "gen_survival": [
+      0.727,
+      0.727
+    ],
+    "gen2_recall": 0.727
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "phasehandoff",
+    "recall": 0.929,
+    "missing": [
+      "queue-idle-1-2gb"
+    ],
+    "tokens_before": 653,
+    "tokens_after": 459,
+    "seconds": 30.6,
+    "gen_survival": [
+      0.929,
+      0.571
+    ],
+    "gen2_recall": 0.571
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "postmortem",
+    "recall": 0.643,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "mitigation-38-min",
+      "ack-gap-24-min",
+      "cache-ttl-24h-mtime",
+      "fix-ship-7-14-4"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 331,
+    "seconds": 20.6,
+    "gen_survival": [
+      0.643,
+      0.643
+    ],
+    "gen2_recall": 0.643
+  },
+  {
+    "model": "qwen2.5:14b",
+    "prompt": "v2",
+    "doc": "specnegotiation",
+    "recall": 0.8,
+    "missing": [
+      "gateway-60s-400k",
+      "cpu-ceiling-70pct",
+      "migration-number"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 452,
+    "seconds": 24.2,
+    "gen_survival": [
+      0.8,
+      0.8
+    ],
+    "gen2_recall": 0.8
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 0.909,
+    "missing": [
+      "request-state-hook"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 356,
+    "seconds": 27.3,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 243,
+    "seconds": 12.7,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "elasticsearch-rejected-ops"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 206,
+    "seconds": 11.8,
+    "gen_survival": [
+      0.889,
+      0.889
+    ],
+    "gen2_recall": 0.889
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "multiturn-chat",
+    "recall": 0.727,
+    "missing": [
+      "cron-time-utc",
+      "invoices-table-size",
+      "index-bloat-pct"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 269,
+    "seconds": 14.6,
+    "gen_survival": [
+      0.727,
+      0.727
+    ],
+    "gen2_recall": 0.727
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "toolloop",
+    "recall": 0.727,
+    "missing": [
+      "ttl-55min-refresh-50",
+      "safari-17-silent-break",
+      "failing-test-count"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 352,
+    "seconds": 19.4,
+    "gen_survival": [
+      0.727,
+      0.727
+    ],
+    "gen2_recall": 0.727
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "phasehandoff",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 653,
+    "tokens_after": 524,
+    "seconds": 27.2,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "postmortem",
+    "recall": 0.714,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "mitigation-38-min",
+      "ack-gap-24-min",
+      "support-tickets-214"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 460,
+    "seconds": 26.0,
+    "gen_survival": [
+      0.714,
+      0.714
+    ],
+    "gen2_recall": 0.714
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v1",
+    "doc": "specnegotiation",
+    "recall": 0.6,
+    "missing": [
+      "gateway-60s-400k",
+      "concurrency-2-and-20",
+      "cpu-ceiling-70pct",
+      "parquet-6-3",
+      "job-cost-60-cents",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 258,
+    "seconds": 15.7,
+    "gen_survival": [
+      0.6,
+      0.6
+    ],
+    "gen2_recall": 0.6
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 559,
+    "seconds": 27.6,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 326,
+    "seconds": 16.8,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 0.889,
+    "missing": [
+      "elasticsearch-rejected-ops"
+    ],
+    "tokens_before": 572,
+    "tokens_after": 294,
+    "seconds": 15.3,
+    "gen_survival": [
+      0.889,
+      0.889
+    ],
+    "gen2_recall": 0.889
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "multiturn-chat",
+    "recall": 0.909,
+    "missing": [
+      "cron-time-utc"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 333,
+    "seconds": 18.5,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "toolloop",
+    "recall": 0.909,
+    "missing": [
+      "failing-test-count"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 398,
+    "seconds": 21.8,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "phasehandoff",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 653,
+    "tokens_after": 655,
+    "seconds": 36.4,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "postmortem",
+    "recall": 0.786,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "ack-gap-24-min",
+      "support-tickets-214"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 672,
+    "seconds": 35.5,
+    "gen_survival": [
+      0.786,
+      0.714
+    ],
+    "gen2_recall": 0.714
+  },
+  {
+    "model": "qwen3:14b",
+    "prompt": "v2",
+    "doc": "specnegotiation",
+    "recall": 0.867,
+    "missing": [
+      "job-cost-60-cents",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 455,
+    "seconds": 24.3,
+    "gen_survival": [
+      0.867,
+      0.867
+    ],
+    "gen2_recall": 0.867
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 347,
+    "seconds": 40.2,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "debugging",
+    "recall": 0.889,
+    "missing": [
+      "dst-test-gap"
+    ],
+    "tokens_before": 592,
+    "tokens_after": 284,
+    "seconds": 13.3,
+    "gen_survival": [
+      0.889,
+      0.889
+    ],
+    "gen2_recall": 0.889
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 240,
+    "seconds": 26.5,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "multiturn-chat",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 525,
+    "tokens_after": 374,
+    "seconds": 27.3,
+    "gen_survival": [
+      1.0,
+      0.727
+    ],
+    "gen2_recall": 0.727
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "toolloop",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 600,
+    "tokens_after": 381,
+    "seconds": 30.6,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "phasehandoff",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 653,
+    "tokens_after": 481,
+    "seconds": 33.7,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "postmortem",
+    "recall": 0.714,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "mitigation-38-min",
+      "ack-gap-24-min",
+      "support-tickets-214"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 470,
+    "seconds": 37.5,
+    "gen_survival": [
+      0.714,
+      0.714
+    ],
+    "gen2_recall": 0.714
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v1",
+    "doc": "specnegotiation",
+    "recall": 0.8,
+    "missing": [
+      "cpu-ceiling-70pct",
+      "job-cost-60-cents",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 464,
+    "seconds": 33.0,
+    "gen_survival": [
+      0.8,
+      0.8
+    ],
+    "gen2_recall": 0.8
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "ratelimiter",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 641,
+    "tokens_after": 494,
+    "seconds": 26.3,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "debugging",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 592,
+    "tokens_after": 405,
+    "seconds": 26.5,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "architecture",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 572,
+    "tokens_after": 375,
+    "seconds": 29.7,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "multiturn-chat",
+    "recall": 0.909,
+    "missing": [
+      "cron-time-utc"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 329,
+    "seconds": 33.4,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "toolloop",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 600,
+    "tokens_after": 441,
+    "seconds": 28.3,
+    "gen_survival": [
+      1.0,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "phasehandoff",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 653,
+    "tokens_after": 487,
+    "seconds": 41.0,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "postmortem",
+    "recall": 0.857,
+    "missing": [
+      "ack-gap-24-min",
+      "support-tickets-214"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 609,
+    "seconds": 24.0,
+    "gen_survival": [
+      0.857,
+      0.857
+    ],
+    "gen2_recall": 0.857
+  },
+  {
+    "model": "gemma4:latest",
+    "prompt": "v2",
+    "doc": "specnegotiation",
+    "recall": 0.867,
+    "missing": [
+      "url-expiry-24h",
+      "parquet-6-3"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 492,
+    "seconds": 49.5,
+    "gen_survival": [
+      0.867,
+      0.867
+    ],
+    "gen2_recall": 0.867
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "ratelimiter",
+    "recall": 0.909,
+    "missing": [
+      "nginx-100rps"
+    ],
+    "tokens_before": 641,
+    "tokens_after": 576,
+    "seconds": 40.2,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
   },
   {
     "model": "phi4:14b",
     "prompt": "v1",
     "doc": "debugging",
-    "recall": 0.778,
-    "missing": [
-      "dst-test-gap",
-      "limbo-order-count"
-    ],
+    "recall": 1.0,
+    "missing": [],
     "tokens_before": 592,
-    "tokens_after": 246,
-    "seconds": 11.0
+    "tokens_after": 308,
+    "seconds": 15.1,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
     "model": "phi4:14b",
@@ -301,8 +1161,102 @@
     "recall": 1.0,
     "missing": [],
     "tokens_before": 572,
-    "tokens_after": 337,
-    "seconds": 15.6
+    "tokens_after": 259,
+    "seconds": 14.3,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "multiturn-chat",
+    "recall": 0.818,
+    "missing": [
+      "cron-time-utc",
+      "invoices-table-size"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 303,
+    "seconds": 15.7,
+    "gen_survival": [
+      0.818,
+      0.818
+    ],
+    "gen2_recall": 0.818
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "toolloop",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 600,
+    "tokens_after": 453,
+    "seconds": 24.2,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "phasehandoff",
+    "recall": 0.857,
+    "missing": [
+      "dashboards-plugin-dependency",
+      "single-node-no-bluegreen"
+    ],
+    "tokens_before": 653,
+    "tokens_after": 425,
+    "seconds": 24.4,
+    "gen_survival": [
+      0.857,
+      0.786
+    ],
+    "gen2_recall": 0.786
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "postmortem",
+    "recall": 0.714,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "parse-ms-380",
+      "support-tickets-214",
+      "cache-ttl-24h-mtime"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 587,
+    "seconds": 32.0,
+    "gen_survival": [
+      0.714,
+      0.643
+    ],
+    "gen2_recall": 0.643
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v1",
+    "doc": "specnegotiation",
+    "recall": 0.867,
+    "missing": [
+      "gateway-60s-400k",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 427,
+    "seconds": 25.8,
+    "gen_survival": [
+      0.867,
+      0.733
+    ],
+    "gen2_recall": 0.733
   },
   {
     "model": "phi4:14b",
@@ -311,31 +1265,128 @@
     "recall": 1.0,
     "missing": [],
     "tokens_before": 641,
-    "tokens_after": 475,
-    "seconds": 22.2
+    "tokens_after": 538,
+    "seconds": 31.0,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
     "model": "phi4:14b",
     "prompt": "v2",
     "doc": "debugging",
-    "recall": 0.889,
-    "missing": [
-      "secret-rotation-overlap"
-    ],
+    "recall": 1.0,
+    "missing": [],
     "tokens_before": 592,
-    "tokens_after": 412,
-    "seconds": 18.1
+    "tokens_after": 382,
+    "seconds": 19.7,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
   },
   {
     "model": "phi4:14b",
     "prompt": "v2",
     "doc": "architecture",
-    "recall": 0.889,
-    "missing": [
-      "reindex-job-home"
-    ],
+    "recall": 1.0,
+    "missing": [],
     "tokens_before": 572,
-    "tokens_after": 299,
-    "seconds": 14.8
+    "tokens_after": 461,
+    "seconds": 26.0,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "multiturn-chat",
+    "recall": 0.909,
+    "missing": [
+      "cron-time-utc"
+    ],
+    "tokens_before": 525,
+    "tokens_after": 407,
+    "seconds": 23.2,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "toolloop",
+    "recall": 0.909,
+    "missing": [
+      "shim-dead-code"
+    ],
+    "tokens_before": 600,
+    "tokens_after": 536,
+    "seconds": 29.6,
+    "gen_survival": [
+      0.909,
+      0.909
+    ],
+    "gen2_recall": 0.909
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "phasehandoff",
+    "recall": 1.0,
+    "missing": [],
+    "tokens_before": 653,
+    "tokens_after": 619,
+    "seconds": 31.8,
+    "gen_survival": [
+      1.0,
+      1.0
+    ],
+    "gen2_recall": 1.0
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "postmortem",
+    "recall": 0.857,
+    "missing": [
+      "canary-hidden-by-averaging",
+      "support-tickets-214"
+    ],
+    "tokens_before": 682,
+    "tokens_after": 521,
+    "seconds": 26.2,
+    "gen_survival": [
+      0.857,
+      0.857
+    ],
+    "gen2_recall": 0.857
+  },
+  {
+    "model": "phi4:14b",
+    "prompt": "v2",
+    "doc": "specnegotiation",
+    "recall": 0.8,
+    "missing": [
+      "gateway-60s-400k",
+      "largest-tenant-2-1m",
+      "freeze-on-the-15th"
+    ],
+    "tokens_before": 625,
+    "tokens_after": 487,
+    "seconds": 26.9,
+    "gen_survival": [
+      0.8,
+      0.8
+    ],
+    "gen2_recall": 0.8
   }
 ]
