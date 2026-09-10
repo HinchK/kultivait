@@ -1,0 +1,45 @@
+PHASE-GATE HANDOFF — explore phase ends, plan phase begins
+
+SESSION CONTEXT: the explore phase read 23 files and ran 9 searches over three
+hours. What follows is the distilled end-of-phase record the plan phase inherits.
+
+FINDINGS (verified this phase):
+- The search service is OpenSearch 2.11, single node, deployed via the
+  opensearch-operator chart at deploy/search/values.yaml.
+- Index templates live in infra/search/templates/*.json; there are 14 of them,
+  and 3 are stale (last touched 2023, referenced by deleted index patterns).
+- Ingestion goes through the queue worker src/workers/ingest.py at a measured
+  steady state of 2,300 docs/minute; the queue itself is RabbitMQ with the
+  dlx-publish flag OFF, which means poison messages requeue forever — ticket
+  INFRA-902 already tracks this and it must not block this migration.
+- The largest index, logs-2026-08, is 1.9 TB with 12 shards; shard 7 runs hot
+  at 87% disk while the median shard sits at 61% — the imbalance predates this
+  effort and is caused by the routing round-robin added in 5.1.
+
+DECISIONS (made this phase, with reasons):
+- Target version is OpenSearch 2.19, not 3.x: the 3.x line drops the
+  compatibility plugin this repo's dashboards depend on. Revisit after the
+  dashboards migration closes.
+- Rolling restart, not blue-green: the single-node topology makes blue-green
+  require a second 2 TB volume that FinOps declined (cost center CAP-118).
+- Snapshot before every node-level step: the existing snapshot repo
+  (s3://corp-search-snapshots, 30-day retention) is sufficient; do NOT create
+  a new bucket.
+
+CONSTRAINTS (must hold in the plan):
+- The upgrade window is the Saturday 02:00-06:00 UTC slot; search may be read-
+  only for at most 45 minutes or the SLA breach pages the on-call VP.
+- The ingest worker cannot be paused longer than 30 minutes without RabbitMQ
+  hitting its 4 GB memory alarm — the queue currently idles at 1.2 GB.
+- Any plan touching shard rebalancing must quote the 5.1 routing change, since
+  reverting it is a customer-visible behavior change requiring a changelog entry.
+
+OPEN QUESTIONS for the plan phase:
+- Does the 2.19 upgrade path require reindexing the 3 stale templates, or can
+  they be deleted first? (Cheaper, but confirm no dashboards query them.)
+- The 87%-hot shard 7: rebalance before or after the upgrade? Before adds a
+  step; after risks the disk watermark blocking the rolling restart.
+
+NEXT STEP: the plan phase drafts the runbook against these facts; nothing in
+this record may be dropped — the VP SLA window and the RabbitMQ 30-minute
+ceiling are hard gates on every step.

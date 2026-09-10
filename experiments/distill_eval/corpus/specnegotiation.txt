@@ -1,0 +1,52 @@
+SPEC NEGOTIATION — designing export limits for the API
+
+PM: Enterprise buyers keep asking for bulk export. Legal needs an audit trail.
+What's the smallest thing we can ship in 6.2?
+
+Eng: The naive version is a button that streams a CSV. CONSTRAINT: our largest
+tenant has 2.1 million rows in projects alone; streaming that through the web
+tier times out the 60-second gateway limit at around 400k rows.
+
+PM: So cap the first version?
+
+Eng: Cap it, but at what? Three options on the table. One: hard cap at 50k rows
+with a "filter to narrow" message — shippable in a week, useless for the buyers
+who asked. Two: async job writing to S3 with a signed URL, expiry 24 hours —
+two weeks, needs the job queue. Three: paginate a sync endpoint — meets nobody's
+definition of bulk.
+
+PM: Legal's audit requirement applies to any export: who, what query, when, and
+row count. That has to be in the existing audit_events table, not a new store —
+compliance already built their dashboards on audit_events.
+
+Eng: Noted. DECISION then: option two, async to S3, and every job writes an
+audit_events row with action="export.completed", the query hash, row count, and
+the requester's user id. The signed URL expiry of 24 hours matches the security
+review's data-retention guidance from last quarter (doc sec-review-2026-q2).
+
+PM: What are the job's own limits?
+
+Eng: Proposal: max 5 million rows per job, max 2 concurrent jobs per tenant,
+and a global cap of 20 concurrent so the workers stay under the 70% CPU
+ceiling ops enforces. Formats: CSV first, Parquet in 6.3 — Parquet needs a
+column-typing pass we don't have yet.
+
+PM: Enterprise asked for "everything", meaning cross-workspace.
+
+Eng: Cross-workspace export is explicitly out for 6.2 — it drags in the
+workspace-permission model and legal wants per-workspace audit scoping first.
+Record it as deferred with that reason, or it will resurface as a bug.
+
+PM: Agreed, deferred. Pricing tier?
+
+Eng: Ops' cost model says a 5M-row job costs us about $0.60 in S3 PUT + worker
+time. Finance wants exports gated to the Scale tier and up. DECISION: feature-
+flag EXPORT_JOBS with tier gating at the flag check, not in the controller —
+the flag service already knows tiers.
+
+PM: Timeline sanity check?
+
+Eng: Two weeks to the 6.2 feature freeze on the 15th, tight but real, PROVIDED
+the audit_events schema change lands this week — it's additive (two nullable
+columns, query_hash and row_count), migration number 20260915091447. Anything
+later slips us to 6.3 with Parquet.

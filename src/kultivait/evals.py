@@ -22,3 +22,10 @@ def score_brief(brief: str, facts: list[dict]) -> RecallResult:
         if not any(all(term.lower() in text for term in group) for group in fact["groups"])
     ]
     return RecallResult(recall=(len(facts) - len(missing)) / len(facts), missing=missing)
+
+
+def score_survival(briefs: list[str], facts: list[dict]) -> list[RecallResult]:
+    """Planted-fact survival across generations of a brief (ADR 0022 metric:
+    transcript -> brief -> re-brief -> ...). The i-th result is the recall of
+    the fact set against the i-th generation's brief."""
+    return [score_brief(brief, facts) for brief in briefs]

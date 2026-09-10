@@ -1,0 +1,37 @@
+TOOL-CALL LOOP SESSION — task: migrate auth tokens from localStorage to cookies
+
+assistant: I'll start by finding where tokens are stored.
+tool_call: grep("localStorage", src/) -> 14 hits across 6 files
+tool_result: heaviest use in src/auth/session.ts (9 hits), then src/api/client.ts (3),
+and src/legacy/shim.js (2).
+assistant: Reading the session module first.
+tool_call: read("src/auth/session.ts")
+tool_result: stores the JWT at localStorage key "app.token", refreshes via
+POST /auth/refresh, and exports loadToken()/saveToken(). NOTE at line 41: the
+token TTL is 55 minutes and refresh fires at 50 minutes — a 5-minute skew window.
+assistant: Now the cookie infra. Is there any existing cookie helper?
+tool_call: grep("Set-Cookie", src/)
+tool_result: only src/http/cookies.ts — a helper written for the 3.1 OAuth flow,
+unused elsewhere. It already handles HttpOnly + SameSite=Lax.
+assistant: CONSTRAINT DISCOVERED: the CSP in deploy/nginx.conf sets
+`add_header Content-Security-Policy ... connect-src 'self'` — cookie-based auth
+must not require cross-origin XHR anywhere, or Safari 17 breaks silently.
+tool_call: run("npm test -- auth")
+tool_result: 37 passed, 2 failed — the two failures are in session.test.ts and
+assert localStorage behavior; they will need rewriting against the cookie helper.
+assistant: DECISION: keep localStorage as a one-release fallback (3.4) behind the
+flag USE_COOKIE_AUTH in src/config/flags.ts, remove it in 4.0. The migration
+ships dark-launched, enabled per-tenant via the flags service.
+tool_call: read("src/legacy/shim.js")
+tool_result: the two hits are in a comment and a dead function deleted from the
+bundle in 3.2 — no code change needed there. Dead end, noted for the report.
+assistant: One more check — the refresh endpoint.
+tool_call: curl("-I", "/auth/refresh")
+tool_result: 405 with Allow: POST. Fine. But the response header shows
+`X-Rate-Limit: 100/hour` per IP — behind the new cookie flow all office users
+share one egress IP, so DECISION: raise the refresh rate limit to 600/hour or
+NAT'd offices will lock out at 09:00 standup. Ticketed as OPS-4417.
+assistant: Summary for the PR: move loadToken/saveToken onto cookies.ts with the
+SameSite=Lax + HttpOnly pair, keep the 55-minute TTL untouched, gate behind
+USE_COOKIE_AUTH, rewrite the 2 failing tests, bump the rate limit via OPS-4417,
+and delete the shim comment in 4.0 along with the fallback.
