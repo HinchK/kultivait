@@ -208,6 +208,13 @@ phase-gates, estimated watt-hours in the ledger, learned routing centroids
 (shadow-only until a human cuts over), and the planted-fact distillation
 eval behind the table above.
 
+## Roadmap
+
+The next milestone hasn't been chosen yet. Planned work will be tracked as
+[issues on GitHub](https://github.com/Standard-Pentest/kultivait/issues).
+
+<!-- Stub: list the next milestones here once they're chartered. -->
+
 ## License
 
 [MIT](LICENSE)
