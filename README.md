@@ -45,7 +45,7 @@ curl -fsSL https://kultivait.ai/install.sh | sh
 or, by hand: 
 
 ```bash
-uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait`
+uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait
 ```
 
 ```bash
