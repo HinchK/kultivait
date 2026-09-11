@@ -42,14 +42,14 @@ dispatch is tallied in a savings ledger.
 curl -fsSL https://kultivait.ai/install.sh | sh
 ```
 
-or, by hand: 
+or, by hand:
 
 ```bash
 uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait
 ```
 
 ```bash
-kultivait init  --setup    # setup screen: survey, choose a garden, download, serve
+kultivait init      # setup screen: survey, choose a garden, download, serve
 kultivait serve     # proxy on http://localhost:4114
 kultivait harvest   # watch the savings grow
 ```

@@ -6,11 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-11
+
+### Added
+
+- Fork synchronization (canonical install flags, 791 passing tests).
+- llama.cpp viability evaluation & serving benchmark (ADR 0023).
+- Embeddings gate verification (PASS 6/6, p50 11ms, p95 13ms).
+- Claude-socket loopback transparent interception research (`docs/research/2026-09-11-claude-socket-loopback.md`).
+
 ### Changed
 
-- `kultivait init` setup no longer starts an idle ollama on its own. When
-  ollama is installed but nothing is serving, a "Choose your runtime" card
-  asks first — ollama, the llama.cpp garden, or Esc to start nothing.
+- Setup screen runtime selection logic (ollama vs llama.cpp garden chooser without starting idle daemons). `kultivait init` setup no longer starts an idle ollama on its own; when ollama is installed but nothing is serving, a "Choose your runtime" card asks first — ollama, the llama.cpp garden, or Esc to start nothing.
+
+### Removed
+
+- engrim dependency evaluated and rejected (universal uninstall, data store preserved, zero product exposure).
 
 ## [0.2.0] - 2026-09-10
 
@@ -75,6 +86,7 @@ First public release.
   canonical links, reproduced claims, secrets sweep) recorded at
   `docs/launch-checklist-2026-09-03.md`.
 
-[Unreleased]: https://github.com/Standard-Pentest/kultivait/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Standard-Pentest/kultivait/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Standard-Pentest/kultivait/releases/tag/v0.1.0
