@@ -21,6 +21,16 @@ Harvest (~/.kultivait)
 
 ## The pipeline
 
+```bash
+kultivait distill corpus [--dry-run]              # preview anchor set & held-out roster
+kultivait distill generate --live                 # dual-teacher synthetic data generation
+kultivait distill train --base <base> --corpus-dir <dir>  # train QLoRA under resource ladder
+kultivait distill eval --model <model> --heldout <path>   # 5-gate held-out validation
+kultivait distill export --base <base> --adapter-path <path> # fuse & register with Ollama
+kultivait shadow [--log <path>]                   # shadow log summary & cutover readiness
+kultivait cutover --model <distillate> [--yes]    # flip live preprocessor + print rollback
+```
+
 `distill corpus [--dry-run]` prints a preview of the anchor set and the
 permanent held-out roster. The corpus files themselves are written by
 `distill generate`. Tier labels follow a strict order of trust: human toll
