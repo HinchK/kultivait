@@ -98,6 +98,45 @@ def render_preparation(state, width: int = 80) -> Panel:
     )
 
 
+def render_runtime(state, width: int = 80) -> Panel:
+    """The consent card: nothing is serving, ollama is installed — which
+    runtime should kultivait use? Starting anything waits for this answer."""
+    card_w = _card_width(width)
+    lines = []
+    win_start, win_stop = visible_window(state.selected, len(state.rows))
+    for i, row in enumerate(state.rows):
+        if not win_start <= i < win_stop:
+            continue
+        on = i == state.selected
+        marker = "› " if on else "  "
+        label = Text.assemble(
+            (marker, "bold green" if on else "dim"),
+            (row.label, "bold" if on else ""),
+        )
+        lines.append((label, Text(row.sub, style="dim")))
+    blocks = [
+        Text("NOTHING IS SERVING — WHICH RUNTIME?", style="bold dim"),
+        _rows_grid(lines),
+        Text(),
+    ]
+    op = state.operation
+    if op is not None and op.tag == "use_ollama":
+        blocks.append(Text("⠋ starting ollama…", style="bold green"))
+        hint = Text("Starting ollama…", style="dim")
+    elif op is None and state.notice is not None:
+        blocks.append(Text(state.notice.message, style="yellow"))
+        hint = Text("Enter retry · Esc skip for now", style="dim")
+    else:
+        hint = Text("up/down choose · Enter confirms · Esc skip for now", style="dim")
+    return Panel(
+        Group(*blocks, hint),
+        title="Choose your runtime",
+        border_style="green",
+        width=card_w,
+        padding=(0, 2),
+    )
+
+
 def _rows_grid(lines) -> "Table":
     """Marker+label left, meta right — aligned columns read like a list;
     free-form Text lines drifted into a ragged blob."""
@@ -244,6 +283,8 @@ def render_closing(width: int = 80) -> Panel:
 def render(state, samples=(), width: int = 80):
     if state.phase == "preparation":
         return render_preparation(state, width=width)
+    if state.phase == "runtime":
+        return render_runtime(state, width=width)
     if state.phase == "closing":
         return render_closing(width=width)
     return render_chooser(state, samples=samples, width=width)
@@ -290,23 +331,14 @@ class RealDriver:
         emit("hardware", DONE, detail)
         emit("runtime", RUNNING)
         runtime = self._probe()
-        if runtime is None and self._which("ollama"):
-            # nothing is serving and ollama is installed: start it (brew
-            # services) so its models can be offered alongside the gardens
-            emit("runtime", RUNNING, "starting ollama…")
-            if (
-                runtimes.start_ollama(
-                    run_cmd=self._run_cmd, popen=self._popen,
-                    http_get=self._http_get, which=self._which,
-                )
-                == "up"
-            ):
-                runtime = "ollama"
-                emit("runtime", DONE, "ollama (started)")
-            else:
-                emit("runtime", FAILED, "ollama installed but would not start")
+        if runtime is not None:
+            emit("runtime", DONE, runtime)
+        elif self._which("ollama"):
+            # installed but idle: a start is the user's call (the runtime
+            # card asks), never the checklist's — no subprocess from prepare
+            emit("runtime", DONE, "none running · ollama available")
         else:
-            emit("runtime", DONE, runtime or "none running")
+            emit("runtime", DONE, "none running")
         models, sizes = [], {}
         if runtime:
             emit("survey", RUNNING)
@@ -462,6 +494,33 @@ class RealDriver:
             )
         )
 
+    def use_ollama(self, post) -> None:
+        """The consented start behind the runtime card. Nothing was serving
+        (that's why the card appeared), so there is nothing to stop first —
+        start ollama, survey it, and hand the chooser a fresh prep."""
+        if (
+            runtimes.start_ollama(
+                run_cmd=self._run_cmd, popen=self._popen,
+                http_get=self._http_get, which=self._which,
+            )
+            != "up"
+        ):
+            post(("op_done", "use_ollama", False, "ollama would not start"))
+            return
+        models, sizes = [], {}
+        try:
+            models, sizes = self._survey("ollama")
+        except Exception:
+            pass  # the server answered /api/tags moments ago; an empty list still lands
+        post(
+            (
+                "runtime_started",
+                dataclasses.replace(
+                    self._prep, runtime="ollama", models=tuple(models), sizes=sizes
+                ),
+            )
+        )
+
 
 def _spawn_thread(fn) -> None:
     threading.Thread(target=fn, daemon=True).start()
@@ -507,6 +566,9 @@ def _sync(state, driver, spawn, post, stop: threading.Event, spawned: dict) -> N
     elif tag == "switch" and spawned["tag"] != "switch":
         spawn(lambda: driver.switch_to_ollama(post=post))
         spawned["tag"] = "switch"
+    elif tag == "use_ollama" and spawned["tag"] != "use_ollama":
+        spawn(lambda: driver.use_ollama(post=post))
+        spawned["tag"] = "use_ollama"
     if op is None and spawned["tag"] is not None:
         if state.stop_download:
             stop.set()
