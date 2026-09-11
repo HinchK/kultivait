@@ -303,7 +303,17 @@ class LlamaCppBackend:
             json=payload,
             timeout=300,
         ) as r:
-            r.raise_for_status()
+            if r.is_error:
+                # read while the stream is open — once this generator
+                # unwinds past the with-block the body is unreadable and
+                # the provider's reason is lost with it
+                try:
+                    body = r.read()
+                    err = json.loads(body).get("error") or {}
+                    why = err.get("message") or body.decode("utf-8", "replace")[:200]
+                except Exception:
+                    why = ""
+                raise RuntimeError(f"llama-server {r.status_code}: {why}".strip())
             for line in r.iter_lines():
                 line = line.strip()
                 if not line.startswith("data:"):
