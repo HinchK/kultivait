@@ -400,3 +400,42 @@ def test_cli_backend_stream_passes_effort_kwargs(monkeypatch):
     ]
 
 
+
+
+def test_llamacpp_stream_error_carries_provider_reason(monkeypatch):
+    """A context-overflow 400 must carry llama-server's own message out of
+    the stream — the body is unreadable anywhere else (the generator's
+    with-block is gone by the time server.py renders the error)."""
+    import json as _json
+
+    import httpx as _hx
+    import pytest as _pytest
+
+    from kultivait.backends import LlamaCppBackend
+
+    body = _json.dumps(
+        {"error": {"code": 400, "message": "request (20362 tokens) exceeds the available context size (16384 tokens)"}}
+    ).encode()
+
+    class _Resp:
+        status_code = 400
+        is_error = True
+
+        def read(self):
+            return body
+
+    class _Ctx:
+        def __enter__(self):
+            return _Resp()
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(_hx, "stream", lambda *a, **k: _Ctx())
+    gen = LlamaCppBackend("m", "http://localhost:8080").stream(
+        [{"role": "user", "content": "x"}]
+    )
+    with _pytest.raises(RuntimeError) as ei:
+        next(gen)
+    assert "llama-server 400" in str(ei.value)
+    assert "exceeds the available context size" in str(ei.value)

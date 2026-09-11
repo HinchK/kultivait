@@ -1,6 +1,7 @@
 """OpenAI-compatible proxy: weigh locally, route deliberately, tally everything."""
 
 import hashlib
+import itertools
 import json
 import os
 import time
@@ -11,7 +12,7 @@ import httpx
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 load_dotenv()
 
@@ -248,6 +249,17 @@ def create_app(
 
         _centroids.maybe_shadow_classify(vec, decision)
         return decision
+
+    def _classify_or_degrade(messages: list[dict]) -> "Decision":
+        try:
+            return _classify(messages)
+        except Exception:
+            # an embedder that can't take the prompt (e.g. one message over
+            # its context) is a routing hiccup, not a dead proxy — degrade
+            # to the local floor with a fat margin and let dispatch do its job
+            return Decision(
+                tier=router.capability_order[0], margin=1.0, escalated=False
+            )
 
     def _resolve_tier(tier: str, tools: "list | None") -> "tuple[str, str | None]":
         """Returns (served_tier, fallback_reason). Falls back when the
@@ -572,18 +584,40 @@ def create_app(
                 continue
         raise last_exc
 
+    def _provider_error_text(exc: Exception) -> str:
+        detail = ""
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                # streaming responses must be read before the context closes;
+                # if that window is gone, fall back to the generic text
+                body = resp.read()
+                err = (json.loads(body) or {}).get("error") or {}
+                detail = err.get("message") or body.decode("utf-8", "replace")[:200]
+            except Exception:
+                detail = ""
+        suffix = f" — {detail}" if detail else ""
+        return f"[kultivait] dispatch failed on every tier ({exc}{suffix})"
+
     def _dispatch_stream(route_info: dict, tools: list[dict] | None):
         tier = route_info["tier"]
         route_choice = route_info.get("route_choice") or ""
         is_human_pick = route_choice.startswith("human:frontier:")
 
         if not is_human_pick:
-            return tier, backends[tier].stream(
+            # single-tier contract: a provider error surfaces to the client
+            # (sse() renders it in-band) rather than silently re-tiering —
+            # unbounded failover is a human-pick privilege, kept below
+            stream_iter = backends[tier].stream(
                 route_info["dispatch_messages"],
                 tools=tools,
                 effort_flags=route_info["effort_flags"],
                 model_override=route_info["model_override"],
             )
+            # prime: stream() is a generator, so its connection + status
+            # check only execute at the first next()
+            first = next(stream_iter)
+            return tier, itertools.chain([first], stream_iter)
 
         ranking = [tier]
         for name in reversed(router.capability_order):
@@ -600,19 +634,23 @@ def create_app(
                     effort_flags=route_info["effort_flags"],
                     model_override=route_info["model_override"],
                 )
-                if candidate != tier:
-                    route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"
-                return candidate, stream_iter
+                # prime inside the try: stream() is a generator, so its
+                # connection + status check — the provider errors fallback
+                # exists for — only execute at the first next()
+                first = next(stream_iter)
             except Exception as e:
                 last_exc = e
                 continue
+            if candidate != tier:
+                route_info["meta"]["fallback_reason"] = f"provider_error:{tier}"
+            return candidate, itertools.chain([first], stream_iter)
         raise last_exc
 
     @app.post("/v1/chat/completions")
     def chat_completions(body: dict, request: Request):
         messages = _normalize(body.get("messages", []))
         tools = body.get("tools")
-        decision = _classify(messages)
+        decision = _classify_or_degrade(messages)
         fingerprint = _conversation_fingerprint(messages)
 
         route = _resolve_route(messages, tools, decision, fingerprint)
@@ -638,30 +676,44 @@ def create_app(
             def sse():
                 yield chunk({"role": "assistant"})
                 t_dispatch = time.time()
-                actual_tier, stream_iter = _dispatch_stream(route, tools)
-                for item in stream_iter:
-                    if isinstance(item, Completion):
-                        _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
-                        if item.tool_calls:
-                            yield chunk(
-                                {
-                                    "tool_calls": [
-                                        {**tc, "index": i}
-                                        for i, tc in enumerate(item.tool_calls)
-                                    ]
-                                }
-                            )
-                            yield chunk({}, finish="tool_calls")
+                try:
+                    actual_tier, stream_iter = _dispatch_stream(route, tools)
+                    for item in stream_iter:
+                        if isinstance(item, Completion):
+                            _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
+                            if item.tool_calls:
+                                yield chunk(
+                                    {
+                                        "tool_calls": [
+                                            {**tc, "index": i}
+                                            for i, tc in enumerate(item.tool_calls)
+                                        ]
+                                    }
+                                )
+                                yield chunk({}, finish="tool_calls")
+                            else:
+                                yield chunk({}, finish="stop")
                         else:
-                            yield chunk({}, finish="stop")
-                    else:
-                        yield chunk({"content": item})
-                yield "data: [DONE]\n\n"
+                            yield chunk({"content": item})
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    # the response is committed by now — the only clean exit
+                    # is an in-band error chunk, never an ASGI traceback that
+                    # truncates the client's stream
+                    yield chunk({"content": _provider_error_text(e)}, finish="stop")
+                    yield "data: [DONE]\n\n"
 
             return StreamingResponse(sse(), media_type="text/event-stream")
 
         t_dispatch = time.time()
-        actual_tier, completion = _dispatch_complete(route, tools)
+        try:
+            actual_tier, completion = _dispatch_complete(route, tools)
+        except Exception as e:
+            # provider error pre-response: OpenAI-shaped 502, not a raw 500
+            return JSONResponse(
+                status_code=502,
+                content={"error": {"message": _provider_error_text(e), "type": "provider_error"}},
+            )
         _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
         message: dict = {"role": "assistant", "content": completion.text or None}
         if completion.tool_calls:
@@ -693,7 +745,7 @@ def create_app(
         system = body.get("system")
         if system:
             messages = [{"role": "system", "content": _text_of(system)}, *messages]
-        decision = _classify(messages)
+        decision = _classify_or_degrade(messages)
         fingerprint = _conversation_fingerprint(messages)
 
         route = _resolve_route(messages, tools, decision, fingerprint)
@@ -708,7 +760,17 @@ def create_app(
 
             def sse():
                 t_dispatch = time.time()
-                actual_tier, stream_iter = _dispatch_stream(route, tools)
+                try:
+                    actual_tier, stream_iter = _dispatch_stream(route, tools)
+                except Exception as e:
+                    # headers are committed once the generator runs — surface
+                    # the provider error as an Anthropic error event instead
+                    # of an ASGI traceback that truncates the stream
+                    yield event(
+                        "error",
+                        {"error": {"type": "api_error", "message": _provider_error_text(e)}},
+                    )
+                    return
                 yield event(
                     "message_start",
                     {
@@ -791,7 +853,17 @@ def create_app(
             return StreamingResponse(sse(), media_type="text/event-stream")
 
         t_dispatch = time.time()
-        actual_tier, completion = _dispatch_complete(route, tools)
+        try:
+            actual_tier, completion = _dispatch_complete(route, tools)
+        except Exception as e:
+            # provider error pre-response: Anthropic-shaped 502, not a raw 500
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "type": "error",
+                    "error": {"type": "api_error", "message": _provider_error_text(e)},
+                },
+            )
         _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
         content_blocks: list[dict] = []
         if completion.text:

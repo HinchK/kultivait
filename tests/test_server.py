@@ -1203,3 +1203,172 @@ def test_human_toll_pick_failover_across_capable_ranking(tmp_path):
 
 
 
+
+def _sse_content(resp) -> str:
+    """Concatenated delta contents from a streamed response."""
+    return "".join(
+        d["choices"][0]["delta"].get("content", "")
+        for d in parse_sse(resp.text)
+        if isinstance(d, dict) and d.get("choices")
+    )
+
+
+# --- provider errors mid-relay: fallback + clean SSE, never an ASGI crash ----
+
+
+def _overflow_backend(name="llama3.1:8b", local=True):
+    """llama-server with a 16K ctx: the HTTP call 400s when the stream
+    generator is first consumed — generator laziness is the failure mode
+    under test (a prompt bigger than the context kills the SSE relay)."""
+    import httpx
+
+    def _overflow_error():
+        req = httpx.Request("POST", "http://localhost:8080/v1/chat/completions")
+        resp = httpx.Response(
+            400, request=req,
+            json={"error": {"message": "request (20362 tokens) exceeds the available context size (16384 tokens)"}},
+        )
+        return httpx.HTTPStatusError(
+            "Client error '400 Bad Request' for url 'http://localhost:8080/v1/chat/completions'",
+            request=req, response=resp,
+        )
+
+    class Overflowing(FakeBackend):
+        def stream(self, messages, tools=None, effort_flags=None, model_override=None, **kwargs):
+            self.calls.append(messages)
+            self.tools_seen.append(tools)
+            raise _overflow_error()
+            yield  # pragma: no cover — makes this a generator function
+
+        def complete(self, messages, tools=None, effort_flags=None, model_override=None, **kwargs):
+            self.calls.append(messages)
+            self.tools_seen.append(tools)
+            raise _overflow_error()
+
+    return Overflowing(name, local=local)
+
+
+def _bare_client(tmp_path, backends, embed=lambda text: np.array([1.0, 0.0]),
+                 preprocess_generate=None, tollbooth=None):
+    app = create_app(
+        router=Router(centroids=CENTROIDS, capability_order=ORDER),
+        embed=embed,
+        backends=backends,
+        ledger=Ledger(tmp_path / "ledger.jsonl"),
+        gate=Gate(generate=lambda p: "brief", compost_dir=tmp_path / "compost"),
+        escalations=EscalationStore(tmp_path / "escalations"),
+        preprocess_generate=preprocess_generate,
+        tollbooth=tollbooth,
+    )
+    return TestClient(app)
+
+
+def test_stream_provider_error_falls_back_to_next_tier(tmp_path):
+    """Failover is a human-pick privilege: the tollbooth-answered frontier
+    target 400s (context overflow), so the ranking hands the request to the
+    capable local tier instead of crashing the SSE relay."""
+    import json as _json
+    from kultivait.tollbooth import TollboothQueue
+
+    sample_res = {
+        "analysis": {"task_type": "debugging", "complexity": 5, "signals": []},
+        "rewrite": "Contested prompt rewritten",
+        "judge": {
+            "local_sufficient": False,
+            "confidence": 0.80,
+            "targets": [{"target": "claude", "fit": 0.75, "effort": "medium"}],
+        },
+    }
+    tollbooth = TollboothQueue(
+        queue_path=tmp_path / "pending_tolls.jsonl", default_timeout_s=5.0, enabled=True,
+    )
+    tollbooth.register_presence("tty")
+    overflow = _overflow_backend("claude", local=False)
+    local = FakeBackend("llama3.1:8b", local=True)
+    client = _bare_client(
+        tmp_path,
+        {"llama3.1:8b": local, "claude": overflow},
+        embed=lambda text: np.array([0.71, 0.70]),  # contested
+        preprocess_generate=lambda m, p: (_json.dumps(sample_res), 0.05),
+        tollbooth=tollbooth,
+    )
+
+    def answer_frontier():
+        for _ in range(50):
+            time.sleep(0.01)
+            if tollbooth._pending:
+                tid = list(tollbooth._pending.keys())[0]
+                tollbooth.answer_ticket(tid, "claude")
+                return
+
+    t = threading.Thread(target=answer_frontier)
+    t.start()
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "stream": True, "messages": [{"role": "user", "content": "fix my bug"}]},
+    )
+    t.join()
+    assert resp.status_code == 200
+    assert resp.text.endswith("data: [DONE]\n\n")
+    assert "answered by llama3.1:8b" in _sse_content(resp)
+    assert overflow.calls  # the frontier pick was tried and failed over
+
+
+def test_stream_provider_error_without_fallback_ends_cleanly(tmp_path):
+    """Tools pin the request to the local tier (this cloud backend can't take
+    them); when it 400s the stream must still terminate cleanly carrying the
+    backend's own diagnostic — not an ASGI traceback and a dead connection."""
+    overflow = _overflow_backend()
+    client = _bare_client(
+        tmp_path,
+        {"llama3.1:8b": overflow, "claude": FakeBackend("claude", local=False)},
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "stream": True, "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert resp.status_code == 200
+    assert resp.text.endswith("data: [DONE]\n\n")
+    assert "exceeds the available context size" in resp.text  # llama-server's own reason, surfaced
+
+
+def test_nonstream_provider_error_returns_error_json(tmp_path):
+    """The non-streaming twin: a provider 400 must come back as an
+    OpenAI-shaped 502, not a raw 500 with no body to debug."""
+    overflow = _overflow_backend()
+    client = _bare_client(
+        tmp_path,
+        {"llama3.1:8b": overflow, "claude": FakeBackend("claude", local=False)},
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert resp.status_code == 502
+    assert "exceeds the available context size" in resp.json()["error"]["message"]
+
+
+def test_embed_failure_degrades_to_local_routing(tmp_path):
+    """A last user message too big for the embedder must not 500 the proxy —
+    routing degrades to the local floor and the request still completes."""
+    import httpx
+
+    def broken_embed(text):
+        req = httpx.Request("POST", "http://localhost:8080/v1/embeddings")
+        resp = httpx.Response(400, request=req, json={"error": {"message": "too long"}})
+        raise httpx.HTTPStatusError("Client error '400 Bad Request'", request=req, response=resp)
+
+    client = _bare_client(
+        tmp_path,
+        {
+            "llama3.1:8b": FakeBackend("llama3.1:8b", local=True),
+            "claude": FakeBackend("claude", local=False),
+        },
+        embed=broken_embed,
+    )
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "stream": True, "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert resp.status_code == 200
+    assert "answered by llama3.1:8b" in _sse_content(resp)
