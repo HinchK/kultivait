@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `kultivait init` setup no longer starts an idle ollama on its own. When
+  ollama is installed but nothing is serving, a "Choose your runtime" card
+  asks first — ollama, the llama.cpp garden, or Esc to start nothing.
+
 ## [0.2.0] - 2026-09-10
 
 ### Added
@@ -67,5 +75,6 @@ First public release.
   canonical links, reproduced claims, secrets sweep) recorded at
   `docs/launch-checklist-2026-09-03.md`.
 
+[Unreleased]: https://github.com/Standard-Pentest/kultivait/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Standard-Pentest/kultivait/releases/tag/v0.1.0

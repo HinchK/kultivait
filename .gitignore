@@ -19,6 +19,7 @@ wheels/
 .env
 
 # Activity & Testing Logs
+STATE.md
 herdr-activity-report.md
 kultivait-testing-log.md
 opencode.json

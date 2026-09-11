@@ -266,7 +266,7 @@ Per the repository's convention, all tests execute hermetically without live sub
 
 - Direct implementation of any layer (this design spec concludes wayfinder map #4; implementation is scheduled for a dedicated build effort).
 - Autonomous CLI worker supervision or spawning (kultivait is a proxy, not an orchestrator; client agent loops retain control).
-- Anthropic `/v1/messages` tool calling support. *(Has since shipped — see README "Endpoints & clients".)*
+- Anthropic `/v1/messages` tool calling support. *(Has since shipped — see [Connecting your tools](../../guides/connecting.md#endpoints).)*
 - Altering verdict derivation thresholds ($[0.65, 0.85)$ confirmed by held-out eval #14).
 - System-level daemon management (LaunchAgent / systemd process supervision).
 - Learned-from-ledger automated dynamic threshold tuning.
