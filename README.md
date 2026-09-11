@@ -53,8 +53,8 @@ kultivait harvest   # watch the savings grow
 checklist, then a chooser of gardens this machine can grow. If ollama is
 installed but nothing is serving, the screen asks which runtime to use
 before starting anything — kultivait never starts ollama on its own. It
-detects whatever you have — your smallest capable model becomes the simple tier,
-your largest becomes the reasoning tier, `claude`/`agy`/`gemini` CLIs
+detects whatever you have — your smallest capable model becomes the simple
+tier, your largest becomes the reasoning tier, `claude`/`agy`/`gemini` CLIs
 become cloud tiers if present. **No cloud CLIs? Local-only mode is a
 first-class citizen**: cloud-worthy prompts are still recognized, served by
 your best local model, and archived — `kultivait escalations --brief` hands
@@ -132,7 +132,7 @@ kultivait route "why does this test deadlock?"    # dry-run a classification
 kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
 kultivait gates install --claude           # ambient gates: prune at phase boundaries automatically
 kultivait escalations [--brief]    # cloud-worthy prompts served locally
-kultivait harvest [--json]         # cumulative savings (plus estimated local energy, in Wh)
+kultivait harvest [--json]         # cumulative savings (+ est. local Wh once local dispatches exist)
 kultivait centroids [learn|status|cutover]        # learned routing centroids from your history (human-gated cutover)
 kultivait eval [--target <t>] [--json]            # direct-to-backend capability eval (alias: benchmark)
 kultivait distill corpus [--dry-run]              # preview anchor set & held-out roster
