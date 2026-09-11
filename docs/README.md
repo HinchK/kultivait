@@ -28,6 +28,10 @@ Locked decisions that define system boundaries, cost models, and routing contrac
 - [docs/adr/0016-teacher-selection-and-synthetic-policy.md](adr/0016-teacher-selection-and-synthetic-policy.md) — Dual-teacher synthetic data generation and filtering (for data synthesis engineers)
 - [docs/adr/0017-distillate-deployment-and-shadow-rollout.md](adr/0017-distillate-deployment-and-shadow-rollout.md) — Distillate shadow serving and human-in-the-loop cutover (for proxy operators)
 - [docs/adr/0018-cache-breakpoints.md](adr/0018-cache-breakpoints.md) — Proxy-owned deterministic prompt cache breakpoints (for prompt caching maintainers)
+- [docs/adr/0019-ambient-gates.md](adr/0019-ambient-gates.md) — Hook-driven ambient phase-gates that never block the host (for agent-framework integrators)
+- [docs/adr/0020-energy-estimation.md](adr/0020-energy-estimation.md) — Estimated local-compute watt-hours from a measured coefficient table (for ledger maintainers)
+- [docs/adr/0021-learned-centroids.md](adr/0021-learned-centroids.md) — Offline centroid recalibration with shadow, safety eval, and human cutover (for routing engineers)
+- [docs/adr/0022-planted-fact-eval.md](adr/0022-planted-fact-eval.md) — Deterministic planted-fact scoring of distilled briefs (for evaluation developers)
 
 ---
 
@@ -47,6 +51,7 @@ Historical design blueprints and empirical findings documenting the implementati
 - [docs/superpowers/specs/2026-09-08-ambient-gates-design.md](superpowers/specs/2026-09-08-ambient-gates-design.md) — Design for framework-agnostic ambient phase-gates (`gates fire`, Claude Code adapter, install surface) (for contributors)
 - [docs/superpowers/specs/2026-09-09-energy-estimation-design.md](superpowers/specs/2026-09-09-energy-estimation-design.md) — Design for local-compute Wh estimation (coefficient table, ledger fields, invariants) (for contributors)
 - [docs/superpowers/specs/2026-09-09-learned-centroids-design.md](superpowers/specs/2026-09-09-learned-centroids-design.md) — Design for offline centroid recalibration from routing history (trust-weighted blend, shadow, cutover) (for contributors)
+- [docs/superpowers/specs/2026-09-10-runtime-consent-design.md](superpowers/specs/2026-09-10-runtime-consent-design.md) — Design for the setup screen's "Choose your runtime" card, so ollama is never started without consent (for TUI developers)
 
 ---
 
@@ -67,14 +72,18 @@ Verified empirical snapshots validating public documentation claims against runn
 - [docs/research/2026-09-03-docs-curation-audit.md](research/2026-09-03-docs-curation-audit.md) — Comprehensive audit and disposition register of all repository documentation (for documentation maintainers)
 - [docs/research/2026-09-04-claude-hooks-api.md](research/2026-09-04-claude-hooks-api.md) — Verified Claude Code hooks API register grounding the ambient-gates design (for contributors)
 - [docs/research/2026-09-08-ambient-gates-dogfood.md](research/2026-09-08-ambient-gates-dogfood.md) — Herd dogfooding verdict: live end-to-end gate loop with consumption evidence (for maintainers)
+- [docs/research/2026-09-09-local-inference-energy.md](research/2026-09-09-local-inference-energy.md) — Sourced energy figures and measurement methods behind the Wh coefficient table (for contributors)
+- [docs/research/2026-09-09-centroid-signals.md](research/2026-09-09-centroid-signals.md) — Inventory of the routing signals available for centroid learning, and shadow mechanics (for contributors)
+- [docs/research/2026-09-09-centroid-dogfood.md](research/2026-09-09-centroid-dogfood.md) — Learned-centroids dogfood verdict: loop live end-to-end, shadow-only, no cutover (for maintainers)
 
 ---
 
-## 5. Launch Checklist
+## 5. Release Records
 
-Release readiness checklists and verification runs.
+Release readiness checklists, verification runs, and the docs curation record.
 
 - [docs/launch-checklist-2026-09-03.md](launch-checklist-2026-09-03.md) — Six-axis launch qualification record for v0.1.0 release (for release managers)
+- [docs/launch-checklist-2026-09-10.md](launch-checklist-2026-09-10.md) — Six-axis launch qualification record for v0.2.0 release (for release managers)
 - [docs/curation-manifest-2026-09-03.md](curation-manifest-2026-09-03.md) — Dated record of this tree's curation: every file's disposition and the reproduce greps (for maintainers)
 
 ---

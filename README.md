@@ -50,11 +50,10 @@ kultivait harvest   # watch the savings grow
 ```
 
 `init` opens an interactive setup screen on first run: a preparation
-checklist, then a chooser of gardens this machine can grow. If nothing is
-serving but ollama (and/or llama.cpp) is installed, the screen asks which
-runtime to use before starting anything — kultivait never starts ollama on
-its own. It detects
-whatever you have — your smallest capable model becomes the simple tier,
+checklist, then a chooser of gardens this machine can grow. If ollama is
+installed but nothing is serving, the screen asks which runtime to use
+before starting anything — kultivait never starts ollama on its own. It
+detects whatever you have — your smallest capable model becomes the simple tier,
 your largest becomes the reasoning tier, `claude`/`agy`/`gemini` CLIs
 become cloud tiers if present. **No cloud CLIs? Local-only mode is a
 first-class citizen**: cloud-worthy prompts are still recognized, served by
@@ -133,7 +132,9 @@ kultivait route "why does this test deadlock?"    # dry-run a classification
 kultivait prune --from explore --to plan transcript.txt   # phase-gate brief
 kultivait gates install --claude           # ambient gates: prune at phase boundaries automatically
 kultivait escalations [--brief]    # cloud-worthy prompts served locally
-kultivait harvest [--json]         # cumulative savings
+kultivait harvest [--json]         # cumulative savings (plus estimated local energy, in Wh)
+kultivait centroids [learn|status|cutover]        # learned routing centroids from your history (human-gated cutover)
+kultivait eval [--target <t>] [--json]            # direct-to-backend capability eval (alias: benchmark)
 kultivait distill corpus [--dry-run]              # preview anchor set & held-out roster
 kultivait distill generate --live                 # dual-teacher synthetic data generation
 kultivait distill train --base <base> --corpus-dir <dir>  # train QLoRA under resource ladder
@@ -512,9 +513,14 @@ sudo: raising the GPU memory cap asks again, in-screen, before sudo ever
 prompts for a password.
 
 **Ollama and llama.cpp take turns — never both up.** If ollama is
-installed but not serving, preparation starts it for you (`brew services
-start ollama`) and lists its models as offerings, each with a parameter
-analysis. Picking a llama.cpp garden stops ollama (and verifies the port
+installed but nothing is serving, a "Choose your runtime" card appears
+after the hardware review: pick ollama and the screen starts it (`brew
+services start ollama`) and lists its models as offerings, each with a
+parameter analysis; pick llama.cpp (offered when this Mac can grow the
+tuned garden) and you go straight to the garden chooser; Esc moves on
+having started nothing. Setting `KULTIVAIT_RUNTIME`
+counts as having answered, so the card is skipped. Picking a llama.cpp
+garden while ollama is serving stops ollama (and verifies the port
 went quiet) *before* llama-server launches; a "Switch to ollama" row does
 the reverse. A runtime that refuses to stop aborts the pivot rather than
 risk both serving at once.
@@ -584,13 +590,12 @@ a coordinated multi-agent herd (looper, architect, docs and GitHub
 workers) with milestone maps on the issue tracker — tickets and Wayfinder
 maps live here on GitHub.
 
-## Roadmap
+## What's shipped
 
-- Distillation-quality eval harness: automated planted-fact recall scoring
-  across transcripts (recall spans 86.9–100% across
-  `experiments/distill_eval/results.json` models today)
-- Watt-hour estimation in the ledger
-- Learned centroids from your own routing history
+Release notes live in [CHANGELOG.md](CHANGELOG.md). v0.2.0 added ambient
+phase-gates, estimated watt-hours in the ledger, learned routing centroids
+(shadow-only until a human cuts over), and the planted-fact distillation
+eval behind the table above.
 
 ## License
 

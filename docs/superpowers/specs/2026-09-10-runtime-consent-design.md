@@ -9,7 +9,8 @@ is serving, the screen asks which runtime to use *after* the hardware review.
 
 `RealDriver.prepare()` auto-starts idle ollama (`brew services start ollama`)
 mid-checklist, before any consent, and its brew output lands inside the Rich
-`Live` window (also a terminal-garbling suspect — see STATE.md open items).
+`Live` window — uncaptured subprocess output there is also a suspect in a
+reported screen-garbling bug during model downloads.
 
 ## Design
 
