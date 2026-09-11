@@ -1,12 +1,24 @@
 # Documentation Index
 
-This directory houses the design history, architectural decisions, operational runbooks, evaluation registers, and agent conventions for **kultivait**.
+This directory houses the user guides, design history, architectural decisions, operational runbooks, evaluation registers, and agent conventions for **kultivait**.
 
 Documentation in kultivait serves developers exploring or extending the proxy, contributors integrating new tools, and autonomous agent workers maintaining system invariants. All design choices are recorded as immutable Architecture Decision Records (ADRs) or dated specifications.
 
 ---
 
-## 1. Architecture Decision Records
+## 1. Guides
+
+How to set up and use kultivait's features beyond the quickstart in the [top-level README](../README.md).
+
+- [docs/guides/setup.md](guides/setup.md) — The setup screen, the zero-to-local bootstrap, ollama and llama.cpp runtimes, and download integrity (for users)
+- [docs/guides/connecting.md](guides/connecting.md) — Endpoints, the Pi coding agent, and the zero-config adoption paths (for users)
+- [docs/guides/api-providers.md](guides/api-providers.md) — Direct Anthropic, OpenAI, and OpenRouter tiers, credentials, and prompt caching (for users)
+- [docs/guides/gates-and-escalations.md](guides/gates-and-escalations.md) — `prune`, ambient gates, the compost pile, and escalation briefs (for users)
+- [docs/guides/distillation.md](guides/distillation.md) — The distillation pipeline, shadow serving, and human cutover (for operators)
+
+---
+
+## 2. Architecture Decision Records
 
 Locked decisions that define system boundaries, cost models, and routing contracts. See [docs/adr/README.md](adr/README.md) for the complete index and decision summaries.
 
@@ -35,7 +47,7 @@ Locked decisions that define system boundaries, cost models, and routing contrac
 
 ---
 
-## 2. Design Specs & Findings
+## 3. Design Specs & Findings
 
 Historical design blueprints and empirical findings documenting the implementation of major features.
 
@@ -55,7 +67,7 @@ Historical design blueprints and empirical findings documenting the implementati
 
 ---
 
-## 3. Operational Runbooks
+## 4. Operational Runbooks
 
 Step-by-step procedures for operating and troubleshooting runtime proxy features.
 
@@ -64,7 +76,7 @@ Step-by-step procedures for operating and troubleshooting runtime proxy features
 
 ---
 
-## 4. Research Registers
+## 5. Research Registers
 
 Verified empirical snapshots validating public documentation claims against running code.
 
@@ -78,7 +90,7 @@ Verified empirical snapshots validating public documentation claims against runn
 
 ---
 
-## 5. Release Records
+## 6. Release Records
 
 Release readiness checklists, verification runs, and the docs curation record.
 
@@ -88,7 +100,7 @@ Release readiness checklists, verification runs, and the docs curation record.
 
 ---
 
-## 6. Agent Conventions
+## 7. Agent Conventions
 
 Conventions and operational protocols for automated agent workers and herd members.
 
