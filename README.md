@@ -50,7 +50,10 @@ kultivait harvest   # watch the savings grow
 ```
 
 `init` opens an interactive setup screen on first run: a preparation
-checklist, then a chooser of gardens this machine can grow. It detects
+checklist, then a chooser of gardens this machine can grow. If nothing is
+serving but ollama (and/or llama.cpp) is installed, the screen asks which
+runtime to use before starting anything — kultivait never starts ollama on
+its own. It detects
 whatever you have — your smallest capable model becomes the simple tier,
 your largest becomes the reasoning tier, `claude`/`agy`/`gemini` CLIs
 become cloud tiers if present. **No cloud CLIs? Local-only mode is a

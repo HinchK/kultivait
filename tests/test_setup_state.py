@@ -340,3 +340,97 @@ def test_switch_failure_notifies_and_retries():
     assert state.retryable == "switch"
     assert "ollama would not start" in state.notice.message
     assert handle_key(state, "r").operation == Operation("switch")
+
+
+# --- runtime consent: ollama never starts unasked ------------------------------
+
+
+def _runtime_state(prep=None, allow=True):
+    """begin -> prep_done the way run_setup posts it, landing wherever the
+    machine routes: the runtime card when a choice is owed."""
+    prep = prep or Preparation(
+        runtime=None, plan=PLAN, have_llamacpp=True, have_brew=True, have_ollama=True
+    )
+    return handle_event(begin(first_run=True), ("prep_done", prep, allow))
+
+
+def test_prep_done_routes_to_runtime_card_when_ollama_installed_and_idle():
+    state = _runtime_state()
+    assert state.phase == "runtime"
+    assert [r.kind for r in state.rows] == ["use_llamacpp", "use_ollama"]
+    assert state.operation is None  # nothing started, nothing locked
+
+
+def test_prep_done_skips_runtime_card_when_no_choice_is_owed():
+    serving = Preparation(
+        runtime="ollama", models=("m",), sizes={}, plan=PLAN, have_ollama=True
+    )
+    assert _runtime_state(prep=serving).phase == "chooser"  # already up: survey it
+    llamacpp_only = Preparation(runtime=None, plan=PLAN, have_llamacpp=True, have_brew=True)
+    assert _runtime_state(prep=llamacpp_only).phase == "chooser"  # one path, no question
+    assert _runtime_state(allow=False).phase == "chooser"  # forced env = pre-answered
+
+
+def test_runtime_card_omits_llamacpp_row_when_plan_ineligible():
+    from kultivait.hardware import HardwareProfile, plan as make_plan
+
+    ineligible = make_plan(HardwareProfile("darwin", "Intel Mac", False, 16.0))
+    prep = Preparation(runtime=None, plan=ineligible, have_ollama=True)
+    state = _runtime_state(prep=prep)
+    assert state.phase == "runtime"
+    assert [r.kind for r in state.rows] == ["use_ollama"]  # still asks before starting
+
+
+def test_runtime_card_enter_ollama_locks_use_ollama_operation():
+    state = handle_key(_runtime_state(), "down")
+    state = handle_key(state, "enter")
+    assert state.operation == Operation("use_ollama")
+    assert state.phase == "runtime"
+    assert handle_key(state, "esc").operation == Operation("use_ollama")  # locked
+    assert handle_key(state, "esc").phase == "runtime"
+
+
+def test_runtime_card_enter_llamacpp_goes_straight_to_chooser():
+    state = handle_key(_runtime_state(), "enter")  # first row is use_llamacpp
+    assert state.phase == "chooser"
+    assert state.operation is None
+    assert [r.kind for r in state.rows][:2] == ["bundle", "single"]  # garden rows
+
+
+def test_runtime_card_esc_skips_to_chooser_having_started_nothing():
+    state = handle_key(_runtime_state(), "esc")
+    assert state.phase == "chooser"
+    assert state.prep.runtime is None  # nothing was started on the way through
+
+
+def test_runtime_started_resurveys_in_place():
+    state = handle_key(_runtime_state(), "down")
+    state = handle_key(state, "enter")
+    fresh = Preparation(runtime="ollama", models=("m1", "m2"), sizes={}, plan=PLAN)
+    state = handle_event(state, ("runtime_started", fresh))
+    assert state.phase == "chooser"
+    assert state.prep is fresh
+    assert state.operation is None
+    assert len(state.rows) >= 3  # gardens + both ollama models
+    assert state.selected == 0
+
+
+def test_use_ollama_failure_unlocks_card_with_notice_and_retries():
+    state = handle_key(_runtime_state(), "down")
+    state = handle_key(state, "enter")
+    state = handle_event(state, ("op_done", "use_ollama", False, "brew refused"))
+    assert state.phase == "runtime"
+    assert state.operation is None
+    assert "brew refused" in state.notice.message
+    state = handle_key(state, "enter")  # ollama still selected: retry re-locks
+    assert state.operation == Operation("use_ollama")
+    assert state.notice is None
+
+
+def test_runtime_card_movement_clamped():
+    state = handle_key(_runtime_state(), "down")
+    assert state.selected == 1
+    state = handle_key(state, "down")  # clamped at the last row
+    assert state.selected == 1
+    state = handle_key(state, "k")
+    assert state.selected == 0
