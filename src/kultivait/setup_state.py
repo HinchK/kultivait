@@ -5,8 +5,14 @@ Phases and lifecycle (no back-navigation; Esc and cancel are the only
 exits, exactly like magnitude):
 
     Closed --begin(first_run)--> Preparation{exit_kind = skip|close}
-    Preparation --prep_done--> Chooser{operation = None}
     Preparation --esc--> Closing(outcome = skipped|closed)
+    Preparation --prep_done--> Runtime{nothing serving + ollama installed}
+    Preparation --prep_done--> Chooser{operation = None}   (no choice needed)
+    Runtime + Enter(ollama) --> Runtime{StartingOllama, locked}
+    Runtime + Enter(llama.cpp) --> Chooser{garden rows}    (pure transition)
+    Runtime --esc--> Chooser{nothing started}
+    StartingOllama --runtime_started--> Chooser{fresh survey}
+    StartingOllama --fail--> Runtime{unlocked, notice; Enter retries}
     Chooser + Enter(download row) --> Chooser{Downloading, locked}
     Chooser + Enter(installed row) --> Closing(completed)
     Chooser + Enter(start row) --> Chooser{Starting, locked}
@@ -82,7 +88,7 @@ class Preparation:
 
 @dataclass(frozen=True)
 class SetupState:
-    phase: str = "closed"  # "closed" | "preparation" | "chooser" | "closing"
+    phase: str = "closed"  # "closed" | "preparation" | "runtime" | "chooser" | "closing"
     exit_kind: str = "skip"  # Esc label + write semantics: "skip" | "close"
     steps: tuple = ()
     prep: "Preparation | None" = None
@@ -207,6 +213,39 @@ def build_rows(prep: Preparation, allow_downloads: bool) -> tuple:
     return tuple(rows)
 
 
+def needs_runtime_choice(prep: Preparation, allow_downloads: bool) -> bool:
+    """The consent gate for the runtime card: ollama is installed, nothing is
+    serving, and no env-forced runtime already answered this question —
+    starting ollama is the user's call, never the preparation checklist's."""
+    return allow_downloads and prep.runtime is None and prep.have_ollama
+
+
+def build_runtime_rows(prep: Preparation) -> tuple:
+    """The runtime card's offerings. The llama.cpp row rides on the eligible
+    plan (its garden brew-installs llama.cpp under download consent); ollama
+    is offered whenever the card appears at all."""
+    rows = []
+    plan = prep.plan
+    if plan is not None and getattr(plan, "eligible", False):
+        total_gb = sum(m.approx_bytes for m in plan.models) / 2**30
+        rows.append(
+            ChooserRow(
+                kind="use_llamacpp",
+                label="llama.cpp — tuned garden for this Mac",
+                sub=f"{total_gb:.1f} GB · {len(plan.models)} models",
+                why=plan.reason,
+            )
+        )
+    rows.append(
+        ChooserRow(
+            kind="use_ollama",
+            label="ollama — models it already has",
+            sub="start it and list them",
+        )
+    )
+    return tuple(rows)
+
+
 def outcome_of(state: SetupState) -> SetupOutcome:
     runtime = None
     if state.started_llamacpp:
@@ -229,6 +268,29 @@ def handle_key(state: SetupState, key: str) -> SetupState:
         key = "esc"
     if state.phase == "preparation":
         return _skip_or_close(state) if key == "esc" else state
+    if state.phase == "runtime":
+        if state.operation is not None:
+            return state  # ollama is starting: locked, not even Esc
+        if key in ("up", "k"):
+            return replace(state, selected=max(0, state.selected - 1))
+        if key in ("down", "j"):
+            return replace(state, selected=min(max(len(state.rows) - 1, 0), state.selected + 1))
+        if key == "esc":  # skip the question without starting anything
+            return replace(
+                state, phase="chooser", rows=build_rows(state.prep, state.allow_downloads),
+                selected=0, notice=None,
+            )
+
+        if key == "enter" and state.rows:
+            row = state.rows[state.selected]
+            if row.kind == "use_ollama":
+                return replace(state, operation=Operation("use_ollama"), notice=None)
+            # llama.cpp needs no start here — the garden chooser is its path
+            return replace(
+                state, phase="chooser",
+                rows=build_rows(state.prep, state.allow_downloads), selected=0,
+            )
+        return state
     if state.phase != "chooser":
         return state
 
@@ -299,10 +361,28 @@ def handle_event(state: SetupState, event: tuple) -> SetupState:
     if tag == "prep":
         return prep_event(state, *event[1:])
     if tag == "prep_done":
-        prep, allow_downloads = event[1], event[2]
+        prep, allow = event[1], event[2]
+        if needs_runtime_choice(prep, allow):
+            return replace(
+                state, phase="runtime", prep=prep, rows=build_runtime_rows(prep),
+                allow_downloads=allow,
+            )
         return replace(
-            state, phase="chooser", prep=prep, rows=build_rows(prep, allow_downloads),
-            allow_downloads=allow_downloads,
+            state, phase="chooser", prep=prep, rows=build_rows(prep, allow),
+            allow_downloads=allow,
+        )
+    if tag == "runtime_started":
+        # the consented ollama start finished + surveyed: land in the chooser
+        prep = event[1]
+        return replace(
+            state,
+            phase="chooser",
+            prep=prep,
+            rows=build_rows(prep, state.allow_downloads),
+            selected=0,
+            operation=None,
+            notice=None,
+            retryable=None,
         )
     if tag == "switch_done":
         # the pivot completed: fresh survey, chooser rebuilt in place
@@ -354,5 +434,9 @@ def handle_event(state: SetupState, event: tuple) -> SetupState:
                 operation=None,
                 retryable="switch",
                 notice=Notice(f"{reason}\nr Retry · c Choose another"),
+            )
+        if which == "use_ollama" and not ok:
+            return replace(
+                state, operation=None, notice=Notice(reason or "ollama would not start")
             )
     return state

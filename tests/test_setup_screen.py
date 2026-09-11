@@ -415,39 +415,57 @@ def _exclusive_env(monkeypatch, order, *, ollama_up=False, llama_up=False,
     monkeypatch.setattr(r, "start_ollama", lambda **k: order.append("start_ollama") or start_ollama)
 
 
-def test_real_driver_prepare_starts_idle_ollama(monkeypatch):
-    state = {"up": False}
+def test_real_driver_prepare_never_starts_idle_ollama(monkeypatch):
+    """The consent rule: an installed-but-idle ollama is reported as
+    available, never started — starting is the runtime card's Enter."""
+    order = []
     monkeypatch.setattr(
         setup_screen.runtimes, "start_ollama",
-        lambda **k: state.__setitem__("up", True) or "up",
+        lambda **k: order.append("start_ollama") or "up",
     )
-
-    def probe():
-        return "ollama" if state["up"] else None
-
     driver = _driver(
         monkeypatch,
-        probe=probe,
-        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+        which=lambda c: "/bin/ollama" if c == "ollama" else "/bin/llama-server",
         survey=(["llama3.1:8b"], {"llama3.1:8b": 4_900_000_000}),
     )
     events = []
     prep = driver.prepare(lambda *ev: events.append(ev))
+    assert order == []  # no subprocess ever ran from the checklist
+    assert prep.runtime is None
+    assert prep.models == ()
+    assert prep.have_ollama is True  # the runtime card still gets offered
+    assert ("runtime", "done", "none running · ollama available") in events
+    assert ("survey", "done", "no runtime running") in events
+
+
+def test_real_driver_use_ollama_starts_surveys_and_posts_runtime_started(monkeypatch):
+    order = []
+    _exclusive_env(monkeypatch, order)  # nothing up: the card's precondition
+    driver = _driver(
+        monkeypatch,
+        which=lambda c: "/bin/ollama" if c == "ollama" else None,
+        survey=(["llama3.1:8b"], {"llama3.1:8b": 4_900_000_000}),
+    )
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.use_ollama(post=posts.append)
+    assert order == ["start_ollama"]  # nothing to stop: nothing was serving
+    assert posts[0][0] == "runtime_started"
+    prep = posts[0][1]
     assert prep.runtime == "ollama"
-    assert ("runtime", "done", "ollama (started)") in events
     assert prep.models == ("llama3.1:8b",)
 
 
-def test_real_driver_prepare_reports_ollama_that_wont_start(monkeypatch):
-    monkeypatch.setattr(setup_screen.runtimes, "start_ollama", lambda **k: "failed")
+def test_real_driver_use_ollama_failure_posts_op_done(monkeypatch):
+    _exclusive_env(monkeypatch, [], start_ollama="failed")
     driver = _driver(
-        monkeypatch, probe=lambda: None,
+        monkeypatch,
         which=lambda c: "/bin/ollama" if c == "ollama" else None,
     )
-    events = []
-    prep = driver.prepare(lambda *ev: events.append(ev))
-    assert ("runtime", "failed", "ollama installed but would not start") in events
-    assert prep.runtime is None
+    driver.prepare(lambda *ev: None)
+    posts = []
+    driver.use_ollama(post=posts.append)
+    assert posts == [("op_done", "use_ollama", False, "ollama would not start")]
 
 
 def test_real_driver_start_stops_ollama_before_llama_starts(monkeypatch):
@@ -600,3 +618,93 @@ def test_run_setup_pivot_llama_to_ollama_end_to_end():
     assert outcome.exit == "completed"
     assert outcome.runtime == "ollama"
     assert driver.calls == [("switch",)]
+
+
+# --- runtime consent: the card, the renderer, the loop -------------------------
+
+
+def _idle_ollama_prep():
+    return Preparation(
+        runtime=None, plan=PLAN, have_llamacpp=True, have_brew=True, have_ollama=True
+    )
+
+
+def test_render_runtime_card_rows_and_hint():
+    state = handle_event(begin(first_run=True), ("prep_done", _idle_ollama_prep(), True))
+    out = _plain(render(state, width=120))
+    assert "Choose your runtime" in out
+    assert "llama.cpp — tuned garden for this Mac" in out
+    assert "ollama" in out
+    assert "up/down choose · Enter confirms · Esc skip for now" in out
+    assert "›" in out  # selection marker rides the first row
+
+
+def test_render_runtime_starting_then_failure_notice():
+    state = handle_event(begin(first_run=True), ("prep_done", _idle_ollama_prep(), True))
+    state = handle_key(state, "down")
+    state = handle_key(state, "enter")
+    out = _plain(render(state, width=120))
+    assert "starting ollama" in out
+    state = handle_event(state, ("op_done", "use_ollama", False, "brew refused"))
+    out = _plain(render(state, width=120))
+    assert "brew refused" in out
+    assert "Enter retry" in out
+
+
+class RuntimeChoiceDriver(FakeDriver):
+    """Nothing serving, ollama installed: the runtime card appears first and
+    ollama only starts when the user picks it — never from prepare()."""
+
+    def __init__(self, fail_use=0):
+        super().__init__()
+        self.fail_use = fail_use
+
+    def prepare(self, emit):
+        emit("hardware", "done", "Apple M3 · 48 GB")
+        emit("runtime", "done", "none running · ollama available")
+        return Preparation(
+            runtime=None, plan=self.plan, have_llamacpp=True, have_brew=True,
+            have_ollama=True, profile=PROFILE,
+        )
+
+    def use_ollama(self, post):
+        self.calls.append(("use_ollama",))
+        if self.fail_use:
+            self.fail_use -= 1
+            post(("op_done", "use_ollama", False, "brew refused"))
+            return
+        post(
+            (
+                "runtime_started",
+                Preparation(
+                    runtime="ollama", models=("m1",), sizes={}, plan=self.plan,
+                    profile=PROFILE,
+                ),
+            )
+        )
+
+
+def test_run_setup_runtime_card_ollama_choice_end_to_end():
+    driver = RuntimeChoiceDriver()
+    # down -> ollama row; enter -> consented start; down x2 -> its model; enter
+    outcome = _run(driver, ["down", "enter", "down", "down", "enter"])
+    assert outcome.exit == "completed"
+    assert outcome.runtime == "ollama"
+    assert driver.calls == [("use_ollama",)]
+
+
+def test_run_setup_runtime_card_esc_skips_then_llamacpp_garden():
+    driver = RuntimeChoiceDriver()
+    outcome = _run(driver, ["esc", "enter"])
+    assert outcome.exit == "completed"
+    assert outcome.runtime == "llamacpp"
+    assert driver.calls == [("download", False), ("start", False)]  # ollama untouched
+
+
+def test_run_setup_runtime_card_failure_then_retry_completes():
+    driver = RuntimeChoiceDriver(fail_use=1)
+    # "wait" lets the failure event land before the retry Enter
+    outcome = _run(driver, ["down", "enter", "wait", "enter", "down", "down", "enter"])
+    assert outcome.exit == "completed"
+    assert outcome.runtime == "ollama"
+    assert driver.calls == [("use_ollama",), ("use_ollama",)]
