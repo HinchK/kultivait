@@ -14,6 +14,8 @@ wheels/
 .agents/skills/using-superpowers/
 .claude/skills/using-superpowers
 .claude/skills/*
+# …except project-owned skills, which are content:
+!.claude/skills/run-kultivait/
 .idea/*
 .vscode/*
 .env
