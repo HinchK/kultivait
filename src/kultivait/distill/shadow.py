@@ -280,7 +280,10 @@ class DistillSeat:
     @classmethod
     def from_config(cls, config) -> "DistillSeat":
         d = config.distill
-        return cls(d.model, d.shadow_model, d.shadow_mode, d.shadow_sample_rate)
+        # #211: an unset seat follows the runtime-native distill_model —
+        # never a hardcoded ollama tag that 404s on a llamacpp runtime
+        model = d.model or getattr(config, "distill_model", "") or ""
+        return cls(model, d.shadow_model, d.shadow_mode, d.shadow_sample_rate)
 
     def set_model(self, model: str) -> None:
         self.model = model

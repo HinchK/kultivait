@@ -117,9 +117,13 @@ class TierSpec:
 @dataclass(frozen=True)
 class DistillConfig:
     """The distillation pipeline's serving seat (ADR 0017): the live preprocess
-    model, resolved per-call so a config edit swaps models with no restart."""
+    model, resolved per-call so a config edit swaps models with no restart.
 
-    model: str = "qwen3.5:4b"
+    An empty `model` means "follow `distill_model`" — the runtime-native name
+    `detect()` surveyed (#211: a hardcoded ollama tag as the default left the
+    preprocessor permanently unresolvable on llamacpp pivots)."""
+
+    model: str = ""
     shadow_model: str = ""  # gate-passing distillate name; empty = none
     shadow_mode: str = "off"  # "off" | "on"
     shadow_sample_rate: float = 1.0
@@ -263,7 +267,9 @@ def save_config(config: Config, path: Path) -> None:
     lines += [
         "",
         "[distill]",
-        f"model = {_toml_str(d.model)}",
+        # write the EFFECTIVE seat: an unset model follows the runtime-native
+        # distill_model, never a hardcoded ollama tag (#211)
+        f"model = {_toml_str(d.model or config.distill_model)}",
         f"shadow_model = {_toml_str(d.shadow_model)}",
         f'shadow_mode = "{d.shadow_mode}"',
         f"shadow_sample_rate = {d.shadow_sample_rate}",
@@ -307,19 +313,27 @@ def load_config(path: Path) -> Config:
     shadow_mode = dd.get("shadow_mode") or "off"
     if shadow_mode not in ("off", "on"):
         raise ValueError(f"distill.shadow_mode must be 'off' or 'on', got {shadow_mode!r}")
+    runtime = data.get("runtime") or "ollama"
+    distill_model = data.get("distill_model") or None
+    seat_model = dd.get("model") or ""
+    # #211 pivot repair: an ollama-tag seat (the old writer's hardcoded
+    # default) is unresolvable on a llamacpp runtime — resolve it to the
+    # runtime-native distill_model instead of serving guaranteed 404s
+    if runtime == "llamacpp" and ":" in seat_model and distill_model:
+        seat_model = ""
     return Config(
         tiers=tiers,
         embed_model=data.get("embed_model") or None,
-        distill_model=data.get("distill_model") or None,
+        distill_model=distill_model,
         num_ctx=data.get("num_ctx", 32768),
         port=data.get("port", 4114),
-        runtime=data.get("runtime") or "ollama",
+        runtime=runtime,
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
         preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
         length_rule_max_tokens=int(data.get("length_rule_max_tokens", 8192)),
         distill=DistillConfig(
-            model=dd.get("model") or "qwen3.5:4b",
+            model=seat_model,
             shadow_model=dd.get("shadow_model") or "",
             shadow_mode=shadow_mode,
             shadow_sample_rate=float(dd.get("shadow_sample_rate", 1.0)),

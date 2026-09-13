@@ -17,7 +17,14 @@ def test_config_roundtrip_llamacpp_runtime(tmp_path):
     )
     path = tmp_path / "config.toml"
     save_config(config, path)
-    assert load_config(path) == config
+    loaded = load_config(path)
+    # #211: save writes the EFFECTIVE seat — the unset model resolved to the
+    # runtime-native distill_model on disk, so it loads back set
+    assert loaded.distill.model == config.distill_model
+    assert [t.model for t in loaded.tiers] == ["gemma-3-4b-it-Q4_K_M.gguf"]
+    assert loaded.runtime == "llamacpp"
+    assert loaded.embed_model == config.embed_model
+    assert loaded.chat_base_url == config.chat_base_url
 
 
 def test_embed_url_falls_back_to_chat_url():
@@ -78,8 +85,13 @@ def test_config_roundtrip(tmp_path):
     path = tmp_path / "config.toml"
     save_config(config, path)
     loaded = load_config(path)
-    assert loaded == config
+    # #211: the written seat follows the runtime-native distill_model
+    assert loaded.distill.model == "qwen2.5:14b"
     assert loaded.capability_order() == ["mistral:7b", "qwen2.5:14b", "claude"]
+    assert loaded.num_ctx == 16384
+    assert [t.model for t in loaded.tiers if t.kind == "ollama"] == [
+        "mistral:7b", "qwen2.5:14b",
+    ]
 
 
 def test_detect_maps_models_to_tiers_by_size():

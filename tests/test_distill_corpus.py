@@ -29,7 +29,8 @@ from kultivait.preprocessor import PREPROCESSOR_PROMPT, extract_json
 
 def test_distill_config_defaults():
     d = DistillConfig()
-    assert d.model == "qwen3.5:4b"
+    # #211: no hardcoded ollama tag — an empty seat follows distill_model
+    assert d.model == ""
     assert d.shadow_model == ""
     assert d.shadow_mode == "off"
     assert d.shadow_sample_rate == 1.0
@@ -37,7 +38,7 @@ def test_distill_config_defaults():
 
 def test_config_distill_default_present():
     cfg = Config()
-    assert cfg.distill.model == "qwen3.5:4b"
+    assert cfg.distill.model == ""
     assert cfg.distill.shadow_mode == "off"
 
 
@@ -60,10 +61,69 @@ def test_distill_section_defaults_when_absent(tmp_path: Path):
     save_config(Config(), p)
     body = p.read_text()
     loaded = load_config(p)
-    assert loaded.distill.model == "qwen3.5:4b"
+    assert loaded.distill.model == ""
     assert loaded.distill.shadow_mode == "off"
     # explicit [distill] section serializes
     assert "[distill]" in body
+
+
+# ------------------------------------------------- #211: seat follows runtime
+
+
+def test_written_seat_follows_runtime_native_distill_model(tmp_path: Path):
+    # a fresh llamacpp config must never carry an ollama-tag seat name
+    cfg = Config(
+        tiers=[TierSpec(name="Qwen3-14B-Q4_K_M", role="reasoning", kind="llamacpp",
+                        model="Qwen3-14B-Q4_K_M")],
+        runtime="llamacpp",
+        chat_base_url="http://localhost:8080",
+        distill_model="Qwen3-14B-Q4_K_M",
+    )
+    p = tmp_path / "config.toml"
+    save_config(cfg, p)
+    loaded = load_config(p)
+    assert loaded.distill.model == "Qwen3-14B-Q4_K_M"
+    assert ":" not in loaded.distill.model  # resolvable on the active runtime
+
+
+def test_pivot_repair_resolves_ollama_tag_seat_on_llamacpp(tmp_path: Path):
+    # the old writer hardcoded [distill] model = "qwen3.5:4b"; after a pivot
+    # to llamacpp that name 404s on every contested prompt (#211)
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'runtime = "llamacpp"\n'
+        'chat_base_url = "http://localhost:8080"\n'
+        'distill_model = "Qwen3-14B-Q4_K_M"\n'
+        "[distill]\n"
+        'model = "qwen3.5:4b"\n'
+    )
+    loaded = load_config(p)
+    assert loaded.distill.model == ""  # stale tag dropped, follows distill_model
+
+
+def test_distill_seat_resolves_unset_model_to_distill_model():
+    from kultivait.distill.shadow import DistillSeat
+
+    cfg = Config(
+        tiers=[TierSpec(name="m", role="simple", kind="llamacpp", model="m")],
+        runtime="llamacpp",
+        distill_model="Qwen3-4B-Q4_K_M",
+    )
+    seat = DistillSeat.from_config(cfg)
+    assert seat.model == "Qwen3-4B-Q4_K_M"  # runtime-native, never 404s
+
+
+def test_explicit_seat_override_survives_on_matching_runtime(tmp_path: Path):
+    # a deliberate seat choice on its own runtime is kept, not rewritten
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'runtime = "ollama"\n'
+        'distill_model = "qwen3:14b"\n'
+        "[distill]\n"
+        'model = "qwen3.5:4b"\n'
+    )
+    loaded = load_config(p)
+    assert loaded.distill.model == "qwen3.5:4b"
 
 
 # ---------------------------------------------------------------- anchors
