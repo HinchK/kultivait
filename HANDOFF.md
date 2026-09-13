@@ -35,12 +35,12 @@ pass through unchanged. Local target must stay eligible for tool-bearing request
        translated tools → `get_weather {"city": "Berlin"}`; UNtranslated (pre-fix payload)
        → ollama 200 with tools silently dropped, prose answer (T5's open question, settled).
 - [x] 6. `uv run pytest -q` green: **799 passed, 2 skipped**.
-- [ ] 7. Commit `fix:` (+ticked HANDOFF), delegate close + map gist to agy-gh.
-- [ ] 8. Ledger record + engrim state; completion verdict.
+- [x] 7. Commit `fix:` (+ticked HANDOFF), delegate close + map gist to agy-gh.
+- [x] 8. Ledger record + engrim state; completion verdict.
 
 ## Current task
 
-7 (commit + close-out).
+None — #214 closed (verified state CLOSED 2026-09-13T20:13:07Z); session complete.
 
 ## Next action if interrupted
 
