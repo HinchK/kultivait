@@ -53,6 +53,7 @@ def build_route_menu(
     candidate_targets: list[str] | None = None,
     target_kinds: dict[str, str] | None = None,
     has_tools: bool = False,
+    local_available: bool = True,
     probed_status: dict[str, bool] | None = None,
 ) -> list[RouteOption]:
     """Constructs route menu offering top 3 installed frontier targets ranked by
@@ -128,7 +129,11 @@ def build_route_menu(
             )
         )
 
-    # 4th option: keep-it-local anchor
+    # 4th option: keep-it-local anchor — absent when the length rule (ADR
+    # 0024) takes local off the table: the menu shrinks rather than offer a
+    # broken choice (the capability-filter precedent)
+    if not local_available:
+        return options
     local_effort = resolve_effort(
         complexity=analysis.complexity if analysis else 5,
         task_type=analysis.task_type if analysis else "code",

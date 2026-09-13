@@ -51,6 +51,15 @@ def _text_of(content) -> str:
     )
 
 
+def _estimate_payload_tokens(messages: list[dict], tools: "list[dict] | None") -> int:
+    """Length-rule estimate (ADR 0024): chars//4 over the FULL payload —
+    tools + system + messages. Tool schemas count; the prefill physics
+    prefills them too."""
+    n = sum(len(json.dumps(m)) for m in messages)
+    n += sum(len(json.dumps(t)) for t in tools or [])
+    return n // 4
+
+
 def _normalize(messages: list[dict]) -> list[dict]:
     """Flatten content blocks/parts to plain strings: backends (ollama, CLIs)
     understand neither Anthropic blocks nor OpenAI content parts.
@@ -153,6 +162,7 @@ def create_app(
     toll_timeout_s: float = 60.0,
     toll_enabled: bool = True,
     distill_seat: "DistillSeat | None" = None,
+    length_rule_max_tokens: int = 8192,
 ) -> FastAPI:
     if preprocess_generate is None:
         preprocess_generate = _default_preprocess_generate_for()
@@ -169,7 +179,9 @@ def create_app(
 
     app = FastAPI(title="kultivait")
 
-    def _record(tier: str, completion: Completion, **decision_meta) -> None:
+    def _record(
+        tier: str, completion: Completion, first_token_ms: "int | None" = None, **decision_meta
+    ) -> None:
         backend = backends.get(tier)
         cache_price_in = float(getattr(backend, "price_in", 0.0) or 0.0)
         # Metered cash: API backend reports real metered spend; CLI/local is 0.0
@@ -205,6 +217,7 @@ def create_app(
             cost_usd=metered_cash,
             notional_usd=notional,
             truncated=completion.truncated,
+            first_token_ms=first_token_ms,
             cache_read_tokens=getattr(completion, "cache_read_tokens", 0),
             cache_write_tokens=getattr(completion, "cache_write_tokens", 0),
             cache_ttl=getattr(completion, "cache_ttl", ""),
@@ -287,6 +300,7 @@ def create_app(
         fingerprint: str,
     ) -> dict:
         has_tools = bool(tools)
+        over_cap = _estimate_payload_tokens(messages, tools) > length_rule_max_tokens
         is_contested = decision.escalated or decision.margin < router._margin
         target_fits_dict = None
         route_choice = None
@@ -363,7 +377,11 @@ def create_app(
                     )
                     local_tier = router.capability_order[0]
                     local_backend = backends.get(local_tier)
-                    local_serving_capable = bool(local_backend and (not tools or local_backend.supports_tools))
+                    local_serving_capable = bool(
+                        local_backend
+                        and (not tools or local_backend.supports_tools)
+                        and not over_cap
+                    )
                     candidate_targets = [name for name, b in backends.items() if not b.local]
                     target_kinds = {
                         name: ("api" if getattr(b, "supports_tools", False) and not b.local else "cli")
@@ -382,6 +400,7 @@ def create_app(
                         effort_overrides=effort_overrides,
                         target_kinds=target_kinds,
                         has_tools=has_tools,
+                        local_available=not over_cap,
                         probed_status=probed_status,
                     )
 
@@ -389,6 +408,15 @@ def create_app(
                     # If request has tools and no capable frontier target remains, no toll fires
                     if has_tools and not frontier_opts:
                         route_choice = "auto:local"
+                        toll_mark = "skipped"
+                        effort_override = None
+                    elif over_cap:
+                        # ADR 0024 length rule: deterministic, no toll dialog —
+                        # frontier when one serves, else local-only degrade
+                        if frontier_opts:
+                            route_choice = resolve_auto_policy(options, local_serving_capable=False)
+                        else:
+                            route_choice = "auto:local"
                         toll_mark = "skipped"
                         effort_override = None
                     else:
@@ -415,7 +443,7 @@ def create_app(
                         cli_effort_flags = []
                         effort_flags = None
                         model_override = None
-                        if route_choice.startswith("human:local") or route_choice == "human:local":
+                        if route_choice.startswith("human:local") and not over_cap:
                             escalation_id = escalations.save(messages, requested_tier="local")
                     else:
                         target_cli = route_choice.split(":")[-1]
@@ -460,7 +488,32 @@ def create_app(
                 effort_flags = None
                 model_override = None
 
-        if fallback_reason and not escalation_id:
+        # ADR 0024 length rule: over-cap prompts never serve local,
+        # regardless of verdict or human pick
+        if over_cap and backends.get(tier) and backends[tier].local:
+            frontier = next(
+                (
+                    name
+                    for name in reversed(router.capability_order)
+                    if (b := backends.get(name))
+                    and not b.local
+                    and (not tools or b.supports_tools)
+                ),
+                None,
+            )
+            if frontier:
+                tier = frontier
+                fallback_reason = "length_rule"
+            else:
+                fallback_reason = "length_rule_no_frontier"
+
+        # length-forced dispatches archive nothing: nothing cloud-worthy was
+        # served local — it went frontier (the #215 pin)
+        if (
+            fallback_reason
+            and fallback_reason not in ("length_rule", "length_rule_no_frontier")
+            and not escalation_id
+        ):
             escalation_id = escalations.save(messages, requested_tier=decision.tier)
 
         meta = _decision_meta(decision, fallback_reason, messages)
@@ -678,11 +731,13 @@ def create_app(
             def sse():
                 yield chunk({"role": "assistant"})
                 t_dispatch = time.time()
+                t_first_delta: "float | None" = None
                 try:
                     actual_tier, stream_iter = _dispatch_stream(route, tools)
                     for item in stream_iter:
                         if isinstance(item, Completion):
-                            _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
+                            first_ms = int(((t_first_delta or time.time()) - t_dispatch) * 1000)
+                            _record(actual_tier, item, first_token_ms=first_ms, latency_s=time.time() - t_dispatch, **meta)
                             if item.tool_calls:
                                 yield chunk(
                                     {
@@ -696,6 +751,8 @@ def create_app(
                             else:
                                 yield chunk({}, finish="stop")
                         else:
+                            if t_first_delta is None:
+                                t_first_delta = time.time()
                             yield chunk({"content": item})
                     yield "data: [DONE]\n\n"
                 except Exception as e:
@@ -716,7 +773,8 @@ def create_app(
                 status_code=502,
                 content={"error": {"message": _provider_error_text(e), "type": "provider_error"}},
             )
-        _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
+        total_s = time.time() - t_dispatch
+        _record(actual_tier, completion, first_token_ms=int(total_s * 1000), latency_s=total_s, **meta)
         message: dict = {"role": "assistant", "content": completion.text or None}
         if completion.tool_calls:
             message["tool_calls"] = completion.tool_calls
@@ -762,6 +820,7 @@ def create_app(
 
             def sse():
                 t_dispatch = time.time()
+                t_first_delta: "float | None" = None
                 try:
                     actual_tier, stream_iter = _dispatch_stream(route, tools)
                 except Exception as e:
@@ -790,7 +849,11 @@ def create_app(
                 started_text_block = False
                 for item in stream_iter:
                     if isinstance(item, Completion):
-                        _record(actual_tier, item, latency_s=time.time() - t_dispatch, **meta)
+                        # ADR 0024: first-token = first streamed delta; a
+                        # tool-only reply (no text deltas) measures at the
+                        # Completion itself
+                        first_ms = int(((t_first_delta or time.time()) - t_dispatch) * 1000)
+                        _record(actual_tier, item, first_token_ms=first_ms, latency_s=time.time() - t_dispatch, **meta)
                         if started_text_block:
                             yield event("content_block_stop", {"index": block_idx})
                             block_idx += 1
@@ -846,6 +909,8 @@ def create_app(
                                 {"index": block_idx, "content_block": {"type": "text", "text": ""}},
                             )
                             started_text_block = True
+                        if t_first_delta is None:
+                            t_first_delta = time.time()
                         yield event(
                             "content_block_delta",
                             {"index": block_idx, "delta": {"type": "text_delta", "text": item}},
@@ -867,7 +932,9 @@ def create_app(
                     "error": {"type": "api_error", "message": "Upstream provider error."},
                 },
             )
-        _record(actual_tier, completion, latency_s=time.time() - t_dispatch, **meta)
+        total_s = time.time() - t_dispatch
+        # non-streaming: no deltas to observe — first_token == total (disclosed)
+        _record(actual_tier, completion, first_token_ms=int(total_s * 1000), latency_s=total_s, **meta)
         content_blocks: list[dict] = []
         if completion.text:
             content_blocks.append({"type": "text", "text": completion.text})

@@ -673,6 +673,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         toll_timeout_s=config.toll_timeout_s,
         toll_enabled=config.toll_enabled,
         distill_seat=DistillSeat.from_config(config),
+        length_rule_max_tokens=config.length_rule_max_tokens,
     )
     port = args.port or config.port
     print(f"kultivait listening on http://localhost:{port}", file=sys.stderr)
@@ -885,6 +886,27 @@ def format_harvest(stats: dict) -> str:
                 lines.append(
                     f"      {gen:<26} {sig2(g['est_wh'])} Wh  ({g['dispatches']} dsp)"
                 )
+    time_ledger = stats.get("time")
+    if time_ledger and time_ledger.get("local_dispatches", 0) > 0:
+        lines += ["", "  time ledger"]
+        if time_ledger.get("has_reference"):
+            paid = time_ledger.get("time_paid_min") or 0.0
+            sign = "+" if paid >= 0 else ""
+            lines.append(
+                f"    ref {time_ledger.get('reference_version', '?')} — time paid vs ref {sign}{paid} min"
+            )
+        else:
+            lines.append("    no reference table — local medians only")
+        for band, b in time_ledger.get("bands", {}).items():
+            if not b.get("dispatches"):
+                continue
+            ft = b.get("local_first_token_ms_median")
+            tt = b.get("local_total_ms_median")
+            ft_txt = f"first-token p50 {ft} ms" if ft is not None else "first-token —"
+            tt_txt = f"total p50 {tt} ms" if tt is not None else "total —"
+            ref = b.get("ref_first_token_ms")
+            ref_txt = f" · ref first-token {ref} ms" if ref is not None else ""
+            lines.append(f"    {band:<6} {b['dispatches']:>4} dsp  {ft_txt}  {tt_txt}{ref_txt}")
     by_gen = stats.get("by_generation")
     if by_gen:
         lines += ["", "  by generation (preprocess_model)"]

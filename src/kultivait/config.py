@@ -140,6 +140,9 @@ class Config:
     preprocess_timeout_s: float = 15.0
     toll_timeout_s: float = 60.0
     toll_enabled: bool = True
+    # ADR 0024 length rule: max prompt tokens (chars//4 full payload) that
+    # may route local; over-cap dispatches go frontier regardless of verdict
+    length_rule_max_tokens: int = 8192
     distill: DistillConfig = field(default_factory=DistillConfig)
 
     def capability_order(self) -> "list[str]":
@@ -245,6 +248,7 @@ def save_config(config: Config, path: Path) -> None:
         f"preprocess_timeout_s = {config.preprocess_timeout_s}",
         f"toll_timeout_s = {config.toll_timeout_s}",
         f"toll_enabled = {'true' if config.toll_enabled else 'false'}",
+        f"length_rule_max_tokens = {config.length_rule_max_tokens}",
     ]
     for t in config.tiers:
         lines += ["", "[[tiers]]", f'name = "{t.name}"', f'role = "{t.role}"', f'kind = "{t.kind}"']
@@ -313,6 +317,7 @@ def load_config(path: Path) -> Config:
         chat_base_url=data.get("chat_base_url") or RUNTIME_URLS["ollama"],
         embed_base_url=data.get("embed_base_url") or "",
         preprocess_timeout_s=float(data.get("preprocess_timeout_s", 15.0)),
+        length_rule_max_tokens=int(data.get("length_rule_max_tokens", 8192)),
         distill=DistillConfig(
             model=dd.get("model") or "qwen3.5:4b",
             shadow_model=dd.get("shadow_model") or "",

@@ -28,6 +28,7 @@ class Ledger:
         est_wh: float = 0.0,
         energy_model: str = "",
         latency_s: float | None = None,
+        first_token_ms: "int | None" = None,
         **extra,
     ) -> None:
         """Extra keyword fields (routing decision metadata, truncation flags,
@@ -59,6 +60,10 @@ class Ledger:
             entry["energy_model"] = energy_model
         if latency_s is not None:
             entry["latency_s"] = round(latency_s, 3)
+        # ADR 0024 time ledger: first streamed delta, int ms; CLI single-blob
+        # and non-streaming paths report first_token == total (disclosed)
+        if first_token_ms is not None:
+            entry["first_token_ms"] = int(first_token_ms)
         entry.update(extra)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
@@ -150,6 +155,67 @@ class Ledger:
                                    if c["tokens_in"] else 0.0)
         return gens
 
+    def _time_section(self, entries: list) -> dict:
+        """ADR 0024 time ledger: local wall-clock per token band, measured
+        against the frontier-latency reference table (harvest-time yardstick
+        only — time-never-ranks). No table -> honest degrade, never fabricate."""
+        from kultivait import time_reference as tr
+
+        try:
+            from kultivait.cli import CONFIG_PATH
+            overrides = tr._load_overrides(CONFIG_PATH)
+        except Exception:
+            overrides = {}
+        table = tr.medians(overrides)
+        have_ref = tr.available(overrides)
+        version = tr.active_version(overrides)
+
+        def _med(vals: list) -> "int | None":
+            vals = sorted(v for v in vals if v is not None)
+            if not vals:
+                return None
+            n = len(vals)
+            mid = n // 2
+            return vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) // 2
+
+        def _p95(vals: list) -> "int | None":
+            vals = sorted(v for v in vals if v is not None)
+            if not vals:
+                return None
+            idx = min(len(vals) - 1, max(0, round(0.95 * (len(vals) - 1))))
+            return vals[idx]
+
+        local = [e for e in entries if e.get("local")]
+        bands: dict = {}
+        time_paid_ms = 0
+        for band, _, _ in tr.BANDS:
+            rows = [e for e in local if tr.band_for(int(e.get("tokens_in", 0))) == band]
+            firsts = [e.get("first_token_ms") for e in rows]
+            totals = [int(round(e["latency_s"] * 1000)) for e in rows if e.get("latency_s") is not None]
+            ref = table.get(band)
+            paid = None
+            if have_ref and ref:
+                # signed: local-faster-than-ref dispatches credit back
+                paid = sum(t - ref["total_ms"] for t in totals)
+                time_paid_ms += paid
+            bands[band] = {
+                "dispatches": len(rows),
+                "local_first_token_ms_median": _med(firsts),
+                "local_first_token_ms_p95": _p95(firsts),
+                "local_total_ms_median": _med(totals),
+                "local_total_ms_p95": _p95(totals),
+                "ref_first_token_ms": ref["first_token_ms"] if ref else None,
+                "ref_total_ms": ref["total_ms"] if ref else None,
+                "time_paid_ms": paid,
+            }
+        return {
+            "local_dispatches": len(local),
+            "reference_version": version if have_ref else "",
+            "has_reference": have_ref,
+            "time_paid_min": round(time_paid_ms / 60000, 2) if have_ref else None,
+            "bands": bands,
+        }
+
     def harvest(self) -> dict:
         entries = []
         if self._path.exists():
@@ -202,10 +268,12 @@ class Ledger:
         cache = self._cache_section(prompt_entries)
         by_generation = self._by_generation(prompt_entries)
         energy = self._energy_section(prompt_entries)
+        time_ledger = self._time_section(prompt_entries)
 
         return {
             "cache": cache,
             "energy": energy,
+            "time": time_ledger,
             "by_generation": by_generation,
             "prompts": len(prompt_entries),
             "local_prompts": sum(1 for e in prompt_entries if e.get("local")),
