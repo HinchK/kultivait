@@ -179,3 +179,19 @@ _Avoid_: timeout rule, token cap, max prompt size
 **Frontier-latency reference table**:
 The versioned, season-pinned table of frontier first-token/total medians per token band, applied at harvest as the time yardstick; provenance committed, values overridable, never provenance; never a routing input.
 _Avoid_: latency baseline, speed table, SLA table
+
+**Route outcome record**:
+The per-dispatch consented record extending ledger rows with policy_version, repo_hash, and outcome_label: candidate tiers, confidence, override/retry/fallback, latency, cloud-egress decision.
+_Avoid_: feedback event, telemetry record
+
+**Pull-only export**:
+The only data-sharing path: kultivait report --export writes a scrubbed local file the operator sends themselves - no transmit code path exists in the product, so nothing phones home by construction.
+_Avoid_: telemetry, opt-in upload, beacon
+
+**Route regret**:
+Wrong-route labels divided by all labeled dispatches, per consented session - the routing-safety bar denominator, pinned so it cannot be gamed by labeling less.
+_Avoid_: misroute rate (unlabeled denominator), dissatisfaction score
+
+**Secret-shape refusal**:
+The retention invariant that text matching secret or token patterns is never stored - the redaction itself is logged and the rule is test-enforced.
+_Avoid_: secret redaction (too soft), PII filter
