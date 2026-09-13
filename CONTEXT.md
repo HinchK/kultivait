@@ -168,5 +168,14 @@ _Avoid_: re-distillation error, drift (unqualified)
 The mean of the six static seed-prompt embeddings per role — the fixed-weight regularizer every learned centroid blends against so history can bend routing but never replace its foundations.
 _Avoid_: baseline centroid (that's the table's seeds-v0), anchor set (that's distillation's corpus seeds)
 
+**Time ledger**:
+The minutes currency - per-dispatch wall-clock fields (first_token_ms, latency_s) plus the harvest's time-vs-savings report measured against the frontier-latency reference table.
+_Avoid_: latency ledger, timing metrics, speed report
 
+**Length rule**:
+The max prompt tokens (chars//4 over the full payload - tools + system + messages) that may route local, 8192 by default; above it dispatch goes frontier regardless of verdict - no toll, no escalation archive, fallback_reason length_rule.
+_Avoid_: timeout rule, token cap, max prompt size
 
+**Frontier-latency reference table**:
+The versioned, season-pinned table of frontier first-token/total medians per token band, applied at harvest as the time yardstick; provenance committed, values overridable, never provenance; never a routing input.
+_Avoid_: latency baseline, speed table, SLA table
