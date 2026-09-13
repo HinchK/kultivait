@@ -51,6 +51,7 @@ LLAMACPP_URL = os.environ.get("KULTIVAIT_LLAMACPP_URL", RUNTIME_URLS["llamacpp"]
 KULTIVAIT_HOME = Path.home() / ".kultivait"
 CONFIG_PATH = KULTIVAIT_HOME / "config.toml"
 LEDGER_PATH = KULTIVAIT_HOME / "ledger.jsonl"
+PENDING_LABEL_PATH = KULTIVAIT_HOME / "pending_label.json"
 COMPOST_DIR = KULTIVAIT_HOME / "compost"
 ESCALATIONS_DIR = KULTIVAIT_HOME / "escalations"
 PENDING_TOLLS_PATH = KULTIVAIT_HOME / "pending_tolls.jsonl"
@@ -615,6 +616,27 @@ def cmd_choose(
             )
         )
         tui.console.print(f"toll answered: {choice_str}")
+        # ADR 0025 post-toll label: stashed and reconciled onto the newest
+        # matching-fingerprint dispatch by the next `kultivait label` run —
+        # the dispatch lands asynchronously, so the label waits for it
+        try:
+            reply = input_fn("route right? [y/r/e/w] (Enter=skip): ").strip().lower()
+            if reply in _LABEL_KEYS:
+                PENDING_LABEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+                PENDING_LABEL_PATH.write_text(
+                    json.dumps(
+                        {
+                            "fingerprint": ticket_data.get("fingerprint"),
+                            "label": _LABEL_KEYS[reply],
+                            "ts": time.time(),
+                        }
+                    )
+                )
+                tui.console.print(
+                    f"label pending: {_LABEL_KEYS[reply]} — applies when the dispatch lands (kultivait label)"
+                )
+        except Exception:
+            pass
         try:
             pres_path.write_text(json.dumps({"ts": time.time(), "surface": "choose"}))
         except Exception:
@@ -953,6 +975,135 @@ def format_harvest(stats: dict) -> str:
     if stats.get("truncated_inputs"):
         lines += ["", f"  ⚠ {stats['truncated_inputs']} input(s) hit the context ceiling (raise num_ctx?)"]
     return "\n".join(lines)
+
+
+# ---- ADR 0025: outcome labels + pull-only report ------------------------
+
+_LABEL_KEYS = {"y": "accepted", "a": "accepted", "r": "retried", "e": "escalated", "w": "wrong_route"}
+
+
+def _reconcile_pending_label(ledger: Ledger, pending_path: Path | None = None) -> None:
+    """Apply a post-toll label stashed by `kultivait choose` to the newest
+    matching-fingerprint row recorded after the toll was answered."""
+    path = pending_path or PENDING_LABEL_PATH
+    if not path.is_file():
+        return
+    try:
+        pending = json.loads(path.read_text())
+    except Exception:
+        path.unlink(missing_ok=True)
+        return
+    fp, label, ts = pending.get("fingerprint"), pending.get("label"), pending.get("ts", 0)
+    if not fp or not label:
+        path.unlink(missing_ok=True)
+        return
+    match = None
+    for idx, row in ledger.recent_rows(200):
+        if row.get("fingerprint") == fp and row.get("ts", 0) >= ts:
+            match = idx  # newest-last scan: keep the last match
+    if match is not None:
+        ledger.set_outcome_label(match, label)
+        print(f"applied post-toll label → row {match}: {label}")
+    elif time.time() - ts > 86400:
+        print("stale post-toll label dropped (no matching dispatch within 24h)")
+    else:
+        print("post-toll label pending — no matching dispatch yet; re-run kultivait label")
+        return
+    path.unlink(missing_ok=True)
+
+
+def cmd_label(args: argparse.Namespace, ledger_path: Path | None = None) -> None:
+    from kultivait.privacy import OUTCOME_LABELS
+
+    ledger = Ledger(Path(ledger_path) if ledger_path else LEDGER_PATH)
+    _reconcile_pending_label(ledger)
+    if args.last is not None:
+        if not args.label:
+            _fail("label", "--last needs a label (accepted | retried | escalated | wrong_route)")
+        n = ledger.label_last(args.last, args.label)
+        print(f"labeled {n} row(s) → {args.label}")
+        return
+    if args.row_index is not None:
+        if args.clear:
+            ledger.clear_outcome_label(args.row_index)
+            print(f"cleared label on row {args.row_index}")
+            return
+        if not args.label:
+            _fail("label", "row index needs a label (accepted | retried | escalated | wrong_route)")
+        row = ledger.set_outcome_label(args.row_index, args.label)
+        print(f"row {args.row_index} ({row.get('tier')}) labeled → {args.label}")
+        return
+    rows = ledger.recent_rows(10)
+    if not rows:
+        print("no dispatches recorded yet — the ledger fills as the proxy serves")
+        return
+    print(f"{'row':>4}  {'tier':<24} {'egress':<7} {'label':<12} prompt")
+    for idx, row in rows:
+        snippet = (row.get("snippet") or "").replace("\n", " ")[:38]
+        label = row.get("outcome_label") or "—"
+        egress = "cloud" if not row.get("local") else "local"
+        print(f"{idx:>4}  {str(row.get('tier')):<24} {egress:<7} {label:<12} {snippet}")
+    print("\nlabel one:  kultivait label <row> <accepted|retried|escalated|wrong_route>")
+    print("batch:      kultivait label --last 5 accepted    ·    clear: kultivait label <row> --clear")
+
+
+def _fail(cmd: str, message: str) -> None:
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+_EXPORT_FIELDS = (
+    "ts", "tier", "local", "cloud_egress", "outcome_label", "policy_version",
+    "repo_hash", "candidate_tiers", "override", "margin", "verdict",
+    "route_choice", "toll", "fallback_reason", "preprocess_mark",
+    "latency_s", "first_token_ms", "tokens_in", "tokens_out",
+    "est_wh", "energy_model",
+)
+
+
+def cmd_report(args: argparse.Namespace, ledger_path: Path | None = None) -> None:
+    """ADR 0025 pull-only report. The export is a scrubbed LOCAL file the
+    operator sends themselves — no transmit code path exists anywhere."""
+    from kultivait import privacy
+
+    ledger = Ledger(Path(ledger_path) if ledger_path else LEDGER_PATH)
+    rows = ledger.read_rows()
+    if not args.export:
+        labeled = sum(1 for r in rows if r.get("outcome_label"))
+        egress = sum(1 for r in rows if r.get("cloud_egress"))
+        by_label: dict = {}
+        for r in rows:
+            if r.get("outcome_label"):
+                by_label[r["outcome_label"]] = by_label.get(r["outcome_label"], 0) + 1
+        print(f"route outcomes: {len(rows)} dispatches · {labeled} labeled · {egress} cloud-egress")
+        for label, n in sorted(by_label.items()):
+            print(f"  {label:<12} {n}")
+        print("export: kultivait report --export [--include-snippets]")
+        return
+
+    out_path = Path(args.out) if args.out else Path.cwd() / f"kultivait-report-{time.strftime('%Y%m%d')}.jsonl"
+    included_snippets = refused = 0
+    with out_path.open("w") as f:
+        for row in rows:
+            entry = {k: row[k] for k in _EXPORT_FIELDS if k in row}
+            if args.include_snippets and "snippet" in row:
+                snippet = row["snippet"]
+                if privacy.contains_secret_shape(snippet):
+                    refused += 1
+                    privacy.record_redaction(
+                        {"ts": time.time(), "reason": "secret_shape", "policy_version": privacy.POLICY_VERSION}
+                    )
+                else:
+                    entry["snippet"] = snippet
+                    included_snippets += 1
+            # fingerprint, snippet (default), escalation ids: never exported
+            f.write(json.dumps(entry) + "\n")
+    print(f"wrote {len(rows)} scrubbed rows → {out_path}")
+    if args.include_snippets:
+        print(f"snippets: {included_snippets} included · {refused} refused (secret-shape) — refusals logged to ~/.kultivait/redactions.jsonl")
+    else:
+        print("snippets: none (default) — rerun with --include-snippets to opt in")
+    print("pull-only: this file never transmits itself; share it yourself if you choose to.")
 
 
 def cmd_harvest(args: argparse.Namespace) -> None:
@@ -1554,6 +1705,31 @@ def main(argv: list | None = None) -> None:
     esc.add_argument("id", nargs="?", help="escalation id (default: most recent)")
     esc.add_argument("--brief", action="store_true", help="distill a paste-ready brief")
     esc.set_defaults(func=cmd_escalations)
+
+    label_cmd = sub.add_parser(
+        "label", help="inspect recent dispatches and tag route outcomes (ADR 0025)"
+    )
+    label_cmd.add_argument("row_index", nargs="?", type=int, help="1-based row from the list below")
+    label_cmd.add_argument(
+        "label", nargs="?",
+        choices=["accepted", "retried", "escalated", "wrong_route"],
+        help="outcome label (accepted | retried | escalated | wrong_route)",
+    )
+    label_cmd.add_argument("--last", type=int, metavar="N", help="label the newest N unlabeled rows")
+    label_cmd.add_argument("--clear", action="store_true", help="clear this row's label")
+    label_cmd.set_defaults(func=cmd_label)
+
+    report_cmd = sub.add_parser(
+        "report", help="design-partner report (pull-only: writes a local file, never transmits)"
+    )
+    report_cmd.add_argument("--export", action="store_true", help="write the scrubbed JSONL export")
+    report_cmd.add_argument("--out", help="output path (default: kultivait-report-<date>.jsonl)")
+    report_cmd.add_argument(
+        "--include-snippets",
+        action="store_true",
+        help="opt in to including prompt snippets (secret-bearing text is always refused)",
+    )
+    report_cmd.set_defaults(func=cmd_report)
 
     harvest = sub.add_parser("harvest", help="show cumulative savings")
     harvest.add_argument("--json", action="store_true", help="machine-readable output")

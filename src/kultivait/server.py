@@ -179,6 +179,15 @@ def create_app(
 
     app = FastAPI(title="kultivait")
 
+    # ADR 0025 route-outcome substrate: the per-install salt and the salted
+    # repo hash for this serve's working tree, resolved once at boot —
+    # raw paths never reach the ledger or any export
+    from kultivait import privacy as _privacy
+    from kultivait.cli import CONFIG_PATH as _CONFIG_PATH
+
+    _install_salt = _privacy.ensure_install_salt(_CONFIG_PATH)
+    _repo_hash = _privacy.repo_hash_for(os.getcwd(), _install_salt)
+
     def _record(
         tier: str, completion: Completion, first_token_ms: "int | None" = None, **decision_meta
     ) -> None:
@@ -209,7 +218,7 @@ def create_app(
             overrides=_energy._load_overrides(_CONFIG_PATH),
         )
 
-        ledger.record(
+        _row_index = ledger.record(
             tier=tier,
             local=completion.local,
             tokens_in=completion.tokens_in,
@@ -224,10 +233,19 @@ def create_app(
             cache_price_in=cache_price_in,
             est_wh=est_wh,
             energy_model=energy_model,
+            # ADR 0025 route-outcome record: consented metadata only —
+            # policy version, salted repo identity, egress + override facts
+            policy_version=_privacy.POLICY_VERSION,
+            repo_hash=_repo_hash,
+            cloud_egress=not completion.local,
+            override=str(decision_meta.get("route_choice") or "").startswith("human:"),
+            candidate_tiers=list(getattr(router, "capability_order", [])),
             **decision_meta,
         )
-        # V1 (#106): broadcast the dispatch to the dashboard
+        # V1 (#106): broadcast the dispatch to the dashboard — row_index keys
+        # the one-key outcome labeling (ADR 0025)
         _sse_broadcast("dispatch", {
+            "row_index": _row_index,
             "tier": tier, "local": completion.local,
             "cost_usd": metered_cash, "notional_usd": notional,
             "tokens_in": completion.tokens_in, "tokens_out": completion.tokens_out,
@@ -1005,6 +1023,33 @@ def create_app(
         for q in dead:
             if q in _sse_clients:
                 _sse_clients.remove(q)
+
+    @app.post("/api/label")
+    def api_label(body: dict):
+        """ADR 0025 outcome label from the dashboard's one-key mode."""
+        from kultivait.privacy import OUTCOME_LABELS
+
+        label = str(body.get("label", ""))
+        if label not in OUTCOME_LABELS:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"label must be one of {list(OUTCOME_LABELS)}"},
+            )
+        try:
+            row_index = int(body.get("row_index"))
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400, content={"error": "row_index must be an integer"}
+            )
+        try:
+            row = ledger.set_outcome_label(row_index, label)
+        except IndexError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        _sse_broadcast(
+            "label",
+            {"row_index": row_index, "outcome_label": label, "tier": row.get("tier")},
+        )
+        return {"ok": True, "row_index": row_index, "outcome_label": label}
 
     @app.get("/api/dashboard/summary")
     def dashboard_summary() -> dict:

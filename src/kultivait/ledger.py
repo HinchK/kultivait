@@ -10,6 +10,7 @@ class Ledger:
         self._path = Path(path)
         self._baseline_in = baseline_in  # USD per million input tokens at a frontier model
         self._baseline_out = baseline_out  # USD per million output tokens
+        self._row_count: "int | None" = None
 
     def record(
         self,
@@ -68,6 +69,67 @@ class Ledger:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a") as f:
             f.write(json.dumps(entry) + "\n")
+        # ADR 0025: the 1-based row index this dispatch landed on (the
+        # label surfaces key off it); lazily counted, then tracked in-memory
+        if self._row_count is None:
+            with self._path.open() as f:
+                self._row_count = sum(1 for _ in f)
+        else:
+            self._row_count += 1
+        return self._row_count
+
+    # ---- ADR 0025 route-outcome labels ---------------------------------
+
+    def read_rows(self) -> "list[dict]":
+        if not self._path.exists():
+            return []
+        with self._path.open() as f:
+            return [json.loads(line) for line in f if line.strip()]
+
+    def recent_rows(self, n: int = 10) -> "list[tuple[int, dict]]":
+        """(row_index, row) newest-last for the label surfaces; row_index is
+        the 1-based line number — stable because the file is append-only
+        except for label attachment."""
+        rows = self.read_rows()
+        return [(i + 1, r) for i, r in enumerate(rows)][-n:]
+
+    def set_outcome_label(self, row_index: int, label: str) -> dict:
+        """Attach an outcome_label to a recorded dispatch row (atomic
+        rewrite of that line; the ledger stays append-only otherwise)."""
+        from kultivait.privacy import OUTCOME_LABELS
+
+        if label not in OUTCOME_LABELS:
+            raise ValueError(f"label must be one of {OUTCOME_LABELS}, got {label!r}")
+        rows = self.read_rows()
+        if not 1 <= row_index <= len(rows):
+            raise IndexError(f"row index {row_index} out of range (1..{len(rows)})")
+        rows[row_index - 1]["outcome_label"] = label
+        tmp = self._path.with_suffix(".jsonl.tmp")
+        with tmp.open("w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        tmp.replace(self._path)
+        return rows[row_index - 1]
+
+    def label_last(self, n: int, label: str) -> int:
+        """Label the newest n rows that carry no outcome_label yet."""
+        rows = self.read_rows()
+        targets = [i + 1 for i, r in enumerate(rows) if not r.get("outcome_label")][-n:]
+        for idx in targets:
+            self.set_outcome_label(idx, label)
+        return len(targets)
+
+    def clear_outcome_label(self, row_index: int) -> dict:
+        rows = self.read_rows()
+        if not 1 <= row_index <= len(rows):
+            raise IndexError(f"row index {row_index} out of range (1..{len(rows)})")
+        rows[row_index - 1].pop("outcome_label", None)
+        tmp = self._path.with_suffix(".jsonl.tmp")
+        with tmp.open("w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        tmp.replace(self._path)
+        return rows[row_index - 1]
 
     def _energy_section(self, entries: list) -> dict:
         """ADR 0020: local-compute Wh only, estimated against a versioned

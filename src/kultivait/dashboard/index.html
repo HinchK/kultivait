@@ -236,6 +236,9 @@ td{font-variant-numeric:tabular-nums}
 <div class="panel">
 <h2>event log</h2>
 <div id="event-log"></div>
+<div style="font-size:.7rem;color:#6e7681;margin-top:.25rem">
+  outcome keys (label newest dispatch): <b>y/a</b> accept · <b>r</b> retry · <b>e</b> escalate · <b>w</b> wrong-route
+</div>
 </div>
 
 <script>
@@ -311,13 +314,31 @@ function log(msg){
   el.prepend(new Date().toLocaleTimeString()+"  "+msg+"\n");
   while(el.scrollHeight>3000&&el.firstChild)el.removeChild(el.lastChild);
 }
+let lastDispatch=null; // {row_index, tier} — ADR 0025 one-key outcome labeling
 function onDispatch(d){
   dispatchN++;
   $("dispatch-count").textContent=dispatchN+" dispatches";
+  if(d.row_index){lastDispatch={row_index:d.row_index,tier:d.tier}}
   log(`dispatch → ${d.tier} (${d.local?"local":"frontier"}) $${(d.cost_usd||0).toFixed(4)}`
       +(d.cache_read_tokens>0?` cache:${d.cache_read_tokens}r/${d.cache_write_tokens}w`:""));
   onDispatchCache(d);
 }
+const LABEL_KEYS={y:"accepted",a:"accepted",r:"retried",e:"escalated",w:"wrong_route"};
+function labelNewest(key){
+  if(!lastDispatch){log("no dispatch to label yet");return}
+  const label=LABEL_KEYS[key]; if(!label)return;
+  fetch("/api/label",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({row_index:lastDispatch.row_index,label})})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(j=>log(`outcome → ${j.outcome_label} (row ${j.row_index})`))
+    .catch(()=>log(`label failed (row ${lastDispatch.row_index})`));
+}
+document.addEventListener("keydown",ev=>{
+  if(!LABEL_KEYS[ev.key])return;
+  const tag=(document.activeElement&&document.activeElement.tagName)||"";
+  if(tag==="INPUT"||tag==="TEXTAREA")return;
+  labelNewest(ev.key);
+});
 function onShadow(d){
   const inc=d.incumbent||{},sh=d.shadow||{};
   log(`shadow: inc=${inc.verdict} vs sh=${sh.verdict} parse=${sh.parse_ok} `
@@ -453,6 +474,10 @@ function connect(){
   es.onerror=()=>{$("conn").className="off";$("mode").textContent="reconnecting…"};
   es.addEventListener("harvest",e=>{hydrate(JSON.parse(e.data));log("harvest snapshot")});
   es.addEventListener("dispatch",e=>onDispatch(JSON.parse(e.data)));
+  es.addEventListener("label",e=>{
+    const l=JSON.parse(e.data);
+    log(`label confirmed → ${l.outcome_label} (row ${l.row_index})`);
+  });
   es.addEventListener("shadow",e=>{
     onShadow(JSON.parse(e.data));
     fetch("/api/dashboard/summary").then(r=>r.json())
