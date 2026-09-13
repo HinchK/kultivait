@@ -23,9 +23,12 @@ dispatch is tallied in a savings ledger.
 - macOS. The full zero-to-local bootstrap needs Apple Silicon with at least
   24 GB of unified memory; less works with a smaller garden.
 - A local model runtime: [ollama](https://ollama.com) with at least one
-  general model pulled, or [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+  general model pulled — the default and best-supported path — or,
+  experimental, [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
   `llama-server` in router mode (see
-  [Using llama.cpp](docs/guides/setup.md#using-llamacpp-instead-of-ollama)).
+  [Using llama.cpp](docs/guides/setup.md#using-llamacpp-instead-of-ollama);
+  conditionally viable per ADR 0023 — its wiring fixes ship in v0.4.0, the
+  default runtime stays ollama).
   `kultivait init` detects whichever is running and adapts to the models you
   have.
 - An embedding model, which `kultivait init` fetches for you:
@@ -178,7 +181,7 @@ Run `kultivait <command> --help` for every option.
 ## Guides
 
 - [Setup](docs/guides/setup.md): the zero-to-local bootstrap on a Mac, how
-  ollama and llama.cpp take turns, and running on llama.cpp.
+  ollama and llama.cpp take turns, and running on llama.cpp (experimental).
 - [Connecting your tools](docs/guides/connecting.md): both endpoints, the Pi
   coding agent, and the zero-config adoption paths, from wrapping one
   command to OS-level loopback.
@@ -207,10 +210,16 @@ with tickets and milestone maps on the GitHub issue tracker. See
 
 ## What's shipped
 
-Release notes are in [CHANGELOG.md](CHANGELOG.md). v0.2.0 added ambient
-phase-gates, estimated watt-hours in the ledger, learned routing centroids
-(shadow-only until a human cuts over), and the planted-fact distillation
-eval behind the table above.
+Release notes are in [CHANGELOG.md](CHANGELOG.md). v0.4.0 is the ollama MVP
+milestone: Anthropic-format tools now translate at the local-backend
+boundary (tool-bearing `/v1/messages` works on ollama), every dispatch
+records first-token and total wall-clock in a time ledger with a
+time-vs-savings harvest report, and prompts over the 8192-token length
+rule route frontier no matter what the verdict says. The green-harvest
+gate passed cold: clone to first routed dispatch in 44 seconds. v0.2.0
+added ambient phase-gates, estimated watt-hours in the ledger, learned
+routing centroids (shadow-only until a human cuts over), and the
+planted-fact distillation eval behind the table above.
 
 ## Roadmap
 

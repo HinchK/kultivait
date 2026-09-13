@@ -6,6 +6,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
+The ollama MVP milestone: tool translation at the local seam, the time
+ledger and length rule (ADR 0024), and a green release gate.
+
+### Added
+
+- Time ledger (#215/#216, ADR 0024): every dispatch records
+  `first_token_ms` alongside `latency_s`; `kultivait harvest` gains a
+  time-vs-savings section — per-band local medians/p95 measured against a
+  versioned frontier-latency reference table, with signed time-paid
+  minutes beside kept-in-pocket. The table is harvest-time yardstick only
+  (time-never-ranks); the probe harness lives in
+  `experiments/latency_probe/` and until its first credit-funded run the
+  harvest honestly reports "no reference — local medians only".
+- Length rule (#215/#216): prompts over 8192 estimated tokens
+  (chars//4 over the full payload — tools, system, messages) route to the
+  most capable frontier tier regardless of verdict. No toll dialog, no
+  escalation archive; local-only installs degrade gracefully with a
+  distinct ledger reason. Configurable via `length_rule_max_tokens`.
+- Launch checklist 2026-09-13 (#218): green-harvest gate PASS — cold clone
+  to one routed dispatch in 44 s on the ollama path, all six audit axes
+  green (telemetry, surface, canonical links, verified claims, secrets).
+
+### Changed
+
+- README re-scope: ollama is the default, best-supported runtime; the
+  llama.cpp path is marked experimental (conditionally viable per
+  ADR 0023 — its wiring fixes ship in this release, the default runtime
+  is unchanged).
+
+### Fixed
+
+- Preprocessor failures degrade instead of crashing (#213): generator
+  errors mark MARK_FAIL and fall back to the router verdict — contested
+  prompts no longer surface as ASGI 500s; the configured generator is
+  wired through serve, shadow probe, and distill eval.
+- Anthropic-format tools translate to OpenAI at the local-backend
+  boundary (#214): tool-bearing `/v1/messages` requests now work on ollama
+  and llama.cpp. Previously llama.cpp hard-500'd ("Missing tool type")
+  and ollama silently dropped the tools, answering in prose; live
+  regression tests cover both runtimes.
+
 ## [0.3.0] - 2026-09-11
 
 ### Added
