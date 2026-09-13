@@ -223,3 +223,15 @@ def test_constants_and_marks():
     assert MARK_TIMEOUT == "preprocess_timeout"
     assert MARK_FAIL == "preprocess_fail"
     assert MARK_SKIPPED == "skipped"
+
+
+def test_run_exception_returns_mark_fail():
+    def fake_generate(model: str, prompt: str):
+        raise RuntimeError("Connection error or network failure")
+
+    messages = [{"role": "user", "content": "Query"}]
+    res = run(messages, generate=fake_generate)
+    assert res.mark == MARK_FAIL
+    assert res.derived_verdict is None
+    assert res.rewrite == "Query"
+

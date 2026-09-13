@@ -228,6 +228,22 @@ def run(
             latency_s=latency_s,
             mark=MARK_TIMEOUT,
         )
+    except Exception:
+        t1 = time.monotonic()
+        latency_s = round(t1 - t0, 2)
+        return PreprocessResult(
+            analysis=AnalysisResult(
+                task_type="unknown", complexity=0, signals=[], subtask_candidates=[]
+            ),
+            rewrite=last_user_msg,
+            target_fits=[],
+            max_fit=0.0,
+            derived_verdict=None,
+            confidence=0.0,
+            raw_output=None,
+            latency_s=latency_s,
+            mark=MARK_FAIL,
+        )
 
     parsed_json, err = extract_json(raw_text)
     if parsed_json is None or not isinstance(parsed_json, dict):

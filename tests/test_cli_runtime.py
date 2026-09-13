@@ -126,3 +126,53 @@ def test_build_backends_with_api_tiers(monkeypatch):
     # openai key is not resolvable -> not in backends (registered but not served)
     assert "openai" not in backends
 
+
+def test_embed_batch_connect_error_provides_clean_exit(monkeypatch):
+    import pytest
+    import httpx
+
+    def fake_post_fail(*args, **kwargs):
+        raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(cli.httpx, "post", fake_post_fail)
+    monkeypatch.setattr(cli, "_running_runtime", lambda: "ollama")
+
+    config = Config(
+        runtime="llamacpp",
+        chat_base_url="http://localhost:8080",
+        embed_model="nomic-embed-text-v1.5.Q8_0",
+    )
+    with pytest.raises(SystemExit) as exc:
+        cli._embed_batch(config, ["a"])
+    assert "Cannot connect to llama-server at http://localhost:8080" in str(exc.value)
+    assert "ollama is currently running" in str(exc.value)
+
+
+def test_cmd_serve_passes_configured_preprocess_generator(monkeypatch):
+    import argparse
+
+    captured = {}
+
+    def fake_create_app(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("kultivait.server.create_app", fake_create_app)
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "build_router", lambda c: None)
+    monkeypatch.setattr(cli, "build_backends", lambda c: {})
+    monkeypatch.setattr(cli, "build_gate", lambda c: None)
+    monkeypatch.setattr(cli, "_stdin_is_tty", lambda: False)
+
+    config = Config(
+        runtime="llamacpp",
+        chat_base_url="http://localhost:8080",
+        distill_model="my-distill-model",
+    )
+    monkeypatch.setattr(cli, "get_config", lambda: config)
+
+    cli.cmd_serve(argparse.Namespace(port=4114))
+    assert "preprocess_generate" in captured
+    assert callable(captured["preprocess_generate"])
+
+

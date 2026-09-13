@@ -205,22 +205,43 @@ def _require_embed_model(config: Config) -> str:
 
 
 def _embed_batch(config: Config, texts: "list[str]") -> np.ndarray:
-    if config.runtime == "llamacpp":
+    try:
+        if config.runtime == "llamacpp":
+            r = httpx.post(
+                f"{config.embed_url()}/v1/embeddings",
+                json={"model": config.embed_model, "input": texts},
+                timeout=120,
+            )
+            r.raise_for_status()
+            data = sorted(r.json()["data"], key=lambda d: d["index"])
+            return np.array([d["embedding"] for d in data])
         r = httpx.post(
-            f"{config.embed_url()}/v1/embeddings",
+            f"{config.embed_url()}/api/embed",
             json={"model": config.embed_model, "input": texts},
             timeout=120,
         )
         r.raise_for_status()
-        data = sorted(r.json()["data"], key=lambda d: d["index"])
-        return np.array([d["embedding"] for d in data])
-    r = httpx.post(
-        f"{config.embed_url()}/api/embed",
-        json={"model": config.embed_model, "input": texts},
-        timeout=120,
-    )
-    r.raise_for_status()
-    return np.array(r.json()["embeddings"])
+        return np.array(r.json()["embeddings"])
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        other = _running_runtime()
+        other_hint = ""
+        if other and other != config.runtime:
+            other_hint = f"\nNote: {other} is currently running. Re-run 'kultivait init' to switch to it."
+        if config.runtime == "llamacpp":
+            hint = (
+                f"Cannot connect to llama-server at {config.embed_url()}.\n"
+                "Start it with:\n"
+                "    ~/.kultivait/start-llamacpp.sh\n"
+                f"or re-run 'kultivait init' to configure a running runtime.{other_hint}"
+            )
+        else:
+            hint = (
+                f"Cannot connect to ollama at {config.embed_url()}.\n"
+                "Start it with:\n"
+                "    ollama serve\n"
+                f"or re-run 'kultivait init' to configure a running runtime.{other_hint}"
+            )
+        sys.exit(f"kultivait cannot connect to {config.runtime}.\n{hint}\n")
 
 
 def build_router(config: Config) -> Router:
@@ -609,7 +630,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
     from kultivait.distill.shadow import DistillSeat
-    from kultivait.server import create_app
+    from kultivait.server import _default_preprocess_generate_for, create_app
     from kultivait.tollbooth import TollboothQueue
 
     config = get_config()
@@ -629,6 +650,16 @@ def cmd_serve(args: argparse.Namespace) -> None:
         tollbooth.register_presence("tty")
         _start_tty_watcher(tollbooth)
 
+    try:
+        preprocess_generate = _default_preprocess_generate_for(
+            chat_base_url=config.chat_base_url,
+            runtime=config.runtime,
+            model=config.distill_model,
+            num_ctx=config.num_ctx,
+        )
+    except TypeError:
+        preprocess_generate = _default_preprocess_generate_for()
+
     app = create_app(
         router=build_router(config),
         embed=lambda text: _embed_batch(config, [text])[0],
@@ -636,6 +667,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         ledger=ledger,
         gate=build_gate(config),
         escalations=escalations,
+        preprocess_generate=preprocess_generate,
         preprocess_timeout_s=config.preprocess_timeout_s,
         tollbooth=tollbooth,
         toll_timeout_s=config.toll_timeout_s,
@@ -1315,7 +1347,15 @@ def cmd_shadow_probe(args: argparse.Namespace) -> None:
         print(f"shadow mode is '{d.shadow_mode}': the probe works regardless "
               "(it dispatches directly), but live shadowing stays off.")
 
-    generate = _default_preprocess_generate_for()
+    try:
+        generate = _default_preprocess_generate_for(
+            chat_base_url=config.chat_base_url,
+            runtime=config.runtime,
+            model=config.distill_model,
+            num_ctx=config.num_ctx,
+        )
+    except TypeError:
+        generate = _default_preprocess_generate_for()
     result = run_shadow_probe(
         band=args.band, n=args.n,
         shadow_model=d.shadow_model, incumbent_model=d.model,
@@ -1385,7 +1425,16 @@ def cmd_distill_eval(args: argparse.Namespace) -> None:
         print("held-out file must carry prompt + label/tier per case")
         raise SystemExit(1)
 
-    generate = _default_preprocess_generate_for()
+    config = get_config()
+    try:
+        generate = _default_preprocess_generate_for(
+            chat_base_url=config.chat_base_url,
+            runtime=config.runtime,
+            model=config.distill_model,
+            num_ctx=config.num_ctx,
+        )
+    except TypeError:
+        generate = _default_preprocess_generate_for()
     incumbent = None
     if args.incumbent:
         from kultivait.distill.eval import run_gates as _rg
