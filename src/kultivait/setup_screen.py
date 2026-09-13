@@ -371,7 +371,8 @@ class RealDriver:
     def download(self, single: bool, post, stop: threading.Event) -> None:
         if not self._prep.have_llamacpp:
             state = bootstrap.ensure_llamacpp(
-                confirm=lambda m: True, run_cmd=self._run_cmd, which=self._which
+                confirm=lambda m: True, run_cmd=self._run_cmd, which=self._which,
+                hint=self._log,  # #198: never print to the Live-owned terminal
             )
             if state not in ("present", "installed"):
                 post(
@@ -609,6 +610,11 @@ def run_setup(
             post(("prep_failed", str(exc)))
 
     spawn(work)
+    # #198: frame fairness — a steady event stream (download progress at
+    # 5+ Hz) used to starve live.update inside the quiesce loop, freezing
+    # the panel for the whole download; a frame is now due at the Live's
+    # own 10 fps cadence even mid-storm
+    last_paint = time.monotonic()
     with keys:
         with Live(console=console, refresh_per_second=10) as live:
             while state.phase != "closing":
@@ -625,5 +631,8 @@ def run_setup(
                     _sync(state, driver, spawn, post, stop, spawned)
                     if key is None and events.empty() and state is before:
                         break
+                    if state is not before and time.monotonic() - last_paint >= 0.1:
+                        break  # paint in-flight progress instead of starving
                 live.update(render(state, samples=samples, width=console.width))
+                last_paint = time.monotonic()
     return setup_state.outcome_of(state)

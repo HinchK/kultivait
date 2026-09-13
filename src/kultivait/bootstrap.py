@@ -45,17 +45,22 @@ def models_dir() -> Path:
     return Path.home() / "Library" / "Caches" / "llama.cpp"
 
 
-def ensure_llamacpp(confirm=ask, run_cmd=subprocess.run, which=shutil.which) -> str:
+def ensure_llamacpp(confirm=ask, run_cmd=subprocess.run, which=shutil.which, hint=None) -> str:
     """Idempotent install step: "present" | "advisory" | "declined" |
     "installed" | "failed"."""
     if which("llama-server"):
         return "present"
     if not which("brew"):
-        tui.console.print(BREW_INSTALL_HINT)
+        # #198: the hint must never land on the raw terminal while a Rich
+        # Live display owns it — callers inside the setup screen route it
+        # through the panel instead of the console
+        (hint or tui.console.print)(BREW_INSTALL_HINT)
         return "advisory"
     if not confirm("Install llama.cpp via Homebrew (brew install llama.cpp)?"):
         return "declined"
-    result = run_cmd(["brew", "install", "llama.cpp"])
+    # #198: brew inherits the terminal unless captured — its progress
+    # interleaves with the Live region and garbles the setup screen
+    result = run_cmd(["brew", "install", "llama.cpp"], capture_output=True, text=True)
     return "installed" if result.returncode == 0 else "failed"
 
 
