@@ -135,7 +135,12 @@ class OllamaBackend:
             "options": {"num_ctx": self.num_ctx},
         }
         if tools:
-            payload["tools"] = tools
+            # /v1/messages forwards Anthropic flat tools; ollama wants OpenAI
+            # nested-function tools (#214, claude-socket E8). OpenAI-format
+            # tools pass through the converter unchanged.
+            from kultivait.api_backends import anthropic_tools_to_openai
+
+            payload["tools"] = anthropic_tools_to_openai(tools)
         return payload
 
     def complete(
@@ -229,12 +234,14 @@ def merge_tool_call_deltas(acc: "dict[int, dict]", deltas: "list[dict]") -> None
 class LlamaCppBackend:
     """Local model via llama-server's OpenAI-compatible API. Free by definition.
 
-    Speaks OpenAI format natively, so no message or tool-call translation.
-    Context size is fixed at server launch (--ctx-size), not per request, and
-    llama.cpp doesn't pin token counts when clipping, so truncation detection
-    (an ollama quirk) is unavailable: `truncated` is always False. Tool calls
-    require the server to be launched with --jinja. In router mode the
-    request's `model` field selects which model the server loads.
+    Speaks OpenAI format natively, so no message translation; tool DEFINITIONS
+    arriving in Anthropic flat form (via /v1/messages) convert at the payload
+    seam (#214). Context size is fixed at server launch (--ctx-size), not per
+    request, and llama.cpp doesn't pin token counts when clipping, so
+    truncation detection (an ollama quirk) is unavailable: `truncated` is
+    always False. Tool calls require the server to be launched with --jinja.
+    In router mode the request's `model` field selects which model the
+    server loads.
     """
 
     supports_tools = True
@@ -247,7 +254,11 @@ class LlamaCppBackend:
     def _payload(self, messages: list[dict], tools: "list[dict] | None", stream: bool) -> dict:
         payload = {"model": self.model, "messages": messages, "stream": stream}
         if tools:
-            payload["tools"] = tools
+            # same seam as OllamaBackend: Anthropic flat tools must convert
+            # before the OpenAI-format wire (E8's hard 500 "Missing tool type")
+            from kultivait.api_backends import anthropic_tools_to_openai
+
+            payload["tools"] = anthropic_tools_to_openai(tools)
         return payload
 
     @staticmethod

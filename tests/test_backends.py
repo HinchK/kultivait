@@ -124,6 +124,65 @@ def test_ollama_tool_calls_convert_to_openai_format():
     assert call["id"].startswith("call_")
 
 
+ANTHROPIC_TOOLS = [
+    {
+        "name": "get_weather",
+        "description": "Get the current weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+]
+
+
+def test_ollama_payload_translates_anthropic_tools():
+    # /v1/messages forwards Anthropic flat tools to every backend; the local
+    # seam must convert them to OpenAI nested-function form (#214, E8)
+    backend = OllamaBackend("qwen3:14b")
+    payload = backend._payload(
+        [{"role": "user", "content": "weather in Berlin?"}],
+        ANTHROPIC_TOOLS,
+        stream=False,
+    )
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather for a city",
+                "parameters": ANTHROPIC_TOOLS[0]["input_schema"],
+            },
+        }
+    ]
+
+
+def test_ollama_payload_passes_openai_tools_through():
+    # chat-completions traffic already speaks OpenAI tools: untouched
+    backend = OllamaBackend("qwen3:14b")
+    openai_tools = [
+        {"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}
+    ]
+    payload = backend._payload(
+        [{"role": "user", "content": "hi"}], openai_tools, stream=False
+    )
+    assert payload["tools"] == openai_tools
+
+
+def test_llamacpp_payload_translates_anthropic_tools():
+    # E8's exact failure: llama-server 500 "Failed to parse tools: Missing
+    # tool type" on Anthropic flat tools
+    backend = LlamaCppBackend("qwen3-14b-q4km")
+    payload = backend._payload(
+        [{"role": "user", "content": "hi"}], ANTHROPIC_TOOLS, stream=True
+    )
+    assert payload["tools"][0]["type"] == "function"
+    assert payload["tools"][0]["function"]["name"] == "get_weather"
+    assert payload["tools"][0]["function"]["parameters"] == ANTHROPIC_TOOLS[0]["input_schema"]
+    assert "input_schema" not in payload["tools"][0]
+
+
 def test_backends_have_local_attribute():
     from kultivait.backends import CLIBackend, LlamaCppBackend, OllamaBackend
 
