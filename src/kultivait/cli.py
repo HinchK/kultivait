@@ -799,6 +799,24 @@ def cmd_centroids_cutover(args: argparse.Namespace) -> None:
               f"known: {', '.join(table.get('versions', {})) or '(none)'}",
               file=sys.stderr)
         raise SystemExit(2)
+    if args.version != "seeds-v0":
+        # ADR 0021 / #224 guard: learned centroids stay advisory/shadow-only
+        # until a routing-quality eval on the pinned dataset passes every
+        # pre-registered bar — the human then approves with --yes below
+        from kultivait import routing_eval
+
+        card = routing_eval.passing_scorecard_exists()
+        if card is None:
+            print(
+                "refusing: no passing routing eval on record for dataset "
+                f"{routing_eval.DATASET_VERSION}.\n"
+                "  run `kultivait eval --routing` first and let every bar pass "
+                "(learned centroids are shadow-only until then).",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        print(f"routing eval on record: {card['dataset_version']} — "
+              f"{card['ts']:.0f} epoch, all bars passed")
     if not args.yes:
         answer = input(
             f"flip active routing centroids to {args.version}? [y/N] "
@@ -1623,6 +1641,42 @@ def cmd_distill_eval(args: argparse.Namespace) -> None:
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
+    if getattr(args, "routing", False):
+        from kultivait import routing_eval
+
+        dataset_path = Path(args.dataset) if getattr(args, "dataset", None) else (
+            Path(__file__).resolve().parent.parent.parent / "evals" / "routing_v1.jsonl"
+        )
+        dataset = routing_eval.load_dataset(dataset_path)
+        config = get_config()
+        router = build_router(config)
+        embed_fn = lambda text: _embed_batch(config, [text])[0]
+
+        def classify(prompt):
+            decision = router.classify(embed_fn(prompt))
+            return decision.tier, decision.escalated, decision.margin
+
+        backends_map = build_backends(config)
+        order = router.capability_order
+        scorecard = routing_eval.run_eval(
+            dataset,
+            classify=classify,
+            capability_order=order,
+            local_flags={t: bool(getattr(b, "local", False)) for t, b in backends_map.items()},
+            supports_tools={t: bool(getattr(b, "supports_tools", False)) for t, b in backends_map.items()},
+            length_rule_cap=config.length_rule_max_tokens,
+        )
+        routing_eval.save_scorecard(scorecard)
+        if args.json:
+            print(json.dumps(scorecard, indent=2))
+        else:
+            print(routing_eval.format_scorecard(scorecard))
+            print(f"\n  scorecard saved → {routing_eval.SCORECARD_PATH} "
+                  "(the centroid cutover guard reads it)")
+        if not scorecard["passed"]:
+            raise SystemExit(1)
+        return
+
     from kultivait.capability_eval import (
         format_eval_summary,
         load_corpus,
@@ -1904,6 +1958,9 @@ def main(argv: list | None = None) -> None:
     choose.set_defaults(func=cmd_choose)
 
     eval_cmd = sub.add_parser("eval", help="run direct-to-backend capability evaluation")
+    eval_cmd.add_argument("--routing", action="store_true",
+                          help="run the versioned routing-quality eval (pre-registered bars)")
+    eval_cmd.add_argument("--dataset", help="path to a routing dataset JSONL (default: bundled routing_v1)")
     eval_cmd.add_argument("--target", help="specific target backend to evaluate")
     eval_cmd.add_argument("--effort", choices=["fast", "balanced", "deep"], help="specific effort level")
     eval_cmd.add_argument("--corpus", help="path to custom corpus JSON file")
