@@ -31,6 +31,7 @@ from kultivait.preprocessor import (
     run as run_preprocessor,
 )
 from kultivait.credentials import probe_candidate_targets
+from kultivait import egress
 from kultivait.distill.shadow import DistillSeat, shadow_after_response
 from kultivait.router import Decision, Router
 from kultivait.tollbooth import (
@@ -525,6 +526,28 @@ def create_app(
             else:
                 fallback_reason = "length_rule_no_frontier"
 
+        # ADR 0025 cloud-egress policy: secrets never egress (before any
+        # posture); repo posture (block|ask|allow) gates every prospective
+        # frontier dispatch; ask degrades locally and records a pending ask
+        cloud_egress_decision = "local_only"
+        if backends.get(tier) and not backends[tier].local:
+            _scan_text = " ".join(
+                _text_of(m.get("content")) for m in messages
+            ) + json.dumps(tools or [])
+            _served, cloud_egress_decision = egress.enforce_prompt_policy(
+                _scan_text, tier,
+                capability_order=router.capability_order,
+                local_flags={n: bool(getattr(b, "local", False)) for n, b in backends.items()},
+                repo_hash=_repo_hash,
+            )
+            if cloud_egress_decision != "allowed":
+                tier = _served
+                fallback_reason = {
+                    "blocked_secret": "secret_no_egress",
+                    "blocked_policy": "egress_blocked",
+                    "ask_local": "egress_ask",
+                }[cloud_egress_decision]
+
         # length-forced dispatches archive nothing: nothing cloud-worthy was
         # served local — it went frontier (the #215 pin)
         if (
@@ -552,6 +575,7 @@ def create_app(
                 "route_choice": route_choice,
                 "subtask_candidates": subtask_candidates_count,
                 "target_fits": target_fits_dict,
+                "cloud_egress_decision": cloud_egress_decision,
             }
         )
 

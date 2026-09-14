@@ -1124,6 +1124,52 @@ def cmd_report(args: argparse.Namespace, ledger_path: Path | None = None) -> Non
     print("pull-only: this file never transmits itself; share it yourself if you choose to.")
 
 
+def cmd_egress(args: argparse.Namespace) -> None:
+    from kultivait import egress, privacy
+
+    if args.posture:
+        if args.answer:
+            pending = egress.load_pending()
+            if not pending:
+                print("no pending egress asks — nothing to answer")
+                return
+            repo_hash = sorted(pending, key=lambda r: pending[r])[-1]
+            egress.set_repo_posture(repo_hash, args.posture)
+            egress.clear_pending(repo_hash)
+            print(f"answered pending ask: repo {repo_hash} → {args.posture}")
+            return
+        if args.repo:
+            egress.set_repo_posture(args.repo, args.posture)
+            print(f"repo {args.repo} → {args.posture}")
+            return
+        if args.global_:
+            egress.set_global_posture(args.posture)
+            print(f"global default → {args.posture}")
+            return
+        _fail("egress", "a posture needs --repo HASH, --global, or --answer")
+        return
+
+    policy = egress.load_policy()
+    this_repo = privacy.repo_hash_for(Path.cwd(), privacy.ensure_install_salt(CONFIG_PATH))
+    print(f"global default: {policy.get('global', egress.GLOBAL_DEFAULT)}")
+    print(f"this repo hashes to: {this_repo}  (posture: "
+          f"{policy.get('repos', {}).get(this_repo, '→ global default')})")
+    repos = policy.get("repos", {})
+    if repos:
+        print("repo postures:")
+        for repo_hash, posture in sorted(repos.items()):
+            print(f"  {repo_hash}  {posture}")
+    pending = egress.load_pending()
+    if pending:
+        print("pending asks (first frontier route degraded locally until answered):")
+        for repo_hash, ts in sorted(pending.items(), key=lambda kv: kv[1]):
+            print(f"  {repo_hash}  asked {time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))}")
+        print("answer: kultivait egress allow|block --answer")
+    else:
+        print("no pending asks")
+    print("set: kultivait egress <block|ask|allow> --repo HASH | --global")
+
+
 def cmd_harvest(args: argparse.Namespace) -> None:
     stats = Ledger(LEDGER_PATH).harvest()
     if args.json:
@@ -1651,18 +1697,30 @@ def cmd_eval(args: argparse.Namespace) -> None:
         config = get_config()
         router = build_router(config)
         embed_fn = lambda text: _embed_batch(config, [text])[0]
+        backends_map = build_backends(config)
+        order = router.capability_order
+        local_flags = {t: bool(getattr(b, "local", False)) for t, b in backends_map.items()}
+        from kultivait import egress as egress_mod
+
+        # The eval pins the unconditional secret guard + routing bars; repo
+        # posture is operator state, so the wrapper evaluates under an
+        # allow-posture (posture behavior is unit/integration-tested)
+        eval_policy = {"global": "allow", "repos": {}}
 
         def classify(prompt):
             decision = router.classify(embed_fn(prompt))
-            return decision.tier, decision.escalated, decision.margin
+            tier, _ = egress_mod.enforce_prompt_policy(
+                prompt, decision.tier,
+                capability_order=order, local_flags=local_flags,
+                policy=eval_policy,
+            )
+            return tier, decision.escalated, decision.margin
 
-        backends_map = build_backends(config)
-        order = router.capability_order
         scorecard = routing_eval.run_eval(
             dataset,
             classify=classify,
             capability_order=order,
-            local_flags={t: bool(getattr(b, "local", False)) for t, b in backends_map.items()},
+            local_flags=local_flags,
             supports_tools={t: bool(getattr(b, "supports_tools", False)) for t, b in backends_map.items()},
             length_rule_cap=config.length_rule_max_tokens,
         )
@@ -1784,6 +1842,20 @@ def main(argv: list | None = None) -> None:
         help="opt in to including prompt snippets (secret-bearing text is always refused)",
     )
     report_cmd.set_defaults(func=cmd_report)
+
+    egress_cmd = sub.add_parser(
+        "egress", help="inspect and set cloud-egress postures (block|ask|allow)"
+    )
+    egress_cmd.add_argument(
+        "posture", nargs="?", choices=["block", "ask", "allow"],
+        help="posture to set (omit to inspect)",
+    )
+    egress_cmd.add_argument("--repo", help="repo hash to scope the posture to")
+    egress_cmd.add_argument("--global", dest="global_", action="store_true",
+                            help="set the global default posture")
+    egress_cmd.add_argument("--answer", action="store_true",
+                            help="apply the posture to the newest pending ask")
+    egress_cmd.set_defaults(func=cmd_egress)
 
     harvest = sub.add_parser("harvest", help="show cumulative savings")
     harvest.add_argument("--json", action="store_true", help="machine-readable output")
