@@ -1075,7 +1075,7 @@ _EXPORT_FIELDS = (
     "repo_hash", "candidate_tiers", "override", "margin", "verdict",
     "route_choice", "toll", "fallback_reason", "preprocess_mark",
     "latency_s", "first_token_ms", "tokens_in", "tokens_out",
-    "est_wh", "energy_model",
+    "est_wh", "energy_model", "cost_usd", "notional_usd",
 )
 
 
@@ -1083,6 +1083,33 @@ def cmd_report(args: argparse.Namespace, ledger_path: Path | None = None) -> Non
     """ADR 0025 pull-only report. The export is a scrubbed LOCAL file the
     operator sends themselves — no transmit code path exists anywhere."""
     from kultivait import privacy
+    from kultivait import cohort as cohort_mod
+
+    # lifecycle first: purge flags operate on the cohort dir and return
+    if getattr(args, "purge_repo", None):
+        cohort_dir = Path(args.cohort) if getattr(args, "cohort", None) else Path.cwd()
+        removed = cohort_mod.purge_partner_exports(args.purge_repo, cohort_dir)
+        print(f"partner exit: removed {len(removed)} export file(s): {', '.join(removed) or '(none)'}")
+        print("deletions logged to ~/.kultivait/export_deletions.jsonl")
+        return
+    if getattr(args, "purge_older_than", None) is not None:
+        cohort_dir = Path(args.cohort) if getattr(args, "cohort", None) else Path.cwd()
+        removed = cohort_mod.purge_older_exports(cohort_dir, args.purge_older_than)
+        print(f"post-memo cleanup: removed {len(removed)} export file(s) older than "
+              f"{args.purge_older_than}d: {', '.join(removed) or '(none)'}")
+        print("deletions logged to ~/.kultivait/export_deletions.jsonl")
+        return
+    if getattr(args, "cohort", None):
+        rows, files = cohort_mod.load_cohort(args.cohort)
+        if not rows:
+            print("no dispatch rows found in the cohort sources", file=sys.stderr)
+            raise SystemExit(1)
+        report = cohort_mod.cohort_report(rows, sources=files)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(cohort_mod.format_cohort_report(report))
+        return
 
     ledger = Ledger(Path(ledger_path) if ledger_path else LEDGER_PATH)
     rows = ledger.read_rows()
@@ -1841,6 +1868,13 @@ def main(argv: list | None = None) -> None:
         action="store_true",
         help="opt in to including prompt snippets (secret-bearing text is always refused)",
     )
+    report_cmd.add_argument("--cohort",
+                            help="aggregate partner exports: a JSONL file or a directory of them")
+    report_cmd.add_argument("--purge-repo", metavar="HASH",
+                            help="partner exit: delete this repo's export files from --cohort DIR")
+    report_cmd.add_argument("--purge-older-than", type=int, metavar="DAYS",
+                            help="post-memo cleanup: delete cohort exports older than DAYS (default 90)")
+    report_cmd.add_argument("--json", action="store_true", help="machine-readable output")
     report_cmd.set_defaults(func=cmd_report)
 
     egress_cmd = sub.add_parser(
