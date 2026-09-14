@@ -195,3 +195,19 @@ _Avoid_: misroute rate (unlabeled denominator), dissatisfaction score
 **Secret-shape refusal**:
 The retention invariant that text matching secret or token patterns is never stored - the redaction itself is logged and the rule is test-enforced.
 _Avoid_: secret redaction (too soft), PII filter
+
+**Curated local garden**:
+The tested and pinned set of local model weights and quantizations recommended by kultivait for a given hardware memory tier (e.g. 14B reasoning + 4B fast), guaranteed to satisfy 100% of the dialect tool-calling contract.
+_Avoid_: model bundle, model pack, recommended models
+
+**Route explanation**:
+The structured, sub-millisecond diagnostic breakdown emitted by the router explaining why a specific prompt was assigned to local or frontier tiers (confidence, margin, centroid distances, and triggered rules).
+_Avoid_: routing rationale, decision log, trace output
+
+**Agent auto-integration**:
+The zero-config injection and environmental auto-patching mechanism that connects supported coding agent harnesses (Claude Code, Pi, OpenCode, Cursor) directly to the local kultivait proxy without manual configuration.
+_Avoid_: agent plugin, harness hook, auto-connect
+
+**Expansion path**:
+The strategic product direction evaluated at milestone horizons; specifically, Path 1 (individual product focus) selected over Path 2 (team mode) and Path 3 (runtime diversification) for the 91–180 day cycle.
+_Avoid_: roadmap track, pivot direction, product tier
