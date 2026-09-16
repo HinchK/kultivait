@@ -162,12 +162,17 @@ class TinyScreen:
 def _run_under_pty(driver, keys):
     """Real run_setup (threads + Rich Live) under a pseudo-terminal; returns
     (outcome, decoded stream). Cleanup closes the slave before the master —
-    macOS blocks master-close while the slave is open (#198 harness hang)."""
+    macOS blocks master-close while the slave is open (#198 harness hang).
+
+    Console environ pins TERM: agent shells export TERM=dumb, which sets
+    is_interactive=False in Rich and silences Live repaints entirely (#236);
+    force_terminal alone does not override the dumb check."""
     master, slave = pty.openpty()
     outfile = os.fdopen(slave, "w")
     console = rich.console.Console(
         file=outfile, force_terminal=True, width=TERM_W, height=TERM_H,
         legacy_windows=False,
+        _environ={**os.environ, "TERM": "xterm-256color"},
     )
     captured = bytearray()
     stop_cap = threading.Event()
