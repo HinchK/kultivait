@@ -53,6 +53,15 @@ Cold path, exactly as the README quickstart tells it, isolated `$HOME` throughou
 - The only token-pattern matches in history are intentional, synthetic dummy fixtures in test datasets (`evals/routing_v1.jsonl` with note `"placeholder-shaped credentials, safe by construction"`, `tests/test_egress.py`, `tests/test_outcome_record.py`) validating ADR-0025 egress refusal and cohort privacy guards (#223).
 - No `.env`, `.pem`, `.key`, `credentials.toml`, or `.crt` file was ever committed across any branch/ref in git history.
 
+## 7. Cold install from PyPI index (Axis 7) — PASS
+
+- Real index installation: `uv tool install kultivait==0.4.1` executed in isolated `$HOME=/tmp/gate-home-axis7` (23 packages prepared and installed in < 1 s; binary installed at `~/.local/bin/kultivait`).
+- PyPI release verification: `curl -s https://pypi.org/pypi/kultivait/json | jq -r .info.version` returns `0.4.1`.
+- `init --no-setup` generated a valid local garden configuration in `/tmp/gate-home-axis7/.kultivait/config.toml`.
+- `serve --port 4621` booted and listened; completions probe (`POST /v1/chat/completions` with `"Say ok"`) routed to local `qwen3.5:4b` returning `ok`.
+- `harvest` verified: 1 prompt routed (100% local), **energy block present** (`0.031 Wh · energy-v1-20260909`), and **time-ledger section present** (`0-2k 1 dsp first-token p50 7907 ms total p50 7908 ms`).
+- Note closing the #218 method substitution: verified cleanly from the live PyPI index without `--from git+` or clone substitution.
+
 ## Reproduction snippets
 
 ```bash
@@ -86,6 +95,19 @@ uv run pytest -q
 # Axis 6: Secrets sweep
 git grep -l -E "phc_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-or-v1-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}" $(git rev-list --all)
 git log --all --name-only --diff-filter=A -- '**/*.env' '**/*.pem' '**/*.key' '**/credentials.toml' '**/*.crt'
+
+# Axis 7: Cold install from PyPI index
+curl -s https://pypi.org/pypi/kultivait/json | jq -r .info.version
+HOME=/tmp/gate-home-axis7 uv tool install kultivait==0.4.1
+HOME=/tmp/gate-home-axis7 /tmp/gate-home-axis7/.local/bin/kultivait init --no-setup
+HOME=/tmp/gate-home-axis7 /tmp/gate-home-axis7/.local/bin/kultivait serve --port 4621 &
+SERVER_PID=$!
+sleep 4
+curl -s localhost:4621/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Say ok"}]}'
+HOME=/tmp/gate-home-axis7 /tmp/gate-home-axis7/.local/bin/kultivait harvest
+kill $SERVER_PID
+rm -rf /tmp/gate-home-axis7
 ```
 
 Suite at artifact time: `uv run pytest -q` → **869 passed, 4 skipped**.
