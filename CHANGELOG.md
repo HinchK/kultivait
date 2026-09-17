@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-17
+
+The PyPI debut: kultivait is installable from the package index, and every
+install surface points there first.
+
+### Added
+
+- PyPI trusted publishing (#232): tag-push workflow (`.github/workflows/publish.yml`)
+  builds sdist + wheel and publishes via OIDC — no credentials in the repo,
+  nothing to leak. A tag-vs-version guard refuses to publish a tag that does
+  not match `pyproject.toml`.
+- Install from the index (#233): `uv tool install kultivait` is now the
+  primary install path on every surface — README, the `curl | sh` installer,
+  and the agent starter guide. The `git+` form remains as "install from
+  source".
+
+### Changed
+
+- The v0.4.0 GitHub release object was backfilled (#231) — the tag predates
+  the publish workflow, so it can never trigger a publish.
+- Packaging metadata modernized: SPDX license expression (PEP 639) instead
+  of a license classifier, and the `uv-build` build requirement accepts the
+  current 0.12 line.
+
 ## [0.4.0] - 2026-09-13
 
 The ollama MVP milestone: tool translation at the local seam, the time
@@ -129,7 +153,9 @@ First public release.
   canonical links, reproduced claims, secrets sweep) recorded at
   `docs/launch-checklist-2026-09-03.md`.
 
-[Unreleased]: https://github.com/Standard-Pentest/kultivait/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Standard-Pentest/kultivait/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Standard-Pentest/kultivait/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Standard-Pentest/kultivait/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Standard-Pentest/kultivait/releases/tag/v0.1.0

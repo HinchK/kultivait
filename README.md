@@ -48,6 +48,15 @@ curl -fsSL https://kultivait.ai/install.sh | sh
 or, by hand:
 
 ```bash
+uv tool install kultivait
+```
+
+### Install from source
+
+The PyPI package is built from this repository; to install straight from a
+commit or branch instead:
+
+```bash
 uv tool install --from git+https://github.com/Standard-Pentest/kultivait kultivait
 ```
 
